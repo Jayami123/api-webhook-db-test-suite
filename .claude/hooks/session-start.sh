@@ -12,4 +12,8 @@ if command -v dockerd >/dev/null && ! docker info >/dev/null 2>&1; then
   (sudo dockerd 2>&1 | tee /tmp/dockerd.log >/dev/null &)
   for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
 fi
+# The hook can't block the session, so tell Claude plainly when Docker is unusable.
+if ! docker info >/dev/null 2>&1; then
+  echo "WARNING: Docker is not available (dockerd missing or failed to start; see /tmp/dockerd.log). Product stacks will not start."
+fi
 exit 0

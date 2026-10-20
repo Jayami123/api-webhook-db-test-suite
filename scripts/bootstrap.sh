@@ -73,9 +73,9 @@ resolve_products_root() {
 
 clone_pinned() {
   local url="$1" ref="$2" dest="$3"
-  if [ -d "$dest/.git" ]; then
+  if [ -d "$dest/.git" ] && git -C "$dest" rev-parse --verify -q HEAD >/dev/null; then
     local head
-    head="$(git -C "$dest" rev-parse HEAD 2>/dev/null || echo unknown)"
+    head="$(git -C "$dest" rev-parse HEAD)"
     if [[ "$ref" =~ ^[0-9a-f]{40}$ ]] && [ "$head" != "$ref" ]; then
       log "WARN $dest is at $head, pinned ref is $ref. Left as is."
     else
@@ -83,14 +83,19 @@ clone_pinned() {
     fi
     return
   fi
-  if [ -d "$dest" ] && [ -n "$(ls -A "$dest")" ]; then
-    log "ERROR $dest exists, is not empty and is not a git checkout. Move it away and rerun."
-    exit 1
+  if [ -d "$dest/.git" ]; then
+    # A .git with no commit means an earlier fetch failed; finish that clone instead of skipping it.
+    log "WARN $dest has a .git but no commit (interrupted clone). Fetching $ref again."
+  else
+    if [ -d "$dest" ] && [ -n "$(ls -A "$dest")" ]; then
+      log "ERROR $dest exists, is not empty and is not a git checkout. Move it away and rerun."
+      exit 1
+    fi
+    log "cloning $url at $ref into $dest (depth 1)"
+    mkdir -p "$dest"
+    git -C "$dest" init -q
   fi
-  log "cloning $url at $ref into $dest (depth 1)"
-  mkdir -p "$dest"
-  git -C "$dest" init -q
-  git -C "$dest" remote add origin "$url"
+  git -C "$dest" remote get-url origin >/dev/null 2>&1 || git -C "$dest" remote add origin "$url"
   git -C "$dest" fetch -q --depth 1 origin "$ref"
   git -C "$dest" -c advice.detachedHead=false checkout -q FETCH_HEAD
   log "cloned $(git -C "$dest" rev-parse HEAD)"
