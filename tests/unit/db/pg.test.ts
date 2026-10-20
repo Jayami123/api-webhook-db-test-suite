@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { describe, test } from "node:test";
 import type pg from "pg";
 import {
   DbQueryError,
+  IDLE_CLIENT_ERROR_MESSAGE,
+  attachIdleErrorHandler,
   createReadOnlyDb,
   readOnlySessionOptions,
   type ClientLike,
@@ -138,5 +141,20 @@ describe("read-only pg oracle", () => {
     await db.close();
     assert.equal(state.ends, 1);
     await assert.rejects(db.select("SELECT 1"), /used after close/);
+  });
+
+  test("an idle client error is logged with a fixed message only and does not crash", () => {
+    const pool = new EventEmitter();
+    const logged: unknown[][] = [];
+    attachIdleErrorHandler(pool, (...args: unknown[]) => {
+      logged.push(args);
+    });
+    const leaky = Object.assign(new Error(`connection to ${SECRET_URL} terminated`), {
+      code: "57P01",
+    });
+    assert.doesNotThrow(() => pool.emit("error", leaky));
+    assert.deepEqual(logged, [[IDLE_CLIENT_ERROR_MESSAGE]]);
+    assert.ok(!JSON.stringify(logged).includes("s3cr3t"));
+    assert.equal(IDLE_CLIENT_ERROR_MESSAGE, "P2 oracle: idle pg client error; client discarded");
   });
 });

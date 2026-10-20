@@ -31,8 +31,25 @@ export interface ClientLike {
 }
 export type PoolFactory = (config: pg.PoolConfig) => PoolLike;
 
+export const IDLE_CLIENT_ERROR_MESSAGE = "P2 oracle: idle pg client error; client discarded";
+
+/**
+ * pg emits "error" on the pool when an idle client dies (server restart, network drop); without a
+ * listener Node would crash the worker. pg discards the client itself. Log a fixed message only:
+ * the error text can carry the connection string.
+ */
+export function attachIdleErrorHandler(
+  pool: { on(event: "error", listener: () => void): unknown },
+  log: (...args: unknown[]) => void = console.error,
+): void {
+  pool.on("error", () => {
+    log(IDLE_CLIENT_ERROR_MESSAGE);
+  });
+}
+
 const defaultPoolFactory: PoolFactory = (config) => {
   const pool = new pg.Pool(config);
+  attachIdleErrorHandler(pool);
   return {
     connect: async () => {
       const client = await pool.connect();
