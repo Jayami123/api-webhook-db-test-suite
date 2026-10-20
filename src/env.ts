@@ -12,12 +12,18 @@ const loopbackUrl = z
   .refine((raw) => LOOPBACK_HOSTS.has(new URL(raw).hostname), {
     message: "must point at 127.0.0.1, localhost or [::1] (P2 never calls remote hosts)",
   });
-const loopbackPgUrl = z
-  .string()
-  .trim()
-  .refine((raw) => /^postgres(ql)?:\/\//.test(raw) && LOOPBACK_HOSTS.has(new URL(raw).hostname), {
-    message: "must be a postgres:// URL on 127.0.0.1, localhost or [::1]",
-  });
+/** A malformed URL is a failed validation, not a TypeError (and its text is never echoed). */
+function isLoopbackPgUrl(raw: string): boolean {
+  if (!/^postgres(ql)?:\/\//.test(raw)) return false;
+  try {
+    return LOOPBACK_HOSTS.has(new URL(raw).hostname);
+  } catch {
+    return false;
+  }
+}
+const loopbackPgUrl = z.string().trim().refine(isLoopbackPgUrl, {
+  message: "must be a postgres:// URL on 127.0.0.1, localhost or [::1]",
+});
 
 // Defaults are the harness's public local defaults (qa-portfolio-harness v0.2.11 src/config.ts),
 // with localhost rewritten to 127.0.0.1. They are not secrets. Never log a URL taken from env.

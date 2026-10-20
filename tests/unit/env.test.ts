@@ -56,4 +56,19 @@ describe("env", () => {
         !error.message.includes("s3cr3t"),
     );
   });
+
+  test("a malformed postgres URL is a validation error, not a TypeError", () => {
+    for (const bad of ["postgres://", "postgres://[bad", "postgres://u:s3cr3t@[bad/db"]) {
+      assert.throws(
+        () => dbUrl("cal", { CAL_DB_URL: bad }),
+        (error: unknown) =>
+          error instanceof Error &&
+          !(error instanceof TypeError) &&
+          error.message.includes("CAL_DB_URL") &&
+          error.message.includes("must be a postgres:// URL") &&
+          !error.message.includes("[bad") &&
+          !error.message.includes("s3cr3t"),
+      );
+    }
+  });
 });
