@@ -1,0 +1,63 @@
+openapi: 3.0.3
+info: { title: p2 fixture 3.0, version: "1" }
+paths:
+  /items/{id}:
+    get:
+      operationId: getItem
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json; charset=utf-8:
+              schema: { $ref: "#/components/schemas/Item" }
+        4XX:
+          description: client error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default:
+          description: other
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /nodes:
+    get:
+      operationId: listNodes
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Node" }
+  /download:
+    get:
+      operationId: download
+      responses:
+        "200":
+          description: binary
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+components:
+  schemas:
+    Item:
+      type: object
+      required: [id, created_at, price]
+      additionalProperties: false
+      properties:
+        id: { type: string, x-vendor-note: ignored }
+        created_at: { type: string, format: date-time }
+        note: { type: string, nullable: true }
+        price: { type: number, minimum: 0, exclusiveMinimum: true }
+        phone: { type: string, format: phone }
+    Error:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
+    Node:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        child: { $ref: "#/components/schemas/Node" }

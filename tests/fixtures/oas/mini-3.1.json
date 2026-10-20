@@ -1,0 +1,38 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "p2 fixture 3.1", "version": "1" },
+  "paths": {
+    "/people": {
+      "get": {
+        "operationId": "listPeople",
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["id"],
+                        "properties": {
+                          "id": { "type": "string", "format": "uuid" },
+                          "city": { "type": ["string", "null"] },
+                          "score": { "type": "number", "exclusiveMinimum": 0 }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
