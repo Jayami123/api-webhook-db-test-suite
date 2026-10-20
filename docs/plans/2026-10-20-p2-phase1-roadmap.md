@@ -109,7 +109,16 @@ network and a Stripe account); hand-rolled Stripe format (drifts from the SDK's 
 one `npm run check` that runs format check, lint, typecheck and units. Rejected: Biome (two forks
 use it, but P1 uses ESLint/Prettier and parity matters more).
 
-**D10. CI.** GitHub Actions, one workflow, `check` + `unit` jobs on every PR; one job per product,
+**D11. Dependency cooldown.** Every pinned version must be at least 7 days old at pin time, the
+newest that meets that and every peer range, installed with `npm install --before=<now − 7 days>`
+so transitive dependencies follow the same cutoff; the PR records the cutoff. Exceptions: our own
+harness git tag, and a security fix younger than 7 days with Jayami's approval. Renovate/Dependabot
+with `minimumReleaseAge` deferred. Rejected: latest stable on the day; top-level pins without
+`--before` (transitive drift). Details: Task 1 plan D13.
+
+**D10. CI.** GitHub Actions, one workflow, `check` + `unit` + `db-guard` jobs on every PR
+(`db-guard` proves the read-only oracle against a `postgres:15` service container, never a
+product); one job per product,
 added by that product's task, each running harness `up` → tests → harness `down` (`if: always()`).
 Rejected: a single matrix job from day one (products land in different tasks and have very
 different runtimes); docker compose files of our own (harness owns stacks).
@@ -130,13 +139,15 @@ different runtimes); docker compose files of our own (harness owns stacks).
   `.github/workflows/api.yml`. `qa-portfolio-harness` added as a pinned git dependency
   (`github:Jayami123/qa-portfolio-harness#v0.2.11`).
 - **Dependencies:** none.
-- **CI impact:** new `api.yml` with `check` and `unit` jobs, no Docker. `env-check.yml` unchanged.
-  After merge, `check` and `unit` become required checks (§7 Q4).
+- **CI impact:** new `api.yml` with `check`, `unit` and `db-guard` jobs; the only container is the
+  `db-guard` `postgres:15` service. `env-check.yml` unchanged. After merge, `check` and `unit`
+  become required checks; `db-guard` after two green `main` runs (§7 Q4).
   `scripts/cloud-install.sh` starts running `npm ci` once the lockfile exists.
 - **Done when:** `npm run check` and `npm run unit` pass locally and in CI; the Playwright listing
   shows the four projects with zero tests and no browser download; the guard rejects writes,
-  multi-statements, comment hiding, `EXPLAIN ANALYZE` and `SELECT … FOR UPDATE` in units. Full gate:
-  Task 1 plan §15.
+  multi-statements, comment hiding, `EXPLAIN ANALYZE` and `SELECT … FOR UPDATE` in units; `db-guard`
+  shows `25006`, `42601`, `57014` and the `EXPLAIN ANALYZE` guard rejection on `postgres:15`; every
+  pin meets the 7-day cooldown (D11). Full gate: Task 1 plan §15.
 - **Open risks:** the harness is ESM-only (`"type": "module"`), so the config must be ESM-compatible;
   Node 22.23 for everything except Documenso commands (`$NODE24`); the guard and the server-side
   read-only settings are both required (Task 1 plan §2.6).
@@ -287,8 +298,9 @@ different runtimes); docker compose files of our own (harness owns stacks).
    else the harness-seeded `CAL_API_KEY` from env. Never print or commit it. (D6)
 3. **Medusa payment (Task 3).** P2-MED-CON-001 completes carts with the system payment provider.
    Stripe is Phase 2.
-4. **Required checks.** `check` and `unit` become required after Task 1 merges. Each product job
-   (`med-api`, `doc-api`, `tw-api`, `cal-api`) becomes required after two green runs on `main`.
+4. **Required checks.** `check` and `unit` become required after Task 1 merges. `db-guard` (Task 1)
+   and each product job (`med-api`, `doc-api`, `tw-api`, `cal-api`) become required after two green
+   runs on `main`.
    Jayami adds them to the Main ruleset; agents only report the check names. (D10, Tasks 1, 3–7)
 5. **Harness `v0.3.0`** (built in the harness repo, not here) adds:
    - Cal: API v2 on 5555 with Redis.

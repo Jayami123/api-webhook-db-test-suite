@@ -37,7 +37,9 @@ workflow `.github/workflows/p2-api.yml` → `.github/workflows/api.yml`.
 
 ## 1. Header
 
-- Probe date: 2026-10-21, this Claude Code cloud VM. Node after `export PATH="/usr/local/bin:$PATH"`:
+- Probe date: 2026-10-20 (UTC; the file name carries the planned build date 2026-10-21), this
+  Claude Code cloud VM. Revised the same day with Jayami's answers (§19): db-guard job (D14), 7-day
+  release cooldown (D13), `node:test` confirmed (D2). Node after `export PATH="/usr/local/bin:$PATH"`:
   **v22.23.3** (`/usr/local/bin/node`), npm **10.9.9**. Node 24 (Documenso only):
   `/opt/node24/bin/node` **v24.22.0**. `.nvmrc` is `22`.
 - `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers` and `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` are preset
@@ -45,9 +47,10 @@ workflow `.github/workflows/p2-api.yml` → `.github/workflows/api.yml`.
 - All probe code ran in a scratch directory outside the repo. Nothing was written to the repo, the
   forks or the harness. One throwaway `postgres:15` container (not a product) was started for the
   pg probe and removed (`docker rm -f`).
-- Every code block in §8 was built, linted, formatted, typechecked and unit-tested in that scratch
-  project with the exact pins in D4: `npm run check` → exit 0, **87 tests, 87 pass, 0 fail**,
-  6.6 s wall.
+- Every code block in §8 was built, linted, formatted, typechecked and unit-tested in a fresh
+  scratch project installed with the D4 pins under the D13 cooldown (`npm install --before=…`):
+  `npm run check` → exit 0, **87 tests, 87 pass, 0 fail**. `npm run test:db` against a throwaway
+  `postgres:15` → **7 tests, 7 pass, 0 fail**, twice in a row on the same database.
 
 ## 2. Probe findings (required; no guessed values)
 
@@ -72,41 +75,42 @@ v22.23.3
   --test-reporter=junit --test-reporter-destination=results/unit-junit.xml` → 87 `<testcase>`
   entries in the XML.
 
-### 2.2 Dependency versions (npm registry, 2026-10-21)
+### 2.2 Dependency versions (npm registry, 2026-10-20; cooldown cutoff 2026-10-13T14:03:43Z)
 
-| Package | Latest stable | Published (UTC) | Pinned in D4 | Note |
-|---|---|---|---|---|
-| `@playwright/test` | 1.64.1 | 2026-10-14 | 1.64.1 | same as P6 |
-| `typescript` | 7.0.2 | | **6.0.3** (2026-04-16) | `typescript-eslint@8.72.0` peer is `typescript >=4.8.4 <6.1.0` |
-| `@types/node` | 26.6.5 | | **22.20.5** (2026-10-01) | latest 22.x, matches Node 22 |
-| `eslint` | 10.13.0 | 2026-10-16 | 10.13.0 | engines `^20.19.0 \|\| ^22.13.0 \|\| >=24` |
-| `@eslint/js` | 10.0.1 | 2026-02-06 | 10.0.1 | |
-| `typescript-eslint` | 8.72.0 | 2026-10-19 | 8.72.0 | peer `eslint ^8.57 \|\| ^9 \|\| ^10` |
-| `eslint-config-prettier` | 10.1.8 | 2025-07-18 | 10.1.8 | |
-| `globals` | 17.13.0 | 2026-10-01 | 17.13.0 | |
-| `prettier` | 3.9.10 | 2026-10-10 | 3.9.10 | same as P6 |
-| `pg` | 8.23.1 | 2026-09-30 | 8.23.1 | same as P6 |
-| `@types/pg` | 8.23.1 | 2026-08-17 | 8.23.1 | does not declare `queryMode` (see 2.6) |
-| `ajv` | 8.20.0 | 2026-04-24 | 8.20.0 | |
-| `ajv-formats` | 3.0.1 | 2024-03-30 | 3.0.1 | peer `ajv ^8` |
-| `@apidevtools/swagger-parser` | 13.1.0 | 2026-09-20 | 13.1.0 | engines `node >=22.19.0`; peer `openapi-types >=7` |
-| `openapi-types` | 12.1.3 | 2023-05-24 | 12.1.3 | |
-| `zod` | 4.6.7 | 2026-10-12 | 4.6.7 | |
-| `vitest` | 5.0.5 | 2026-10-15 | not used | see D2 |
+| Package | Latest stable | Latest published (UTC) | Pinned in D4 | Pin published (UTC) | Note |
+|---|---|---|---|---|---|
+| `@playwright/test` | 1.64.1 | 2026-10-14 | **1.64.0** | 2026-10-07 | 1.64.1 is 6 days old (D13); P6 uses 1.64.1 |
+| `typescript` | 7.0.2 | | **6.0.3** | 2026-04-16 | `typescript-eslint@8.71.2` peer is `typescript >=4.8.4 <6.1.0` |
+| `@types/node` | 26.6.5 | | **22.20.5** | 2026-10-01 | latest 22.x, matches Node 22 |
+| `eslint` | 10.13.0 | 2026-10-16 | **10.12.0** | 2026-10-02 | 10.13.0 is 4 days old (D13); engines `^20.19.0 \|\| ^22.13.0 \|\| >=24` |
+| `@eslint/js` | 10.0.1 | 2026-02-06 | 10.0.1 | 2026-02-06 | |
+| `typescript-eslint` | 8.72.0 | 2026-10-19 | **8.71.2** | 2026-10-12 | 8.72.0 is 1 day old (D13); peer `eslint ^8.57 \|\| ^9 \|\| ^10` |
+| `eslint-config-prettier` | 10.1.8 | 2025-07-18 | 10.1.8 | 2025-07-18 | |
+| `globals` | 17.13.0 | 2026-10-01 | 17.13.0 | 2026-10-01 | |
+| `prettier` | 3.9.10 | 2026-10-10 | 3.9.10 | 2026-10-10 | same as P6 |
+| `pg` | 8.23.1 | 2026-09-30 | 8.23.1 | 2026-09-30 | same as P6 |
+| `@types/pg` | 8.23.1 | 2026-08-17 | 8.23.1 | 2026-08-17 | does not declare `queryMode` (see 2.6) |
+| `ajv` | 8.20.0 | 2026-04-24 | 8.20.0 | 2026-04-24 | |
+| `ajv-formats` | 3.0.1 | 2024-03-30 | 3.0.1 | 2024-03-30 | peer `ajv ^8` |
+| `@apidevtools/swagger-parser` | 13.1.0 | 2026-09-20 | 13.1.0 | 2026-09-20 | engines `node >=22.19.0`; peer `openapi-types >=7` |
+| `openapi-types` | 12.1.3 | 2023-05-24 | 12.1.3 | 2023-05-24 | |
+| `zod` | 4.6.7 | 2026-10-12 | 4.6.7 | 2026-10-12 | 8 days old: inside the rule |
+| `vitest` | 5.0.5 | 2026-10-15 | not used | | see D2 |
 
-`npm install --save-exact` of the pinned set: 14.4 s, `found 0 vulnerabilities`, no peer warnings.
+`npm install --before=2026-10-13T14:03:43Z --save-exact` of the pinned set: `found 0 vulnerabilities`,
+no peer warnings (the first, pre-cooldown pin set also installed cleanly in 14.4 s).
 Adding `qa-portfolio-harness@github:Jayami123/qa-portfolio-harness#v0.2.11`: 8.5 s; lockfile
 `resolved` is `git+ssh://git@github.com/Jayami123/qa-portfolio-harness.git#f96038f…`, the same form
 P6 uses in CI. `rm -rf node_modules && npm ci`: 8.5 s.
 
 ### 2.3 Playwright with zero browsers
 
-- `@playwright/test`, `playwright` and `playwright-core` 1.64.1 have **no install scripts**
+- `@playwright/test`, `playwright` and `playwright-core` 1.64.1 **and 1.64.0** (rechecked with the D4 pin) have **no install scripts**
   (`scripts: {}`), so `npm ci` never downloads a browser. `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` stays
   in CI as a belt-and-braces setting; no `.npmrc` is needed.
 - With `PLAYWRIGHT_BROWSERS_PATH` pointing at an **empty** directory, an API test using the
   `request` fixture against a local `node:http` server passed: `1 passed (720ms)`; the directory
-  stayed empty.
+  stayed empty. Rechecked with 1.64.0: `1 passed (819ms)`, directory still empty.
 - A test that asks for `page` fails loudly: `Error: browserType.launch: Executable doesn't exist at
   …/chromium_headless_shell-1248/…`. So an accidental browser test cannot pass silently.
 - Zero test files: `playwright test --list` → `Error: No tests found`, exit **1**. With
@@ -174,16 +178,19 @@ Pool built with `options: "-c default_transaction_read_only=on -c statement_time
 | after that: `BEGIN TRANSACTION READ ONLY; CREATE TABLE z …` | `25006` (explicit READ ONLY transaction still holds) |
 | in a READ ONLY txn: `set_config('transaction_read_only','off',true)` | `25001 transaction read-write mode must be set before any query` |
 | **`EXPLAIN ANALYZE CREATE TABLE t7 AS SELECT 1`** | **OK, table created** (session read-only) |
-| **`BEGIN READ ONLY; EXPLAIN ANALYZE CREATE TABLE t8 AS SELECT 1`** | **OK, table created** |
+| **`BEGIN READ ONLY; EXPLAIN ANALYZE CREATE TABLE t8 AS SELECT 1; COMMIT`** | **OK, table created** |
+| same through the oracle path (`BEGIN READ ONLY` … `ROLLBACK`, guard off; §2.10) | **runs without error, table not persisted** |
 | `EXPLAIN ANALYZE SELECT 1 INTO t9`, `EXPLAIN ANALYZE CREATE MATERIALIZED VIEW mv1 …` | **OK, created** |
 | plain `CREATE TABLE t6 AS SELECT 1` | `25006` |
 | `nextval`, `setval` | `25006` |
 | `pg_notify('c','x')`, `pg_advisory_xact_lock(1)`, `lo_create(0)` (→ `16405`), `txid_current()` | **OK** (side effects despite read-only) |
 
-Conclusions used in D5: the server setting alone is **not** enough. `EXPLAIN ANALYZE` of
-`CREATE TABLE AS` / `SELECT INTO` / `CREATE MATERIALIZED VIEW` writes through both the session and
-the explicit READ ONLY transaction on 15.19, `set_config` can turn the session default off, and some
-functions have side effects. The client guard is a real control, not decoration.
+Conclusions used in D5: the read-only settings alone are **not** enough. `EXPLAIN ANALYZE` of
+`CREATE TABLE AS` / `SELECT INTO` / `CREATE MATERIALIZED VIEW` is not refused by either the session
+default or the explicit READ ONLY transaction on 15.19 (it persists if the transaction commits);
+`set_config` can turn the session default off; some functions have side effects. The oracle's
+per-query `ROLLBACK` discards the table write, and the client guard refuses the statement before it
+runs at all. Both stay.
 
 ### 2.7 Lint and format
 
@@ -208,6 +215,36 @@ functions have side effects. The client guard is a real control, not decoration.
 | `actions/checkout` | v7.0.1 | `3d3c42e5aac5ba805825da76410c181273ba90b1` (already used by `env-check.yml`) |
 | `actions/setup-node` | v7.1.0 | `949feb2413d6458794dcd2491c4babbbce0c15c1` (P6 uses it) |
 | `actions/upload-artifact` | v7.0.2 | `cf430e030ddbb5b0abf93d22962f4752f3646cd9` |
+
+### 2.9 Release cooldown (D13)
+
+- Cutoff = probe time minus 7 days: `date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ` →
+  `2026-10-13T14:03:43Z`.
+- `npm install --before=<cutoff>` with the D4 pins → lockfile with **137** registry packages (the
+  harness git dependency is not dated). Every one was published before the cutoff; the newest are
+  `typescript-eslint` and `@typescript-eslint/*` 8.71.2 (2026-10-12T17:1x). Check: `npm view <pkg>
+  time` for each `name@version` in `package-lock.json`, filtered with `awk '$1 > cutoff'` → no rows.
+- The same `package.json` installed **without** `--before` resolves newer transitive versions:
+  `js-yaml` 5.4.3 → **5.5.0**, `fast-uri` 3.1.8 → **3.1.9**, `argparse` 2.0.1 → **3.0.3**,
+  `@typescript-eslint/eslint-plugin/node_modules/ignore` 7.0.12 → **7.0.13**. So exact top-level
+  pins are not enough; `--before` is what applies the cooldown to the whole tree.
+- `npm view <pkg> version --before=<cutoff>` ignores `--before` (it printed `eslint` 10.13.0). Use
+  `npm view <pkg> time --json` to check dates, not `npm view --before`.
+
+### 2.10 db-guard test against a real `postgres:15` (throwaway container, removed afterwards)
+
+- `P2_DB_GUARD_URL` unset → `TEST BUG: set P2_DB_GUARD_URL to a throwaway loopback postgres:15`.
+- With the URL: **7 tests, 7 pass**, and again 7/7 on the same database (no leftovers make a rerun
+  fail). Assertions: server version `15xxxx`; session `default_transaction_read_only=on`,
+  `transaction_read_only=on`, `statement_timeout=300ms`, `application_name=p2-qa-oracle-db-guard`;
+  `CREATE TABLE` → `25006`; `SELECT 1; CREATE TABLE …` → `42601`; `pg_sleep(2)` → `57014`;
+  `set_config(…'off'…)` then `CREATE TABLE` → still `25006`; `EXPLAIN ANALYZE CREATE TABLE … AS`
+  with the guard off → plan rows returned, table **not** persisted (ROLLBACK); with the guard on →
+  `ReadOnlyGuardError` reason `not-select`, table not created.
+- The first draft of the baseline expected the table to exist (from the psql `COMMIT` probe) and
+  failed; that is how the ROLLBACK behaviour in §2.6 was found.
+- ESLint `no-restricted-syntax` on `unsafeDisableGuardForServerTests` outside `tests/db/**` fires:
+  `Only tests/db/** may disable the read-only guard`.
 
 ## 3. Resolved decisions
 
@@ -236,12 +273,12 @@ Each decision leads with the industry-standard approach, then the rejected alter
   Rejected: Biome (P1/P6 use ESLint + Prettier; parity wins); `recommended` instead of
   `strictTypeChecked` (misses unsafe `any` flows in clients later); Prettier for prose docs (§2.7).
 
-- **D4 Dependency pins.** Exact versions (`--save-exact`), latest stable that satisfies every peer
-  range (table §2.2): TypeScript **6.0.3** because `typescript-eslint` does not support 7.x yet.
+- **D4 Dependency pins.** Exact versions (`--save-exact`), the newest stable that satisfies every
+  peer range **and** the D13 cooldown (table §2.2): `@playwright/test` 1.64.0, `eslint` 10.12.0,
+  `typescript-eslint` 8.71.2, TypeScript **6.0.3** because `typescript-eslint` does not support 7.x yet.
   Everything is a `devDependency` except `qa-portfolio-harness` (runtime dependency, same as P6).
   Lockfile committed; CI uses `npm ci`. Rejected: caret ranges (lockfile still pins, but
   `package.json` stops documenting what was tested); TypeScript 7.0.2 (peer conflict).
-  Release-age question: OQ2.
 
 - **D5 Read-only DB oracle, five layers.** Industry standard is a read-only role or a read-only
   transaction at the server. We cannot add a role (harness owns the databases), so:
@@ -255,14 +292,16 @@ Each decision leads with the industry-standard approach, then the rejected alter
   2. **Extended protocol** (`queryMode: "extended"`): the server refuses a second statement
      (`42601`).
   3. **`BEGIN TRANSACTION READ ONLY` … `ROLLBACK`** around every query: survives a session default
-     flipped by `set_config` (§2.6).
+     flipped by `set_config`, and the `ROLLBACK` (never `COMMIT`) discards anything that slipped
+     through, such as the `EXPLAIN ANALYZE CREATE TABLE AS` write (§2.6, §2.10).
   4. **Session defaults** in the startup packet: `default_transaction_read_only=on`,
      `statement_timeout`, `idle_in_transaction_session_timeout`.
   5. **Errors** carry product + SQLSTATE + server message, never the connection string; a failed
      client is destroyed (`release(err)`), not returned to the pool.
 
   Rejected: guard only (the server must also refuse); server settings only (§2.6 shows
-  `EXPLAIN ANALYZE CREATE TABLE AS` writing through both); a dedicated `qa_readonly` role
+  `EXPLAIN ANALYZE CREATE TABLE AS` is not refused by either); `COMMIT` at the end of each query
+  (would persist that write); a dedicated `qa_readonly` role
   (needs DDL on harness databases; can be proposed to the harness later); a full SQL parser such
   as `pgsql-ast-parser` (extra dependency with its own dialect gaps; the guard errs on rejecting).
   Known false positives, accepted: a literal containing `--`, unquoted identifiers that are keywords
@@ -311,13 +350,14 @@ Each decision leads with the industry-standard approach, then the rejected alter
   a decision per product); retries (hide oracle flakes); regex `testMatch` (Windows path
   separators; globs are portable).
 
-- **D11 CI.** New workflow `.github/workflows/api.yml`, name `api`, jobs **`check`** and
-  **`unit`**, on `pull_request`, `push` to `main` and `workflow_dispatch`; `permissions: contents: read`;
+- **D11 CI.** New workflow `.github/workflows/api.yml`, name `api`, jobs **`check`**, **`unit`**
+  and **`db-guard`** (D14), on `pull_request`, `push` to `main` and `workflow_dispatch`; `permissions: contents: read`;
   `concurrency` cancels superseded runs; actions pinned by SHA (§2.8); `persist-credentials: false`;
   Node from `.nvmrc` with npm cache; `npm ci`; `timeout-minutes: 10`. `check` = format, lint,
   typecheck, project listing proof; `unit` = `node:test` with JUnit artefact. Units run once in CI
-  (in `unit`), while local `npm run check` runs all four. After Jayami approves this plan and Task 1
-  merges, `check` and `unit` become required checks; Jayami adds them to the Main ruleset.
+  (in `unit`), while local `npm run check` runs all four. After Task 1 merges, `check` and `unit`
+  become required checks; `db-guard` starts non-required and joins them after two green `main`
+  runs. Jayami adds all of them to the Main ruleset.
   Rejected: one job (one required check hides which gate failed); running units in both jobs;
   `ubuntu-latest` (P6 pins `ubuntu-24.04`).
 
@@ -325,6 +365,41 @@ Each decision leads with the industry-standard approach, then the rejected alter
   `tw` (master plan §2 `src/clients/{cal,doc,med,tw}.ts`); `ProductId` in code uses full names
   (`cal`, `documenso`, `medusa`, `twenty`) to match the harness and env variable names. Rejected:
   full names for folders (diverges from the master plan's client file names).
+
+- **D13 Seven-day release cooldown for dependencies (supply-chain hygiene).** Industry practice is
+  a minimum release age before adopting a new version (Renovate `minimumReleaseAge`, npm/pnpm
+  release-age settings), because most malicious or broken publishes are found and pulled within
+  days. Rule for this repo, for Task 1 and every later bump:
+  1. A version may be pinned only if it was published at least **7 × 24 h** before the moment of
+     pinning (UTC, from `npm view <pkg> time --json`).
+  2. Pick the newest version that meets rule 1 **and** every peer range.
+  3. Install with `npm install --before="$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)"` so
+     transitive dependencies obey the same cutoff (§2.9 shows exact pins alone do not).
+  4. Record the cutoff in the PR description. `npm ci` from the committed lockfile needs nothing
+     extra.
+  5. Exceptions: our own git dependency (`qa-portfolio-harness` tag) is exempt. A version younger
+     than 7 days only with Jayami's explicit approval, for a published security advisory, noted in
+     the PR.
+
+  Automated bumps (Renovate or Dependabot with `minimumReleaseAge`) are deferred. Rejected: latest
+  stable on the day (first draft; `typescript-eslint` 8.72.0 was 1 day old); a 14- or 30-day
+  window (slower security fixes for little gain in a test repo); top-level pins without `--before`
+  (transitive drift, §2.9).
+
+- **D14 Live proof of the server-side layers (`db-guard`).** Industry standard for code that
+  depends on database behaviour is an integration test against the real engine in CI, here a
+  GitHub Actions `postgres:15` service container (not a product, not the harness). The test
+  `tests/db/read-only-server.db.test.ts` runs the same `createReadOnlyDb` path, once with the guard
+  switched off (`unsafeDisableGuardForServerTests: true`, allowed by ESLint only under `tests/db/**`)
+  to prove the server refuses on its own (`25006`, `42601`, `57014`, `set_config` flip still `25006`,
+  `EXPLAIN ANALYZE` gap discarded by `ROLLBACK`), and once with the guard on to prove it rejects
+  `EXPLAIN ANALYZE CREATE TABLE … AS` before the server sees it. It never writes through the guarded
+  oracle, needs no setup DDL, and is rerunnable on the same database. `npm run test:db`, run with
+  `--test-concurrency=1`, needs `P2_DB_GUARD_URL` (loopback only); it is **not** part of
+  `npm run check` or `npm run unit`, so `check` stays product- and Docker-free. Rejected:
+  Testcontainers (extra dependency and Docker-in-Node for one container the runner already
+  provides); running it against a harness product database (product DBs are oracles, never test
+  targets for write attempts); folding it into `unit` (units must run without a database).
 
 ## 4. Goal and scope
 
@@ -337,7 +412,8 @@ Each decision leads with the industry-standard approach, then the rejected alter
 - Unit tests for each module, including guard bypass attempts and tiny local OAS fixtures
   (3.0 YAML, 3.1 JSON, Swagger 2.0 negative)
 - `playwright.config.ts` with `cal-api`, `doc-api`, `med-api`, `tw-api`, no browsers (D10)
-- `.github/workflows/api.yml` with `check` and `unit` (D11)
+- `tests/db/read-only-server.db.test.ts` + `npm run test:db` (D14)
+- `.github/workflows/api.yml` with `check`, `unit` and `db-guard` (D11, D14)
 - `.env.example`: add `P2_RUN_ID=` and `P2_DB_STATEMENT_TIMEOUT_MS=` (names and comments only)
 - `README.md`: a short "Develop" section with the commands
 
@@ -352,7 +428,7 @@ come in Tasks 3–6; the receiver and signers in Task 2. No Playwright spec is a
 
 ## 6. Extra risky checks (inside the framework, required)
 
-All are unit tests (no product, no database):
+All are unit tests (no product, no database) except the last bullet:
 
 - **Guard bypasses** (§8.6 test table, 42 reject rows): comment hiding (`SELECT 1 -- ; DROP`,
   `/**/DELETE`), multi-statement (`SELECT 1; DROP TABLE t`, `SELECT 1;;`), `EXPLAIN ANALYZE CREATE
@@ -373,6 +449,8 @@ All are unit tests (no product, no database):
   normalisation, unknown format → warning, `4XX` and `default` fallback, circular schema, validator
   identity cache, spec cache, 3.1 type arrays, `assertValid` message, lookup failures, Swagger 2.0
   rejected.
+- **Server-side layers, live** (`db-guard`, D14): `25006`, `42601`, `57014`, `set_config` flip,
+  `EXPLAIN ANALYZE` gap discarded by `ROLLBACK`, guard rejection of `EXPLAIN ANALYZE`.
 
 ## 7. Architecture (every file touched, one responsibility each)
 
@@ -386,14 +464,16 @@ New:
 - `src/run/prefix.ts` — run prefix, scoped names, LIKE escaping
 - `src/env.ts` — `ProductId`, validated env, `apiBaseUrl`, `dbUrl`, `dbStatementTimeoutMs`
 - `src/db/select-guard.ts` — `assertSelectOnly`, `ReadOnlyGuardError`
-- `src/db/pg.ts` — `createReadOnlyDb`, `readOnlyDb`, `closeAllReadOnlyDbs`, `DbQueryError`
+- `src/db/pg.ts` — `createReadOnlyDb`, `readOnlyDb`, `closeAllReadOnlyDbs`, `DbQueryError`,
+  `OracleLabel`
 - `src/contracts/oas.ts` — `loadSpec`, `ContractSpec`, `ContractError`, `formatAjvErrors`,
   `normaliseOas30Exclusives`
 - `tests/unit/run/prefix.test.ts`, `tests/unit/env.test.ts`, `tests/unit/db/select-guard.test.ts`,
   `tests/unit/db/pg.test.ts`, `tests/unit/contracts/oas.test.ts`
 - `tests/fixtures/oas/mini-3.0.yaml`, `tests/fixtures/oas/mini-3.1.json`,
   `tests/fixtures/oas/swagger-2.0.json`
-- `.github/workflows/api.yml` — `check` + `unit`
+- `tests/db/read-only-server.db.test.ts` — live server-layer proof (D14)
+- `.github/workflows/api.yml` — `check` + `unit` + `db-guard`
 
 Modified:
 
@@ -438,6 +518,7 @@ differs from §14, stop and report.
     "typecheck": "tsc -p tsconfig.json",
     "unit": "node --test \"tests/unit/**/*.test.ts\"",
     "unit:ci": "node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=results/unit-junit.xml \"tests/unit/**/*.test.ts\"",
+    "test:db": "node --test --test-concurrency=1 \"tests/db/**/*.db.test.ts\"",
     "check:static": "npm run format:check && npm run lint && npm run typecheck",
     "check": "npm run check:static && npm run unit",
     "list:api": "playwright test --list --pass-with-no-tests",
@@ -449,19 +530,19 @@ differs from §14, stop and report.
   "devDependencies": {
     "@apidevtools/swagger-parser": "13.1.0",
     "@eslint/js": "10.0.1",
-    "@playwright/test": "1.64.1",
+    "@playwright/test": "1.64.0",
     "@types/node": "22.20.5",
     "@types/pg": "8.23.1",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
-    "eslint": "10.13.0",
+    "eslint": "10.12.0",
     "eslint-config-prettier": "10.1.8",
     "globals": "17.13.0",
     "openapi-types": "12.1.3",
     "pg": "8.23.1",
     "prettier": "3.9.10",
     "typescript": "6.0.3",
-    "typescript-eslint": "8.72.0",
+    "typescript-eslint": "8.71.2",
     "zod": "4.6.7"
   }
 }
@@ -545,6 +626,19 @@ export default tseslint.config(
       "no-restricted-properties": ["error", { property: "waitForTimeout", message: NO_SLEEP }],
     },
   },
+  {
+    files: ["**/*.ts"],
+    ignores: ["tests/db/**"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "Property[key.name='unsafeDisableGuardForServerTests']",
+          message: "Only tests/db/** may disable the read-only guard.",
+        },
+      ],
+    },
+  },
   { files: ["**/*.mjs"], ...tseslint.configs.disableTypeChecked },
   prettier,
 );
@@ -566,7 +660,7 @@ playwright-report/
 results/
 receiver-logs/
 # Prose and generated docs keep their own wrapping. Prettier also rewrites GIT_AUTHOR_* to
-# GIT_AUTHOR__ in AGENTS.md (probe 2026-10-21), which changes its meaning.
+# GIT_AUTHOR__ in AGENTS.md (probe 2026-10-20), which changes its meaning.
 AGENTS.md
 docs/
 ```
@@ -1094,10 +1188,13 @@ import pg from "pg";
 import { dbStatementTimeoutMs, dbUrl, type ProductId } from "../env.ts";
 import { assertSelectOnly } from "./select-guard.ts";
 
+/** A product, or the throwaway CI database the db-guard job proves the server layers against. */
+export type OracleLabel = ProductId | "db-guard";
+
 export type SqlParam = string | number | boolean | null | Date;
 
 export interface ReadOnlyDb {
-  readonly product: ProductId;
+  readonly product: OracleLabel;
   /** One guarded SELECT inside its own READ ONLY transaction. Rows are plain objects. */
   select<Row extends Record<string, unknown>>(
     sql: string,
@@ -1138,9 +1235,9 @@ const defaultPoolFactory: PoolFactory = (config) => {
 
 export class DbQueryError extends Error {
   override readonly name = "DbQueryError";
-  readonly product: ProductId;
+  readonly product: OracleLabel;
   readonly sqlstate: string | undefined;
-  constructor(product: ProductId, sqlstate: string | undefined, message: string) {
+  constructor(product: OracleLabel, sqlstate: string | undefined, message: string) {
     super(`${product} oracle query failed${sqlstate ? ` (SQLSTATE ${sqlstate})` : ""}: ${message}`);
     this.product = product;
     this.sqlstate = sqlstate;
@@ -1160,9 +1257,14 @@ export interface ReadOnlyDbOptions {
   readonly connectionString: string;
   readonly statementTimeoutMs: number;
   readonly poolFactory?: PoolFactory;
+  /**
+   * Only tests/db/** may set this (ESLint enforces it): it skips assertSelectOnly so the db-guard
+   * job can prove that the server-side layers refuse writes on their own.
+   */
+  readonly unsafeDisableGuardForServerTests?: true;
 }
 
-export function createReadOnlyDb(product: ProductId, options: ReadOnlyDbOptions): ReadOnlyDb {
+export function createReadOnlyDb(product: OracleLabel, options: ReadOnlyDbOptions): ReadOnlyDb {
   const pool = (options.poolFactory ?? defaultPoolFactory)({
     connectionString: options.connectionString,
     max: 2,
@@ -1180,7 +1282,7 @@ export function createReadOnlyDb(product: ProductId, options: ReadOnlyDbOptions)
       params: readonly SqlParam[] = [],
     ): Promise<Row[]> {
       if (closed) throw new Error(`TEST BUG: ${product} oracle used after close()`);
-      assertSelectOnly(sql);
+      if (options.unsafeDisableGuardForServerTests !== true) assertSelectOnly(sql);
       const client = await pool.connect();
       let broken: Error | undefined;
       try {
@@ -1959,7 +2061,118 @@ describe("OAS contract loader", () => {
 });
 ```
 
-### 8.9 `playwright.config.ts`
+### 8.9 `tests/db/read-only-server.db.test.ts`
+
+```ts
+import assert from "node:assert/strict";
+import { after, describe, test } from "node:test";
+import { DbQueryError, createReadOnlyDb } from "../../src/db/pg.ts";
+import { ReadOnlyGuardError } from "../../src/db/select-guard.ts";
+
+// Runs only in the db-guard CI job (or locally against a throwaway postgres:15). Never a product DB.
+const url = process.env["P2_DB_GUARD_URL"]?.trim() ?? "";
+if (!/^postgres(ql)?:\/\/[^@]*@(127\.0\.0\.1|localhost)(:\d+)?\//.test(url)) {
+  throw new Error(
+    "TEST BUG: set P2_DB_GUARD_URL to a throwaway loopback postgres:15 (see api.yml db-guard)",
+  );
+}
+
+const STATEMENT_TIMEOUT_MS = 300;
+// Same code path as product oracles, with the client guard switched off to test the server alone.
+const server = createReadOnlyDb("db-guard", {
+  connectionString: url,
+  statementTimeoutMs: STATEMENT_TIMEOUT_MS,
+  unsafeDisableGuardForServerTests: true,
+});
+const guarded = createReadOnlyDb("db-guard", {
+  connectionString: url,
+  statementTimeoutMs: STATEMENT_TIMEOUT_MS,
+});
+
+after(async () => {
+  await Promise.all([server.close(), guarded.close()]);
+});
+
+const sqlstate = (expected: string) => (error: unknown) =>
+  error instanceof DbQueryError && error.sqlstate === expected && !error.message.includes(url);
+
+async function tableExists(name: string): Promise<boolean> {
+  const rows = await guarded.select<{ t: string | null }>("SELECT to_regclass($1)::text AS t", [
+    name,
+  ]);
+  return rows[0]?.t !== null && rows[0]?.t !== undefined;
+}
+
+describe("read-only oracle against a real postgres:15", () => {
+  test("server is Postgres 15 and the session is read-only with the timeout", async () => {
+    const rows = await guarded.select<{
+      v: string;
+      ro: string;
+      tro: string;
+      st: string;
+      app: string;
+    }>(
+      `SELECT current_setting('server_version_num') AS v,
+              current_setting('default_transaction_read_only') AS ro,
+              current_setting('transaction_read_only') AS tro,
+              current_setting('statement_timeout') AS st,
+              current_setting('application_name') AS app`,
+    );
+    const row = rows[0];
+    assert.ok(row);
+    assert.match(row.v, /^15\d{4}$/);
+    assert.deepEqual(
+      [row.ro, row.tro, row.st, row.app],
+      ["on", "on", "300ms", "p2-qa-oracle-db-guard"],
+    );
+  });
+
+  test("a write is refused by the server with SQLSTATE 25006", async () => {
+    await assert.rejects(server.select("CREATE TABLE p2_guard_write(x int)"), sqlstate("25006"));
+    assert.equal(await tableExists("p2_guard_write"), false);
+  });
+
+  test("a second statement is refused by the server with SQLSTATE 42601", async () => {
+    await assert.rejects(
+      server.select("SELECT 1; CREATE TABLE p2_guard_multi(x int)"),
+      sqlstate("42601"),
+    );
+    assert.equal(await tableExists("p2_guard_multi"), false);
+  });
+
+  test("a statement past statement_timeout is cancelled with SQLSTATE 57014", async () => {
+    await assert.rejects(server.select("SELECT pg_sleep(2)"), sqlstate("57014"));
+  });
+
+  test("set_config cannot reopen writes: the per-query READ ONLY transaction still refuses", async () => {
+    await server.select("SELECT set_config('default_transaction_read_only', 'off', false)");
+    await assert.rejects(server.select("CREATE TABLE p2_guard_flip(x int)"), sqlstate("25006"));
+    assert.equal(await tableExists("p2_guard_flip"), false);
+  });
+
+  test("baseline: read-only settings do not refuse EXPLAIN ANALYZE CREATE TABLE AS; only ROLLBACK discards it", async () => {
+    const plan = await server.select<{ "QUERY PLAN": string }>(
+      "EXPLAIN ANALYZE CREATE TABLE p2_guard_gap AS SELECT 1 AS x",
+    );
+    assert.ok(plan.length > 0, "the server refused it: Postgres closed the gap, update plan D5");
+    assert.equal(
+      await tableExists("p2_guard_gap"),
+      false,
+      "the per-query ROLLBACK must discard the write",
+    );
+  });
+
+  test("the guard rejects EXPLAIN ANALYZE CREATE TABLE AS before it reaches the server", async () => {
+    await assert.rejects(
+      guarded.select("EXPLAIN ANALYZE CREATE TABLE p2_guard_blocked AS SELECT 1 AS x"),
+      (error: unknown) => error instanceof ReadOnlyGuardError && error.reason === "not-select",
+    );
+    assert.equal(await tableExists("p2_guard_blocked"), false);
+  });
+});
+```
+
+### 8.9a `playwright.config.ts`
 
 ```ts
 import { existsSync } from "node:fs";
@@ -2090,6 +2303,40 @@ jobs:
           path: results/unit-junit.xml
           if-no-files-found: warn
           retention-days: 7
+
+  # Proves the server-side read-only layers on a real Postgres (plan D5, D14). Not a product.
+  # Not required at first; joins check and unit in the Main ruleset after two green main runs.
+  db-guard:
+    name: db-guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          # Throwaway service container that lives only for this job; not a secret.
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      P2_DB_GUARD_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Read-only layers against postgres:15 (25006, 42601, 57014, EXPLAIN ANALYZE)
+        run: npm run test:db
 ```
 
 ## 9. Oracle design
@@ -2127,12 +2374,14 @@ already say `TEST BUG` (guard, env, prefix, use after close).
 
 ## 12. CI impact
 
-- New workflow `api` with jobs `check` and `unit` (§8.10). No Docker, no product, no secrets.
+- New workflow `api` with jobs `check`, `unit` and `db-guard` (§8.10). No product, no harness, no
+  secrets. `db-guard` uses a GitHub Actions `postgres:15` service container only.
 - `env-check.yml` unchanged and still runs.
 - `scripts/cloud-install.sh` starts running `npm ci` once `package-lock.json` exists (its existing
   `if [ -f package-lock.json ]`), so cloud sessions get `node_modules` automatically.
-- Required checks: after this plan is approved and Task 1 merges, Jayami adds `check` and `unit`
-  to the Main ruleset (roadmap §7 Q4). Product jobs join after two green `main` runs.
+- Required checks: after Task 1 merges, Jayami adds `check` and `unit` to the Main ruleset;
+  `db-guard` joins after two green `main` runs (roadmap §7 Q4). Product jobs follow the same
+  two-green-runs rule.
 - Expected runtime per job on `ubuntu-24.04`: under 2 minutes (local `npm ci` 8.5 s,
   `npm run check` 6.6 s).
 
@@ -2141,14 +2390,17 @@ already say `TEST BUG` (guard, env, prefix, use after close).
 | Risk | Probe / mitigation |
 |---|---|
 | Guard false positives block a legitimate oracle query in Tasks 3–6 | The error names the reason; rewrite with quoted identifiers or parameters. Never loosen the guard without adding a reject test for the bypass it could allow. |
-| Guard misses a write path not in the deny-lists | Layers 2–4 still apply; the one known server gap (`EXPLAIN ANALYZE … AS`) is blocked by the SELECT/WITH start rule. OQ1 proposes a live CI proof. |
+| Guard misses a write path not in the deny-lists | Layers 2–4 still apply and are proven live by `db-guard`; the one known server gap (`EXPLAIN ANALYZE … AS`) is blocked by the SELECT/WITH start rule and discarded by `ROLLBACK`. |
+| `postgres:15` tag moves to a new minor | `db-guard` asserts `server_version_num` 15xxxx and logs it; a behaviour change fails the job, which is the point. |
+| Someone disables the guard in a product test | ESLint `no-restricted-syntax` outside `tests/db/**` (§2.10). |
 | `queryMode` is undeclared in `@types/pg` 8.23.1 | Local `ExtendedQueryConfig` type; unit test asserts the field is sent. Re-check when `@types/pg` updates. |
 | Large specs slow the first test (Medusa 550 + 829 ms) | Spec and validators cached per worker (D7); `workers: 1`. |
 | Documenso OAS 3.0 boolean exclusives | Normaliser + unit test; Task 4 confirms on the real spec. |
 | Twenty OAS 3.1.1 features beyond the fixture | `Ajv2020` is the 3.1 dialect; Task 5 probes the real spec. |
 | `.nvmrc` is `22` (floats in CI) | Matches P1/P6. CI log prints the resolved Node version; the gate requires ≥ 22.22. |
 | Git dependency fetch from GitHub in CI | Same lockfile form P6 uses in CI (§2.2); a 403/ENOTFOUND is an ENV finding: stop and report. |
-| Very recent pins (`typescript-eslint` 2 days, `eslint` 5 days old) | OQ2. |
+| A later bump forgets the cooldown | D13 rule 4: the PR records the cutoff; reviewers check `npm view <pkg> time`. |
+| Cooldown delays a security fix | D13 rule 5 exception with Jayami's approval. |
 | Windows (Git Bash) for Jayami | Globs quoted and expanded by Node/Playwright, not the shell; no `mkdir -p` in npm scripts. |
 
 ## 14. Build steps (repo root; PATH export first; on any differing output: stop and report, paste it)
@@ -2173,14 +2425,27 @@ blocks, then install (this writes both blocks and the lockfile):
 
 ```bash
 export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-npm install --save-exact "qa-portfolio-harness@github:Jayami123/qa-portfolio-harness#v0.2.11"
-npm install --save-dev --save-exact @playwright/test@1.64.1 typescript@6.0.3 @types/node@22.20.5 \
-  eslint@10.13.0 @eslint/js@10.0.1 typescript-eslint@8.72.0 eslint-config-prettier@10.1.8 \
+CUTOFF="$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)"; echo "cooldown cutoff $CUTOFF"   # D13
+npm install --before="$CUTOFF" --save-exact "qa-portfolio-harness@github:Jayami123/qa-portfolio-harness#v0.2.11"
+npm install --before="$CUTOFF" --save-dev --save-exact @playwright/test@1.64.0 typescript@6.0.3 @types/node@22.20.5 \
+  eslint@10.12.0 @eslint/js@10.0.1 typescript-eslint@8.71.2 eslint-config-prettier@10.1.8 \
   globals@17.13.0 prettier@3.9.10 pg@8.23.1 @types/pg@8.23.1 ajv@8.20.0 ajv-formats@3.0.1 \
   @apidevtools/swagger-parser@13.1.0 openapi-types@12.1.3 zod@4.6.7
 ```
 
-Expected: `found 0 vulnerabilities`, no `ERESOLVE`/peer warnings. Then compare `package.json`
+Expected: `found 0 vulnerabilities`, no `ERESOLVE`/peer warnings. If a pin fails with `ETARGET` /
+`No matching version`, a pinned version is newer than the cutoff: stop and report (do not pick
+another version on your own). Then verify the whole tree meets D13 (prints nothing when it does):
+
+```bash
+node -e 'const l=require("./package-lock.json").packages;for(const[k,v]of Object.entries(l))if(k&&v.resolved&&!v.resolved.startsWith("git"))console.log(k.split("node_modules/").pop()+"@"+v.version)' \
+  | sort -u | while read -r spec; do
+      t="$(npm view "$spec" time --json 2>/dev/null | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>console.log(JSON.parse(d)[process.argv[1]]))' "${spec##*@}")"
+      [[ "$t" > "$CUTOFF" ]] && echo "TOO NEW $t $spec"
+    done
+```
+
+Then compare `package.json`
 with §8.1 (`git diff --no-index` against a copy, or by eye): identical apart from key order npm
 chooses. Write `tsconfig.json`, `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore` (§8.2,
 §8.3).
@@ -2224,6 +2489,21 @@ node --test "tests/unit/db/*.test.ts"   # tests 59, pass 59, fail 0 (53 guard + 
 npm run lint                            # exit 0, no output
 ```
 
+Write `tests/db/read-only-server.db.test.ts` (§8.9) and run it against a throwaway container
+(not a product; remove it afterwards):
+
+```bash
+npm run test:db 2>&1 | grep -m1 "TEST BUG"   # without the URL: refuses to run
+docker run -d --rm --name p2-dbguard -e POSTGRES_PASSWORD=postgres -p 127.0.0.1:55433:5432 postgres:15
+until docker exec p2-dbguard pg_isready -U postgres >/dev/null 2>&1; do sleep 1; done   # local setup only
+P2_DB_GUARD_URL=postgres://postgres:postgres@127.0.0.1:55433/postgres npm run test:db  # tests 7, pass 7, fail 0
+P2_DB_GUARD_URL=postgres://postgres:postgres@127.0.0.1:55433/postgres npm run test:db  # again 7/7
+docker rm -f p2-dbguard
+```
+
+If Docker is unavailable locally, say so in the PR; the `db-guard` CI job is then the first live
+run.
+
 Commit 3.
 
 ### Step 4. Contract loader
@@ -2239,7 +2519,7 @@ Commit 4.
 
 ### Step 5. Playwright config
 
-Write `playwright.config.ts` (§8.9).
+Write `playwright.config.ts` (§8.9a).
 
 ```bash
 npm run list:api
@@ -2295,9 +2575,13 @@ PATH export first. Then:
 6. `git grep -nE "s3cr3t|password@|ghp_|whsec_" -- . ':!tests/unit' ':!docs'` → only the harness
    public default DB URL in `src/env.ts` (`documenso:password@127.0.0.1`, documented as a public
    default); no other match. (`docs/master-plan.html` already names a local Stripe test secret
-   from P1 evidence; it is not part of this diff.)
-7. After push: both `api / check` and `api / unit` green on the PR, and `env-check` green. Paste the
-   run URL and the "Node.js version" line from the setup-node step.
+   from P1 evidence; it is not part of this diff.) `api.yml` has `postgres:postgres` for the
+   throwaway db-guard service container (D14); that is expected.
+7. Step 1's D13 tree check printed no `TOO NEW` line; the cutoff is in the PR description.
+8. Local `npm run test:db` 7/7 twice against a throwaway `postgres:15` (or the reason Docker was
+   unavailable).
+9. After push: `api / check`, `api / unit`, `api / db-guard` and `env-check` all green on the PR.
+   Paste the run URL, the "Node.js version" line from setup-node and the `db-guard` test summary.
 
 ## 16. Commit plan (Conventional, lowercase subjects, explicit paths, never `git add -A`)
 
@@ -2314,13 +2598,16 @@ After approval, on `feat/2026-10-21-p2-framework`:
 2. `feat(run): add run prefix and validated env getters` — `src/run/prefix.ts`, `src/env.ts`,
    `tests/unit/run/prefix.test.ts`, `tests/unit/env.test.ts`, `.env.example`
 3. `feat(db): add read-only pg oracle with select-only guard` — `src/db/select-guard.ts`,
-   `src/db/pg.ts`, `tests/unit/db/select-guard.test.ts`, `tests/unit/db/pg.test.ts`
+   `src/db/pg.ts`, `tests/unit/db/select-guard.test.ts`, `tests/unit/db/pg.test.ts`,
+   `tests/db/read-only-server.db.test.ts`
 4. `feat(contracts): add oas loader with ajv 2020 validators` — `src/contracts/oas.ts`,
    `tests/fixtures/oas/*`, `tests/unit/contracts/oas.test.ts`
 5. `test: add playwright config with four api projects` — `playwright.config.ts`
-6. `ci: add api workflow with check and unit jobs` — `.github/workflows/api.yml`, `README.md`
+6. `ci: add api workflow with check, unit and db-guard jobs` — `.github/workflows/api.yml`,
+   `README.md`
 
-PR title: `feat: p2 framework skeleton` (no product). Keep the environment's
+PR title: `feat: p2 framework skeleton` (no product). PR description includes the D13 cooldown
+cutoff used in Step 1. Keep the environment's
 `GIT_AUTHOR_*`/`GIT_COMMITTER_*`. No Co-Authored-By, no "Generated with", no Claude-Session lines,
 no force-push, no merge by the builder.
 
@@ -2337,11 +2624,14 @@ no force-push, no merge by the builder.
   tokens, fixtures (`src/clients/*`, `src/auth/*`, `src/fixtures/atomic.ts`), no committed product
   specs (`contracts/<product>/`)
 - No receiver or signers (Task 2)
-- No product start/stop, no harness commands, no Docker in CI, no product CI jobs
+- No product start/stop, no harness commands, no product CI jobs; the only container is the
+  `db-guard` `postgres:15` service (D14)
 - No browser download, `page` fixture, `browserName`, page objects, UI assertions
 - No sleeps (`setTimeout`, `waitForTimeout`), no retries, no `workers > 1`
-- No DB writes, no `TRUNCATE`, no read-only role creation, no logging of DB URLs
-- No Vitest, Jest, `tsx`, `dotenv`, SQL parser dependency
+- No DB writes through the guarded oracle, no setup DDL, no `TRUNCATE`, no read-only role creation,
+  no logging of DB URLs; no `unsafeDisableGuardForServerTests` outside `tests/db/**`
+- No Vitest, Jest, `tsx`, `dotenv`, Testcontainers, SQL parser dependency
+- No dependency version younger than 7 days (D13); no Renovate/Dependabot config yet
 - No edits to `AGENTS.md`, `docs/master-plan.html`, `scripts/`, `.claude/`, `.cursor/`,
   `env-check.yml`, forks or harness
 - No secrets in `.env.example`; `.env` stays gitignored
@@ -2349,13 +2639,14 @@ no force-push, no merge by the builder.
 
 ## 19. Open questions for Jayami
 
-1. **Live proof of the read-only layers in CI.** Add a third job `db-guard` (or a step in `unit`)
-   with a `postgres:15` service container that runs a small `tests/db/*.test.ts` against it:
-   `INSERT` → `25006`, multi-statement → `42601`, `pg_sleep` past the timeout → `57014`, and
-   `EXPLAIN ANALYZE CREATE TABLE … AS` blocked by the guard before it reaches the server.
-   Recommended: yes, in Task 1, not required at first. Without it the server-side layers are proven
-   only by this plan's probe until Task 3.
-2. **Release-age policy for pins.** Pin the latest stable today (as D4; `typescript-eslint` 8.72.0
-   is 2 days old, `eslint` 10.13.0 is 5 days old), or require ≥ 7 days (then `typescript-eslint`
-   8.71.2 and `eslint` 10.12.0)? Recommended: latest stable as probed, Dependabot later.
-3. **Roadmap D2 change.** Confirm `node:test` instead of Vitest for units (D2).
+None remaining. Answers recorded 2026-10-20:
+
+1. **db-guard:** yes. Job with a `postgres:15` service container asserting `25006`, `42601`, `57014`
+   and the `EXPLAIN ANALYZE` guard rejection (D14). Non-required at first; after two green `main`
+   runs Jayami adds it to the Main ruleset with `check` and `unit`.
+2. **Release age:** 7-day minimum (D13): `typescript-eslint` 8.71.2, `eslint` 10.12.0, and by the
+   same rule `@playwright/test` 1.64.0 (1.64.1 was 6 days old). Scratch check rerun with these pins:
+   87/87 units, 7/7 db-guard. Renovate/Dependabot with `minimumReleaseAge` deferred.
+3. **Unit runner:** `node:test` confirmed (D2).
+
+Building waits on approval of this plan.
