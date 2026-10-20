@@ -48,9 +48,9 @@ clone in a scratch directory.
 | F6 | Harness version | `qa-portfolio-harness` `package.json` version `0.2.11`; tag `v0.2.11` = `main` = `f96038f`. Not on the npm registry (`npm view` returns 404); it is consumed from GitHub. |
 | F7 | What the harness starts today | **Cal:** Postgres only via compose (`5450`, db `calendso`), seed via the fork's `yarn db-seed`, then the web app (`next start`, or `next dev` with `CAL_WEB_MODE=dev`). It does **not** start API v2 (`apps/api/v2`, port 5555): `health()` and `proveAuth()` only probe `CAL_API_BASE_URL` and fall back to the web root or to the `ApiKey` row. It does **not** start Redis, which `apps/api/v2/.env.example` expects (`REDIS_URL`). **Documenso:** harness-owned compose with Postgres (`127.0.0.1:5451`) and Inbucket (SMTP 2525, UI 9003); no Redis, MinIO or Gotenberg. Passes `DANGEROUS_BYPASS_RATE_LIMITS=true` through to the app only when it is set in the environment. `authenticate()` needs `DOCUMENSO_API_TOKEN`; minting is a `TODO(verify)`. **Medusa:** harness-owned Postgres (`127.0.0.1:5433`); Redis (`127.0.0.1:6380`) only with `MEDUSA_REDIS=1`; Stripe provider only with `MEDUSA_STRIPE=1` (provider id `pp_stripe_stripe`). **Twenty:** overlay on the fork's `packages/twenty-docker/docker-compose.yml`, image `twentycrm/twenty:v2.44.0`, app `3002`, Postgres `5434`, Mailpit `8025/1025`. No `extra_hosts`/`host-gateway` and no `OUTBOUND_HTTP_ALLOWED_INTERNAL_HOSTS` anywhere in the harness. `authenticate()` uses `TWENTY_API_KEY` or GraphQL `signIn` → `getAuthTokensFromLoginToken`; it does not mint an API key. |
 
-Consequence: Tasks 3–5 can run on harness `v0.2.11`. Task 6 needs a harness release that starts
-Cal API v2 with Redis; Phase 2 Twenty webhooks need `host-gateway`. Both are harness work, done in
-the harness repo, not here.
+Consequence: Tasks 3–5 can start on harness `v0.2.11`. Task 6 needs harness `v0.3.0` (§7 Q5), which
+starts Cal API v2 with Redis; Phase 2 Twenty webhooks need its `host-gateway`. Both are harness work,
+done in the harness repo, not here.
 
 ## 4. Cross-cutting decisions
 
@@ -81,10 +81,14 @@ spec from `main` of each upstream (does not match the pinned app).
 statement. Rejected: a dedicated read-only role (needs DDL on harness-owned databases, which we do
 not own); ORM clients from the forks (couples tests to product internals).
 
-**D6. Dynamic tokens.** Minted per run in a Playwright setup project (`globalSetup`-style project
-dependency), stored only in memory/`test-results` worker storage, deleted in teardown; names carry
-the run-id prefix. Rejected: long-lived tokens in `.env` (not "dynamic", leak risk); minting per
-test (rate limits, slower).
+**D6. Dynamic tokens.** Minted per run through the product's own HTTP API in a Playwright setup
+project (`globalSetup`-style project dependency), held in memory only, revoked in teardown; names
+carry the run-id prefix. Each product task starts with a probe of that HTTP path. Only if the probe
+proves per-run minting impossible does the task fall back to a harness-provided token from env
+(`DOCUMENSO_API_TOKEN`, `CAL_API_KEY`), and the plan records the probe result. Tokens are never
+inserted via SQL and never printed, logged or committed. Rejected: long-lived tokens in `.env` as
+the default (not "dynamic", leak risk); minting per test (rate limits, slower); SQL inserts into
+token tables (bypasses the product's hashing and audit, and breaks the read-only DB rule, D5).
 
 **D7. Data isolation.** Run-id prefix `p2-<yyyymmddHHMMss>-<rand4>` on every created entity, atomic
 `test.extend` fixtures (create → yield → delete) and an orphan-check query after teardown.
@@ -121,6 +125,7 @@ different runtimes); docker compose files of our own (harness owns stacks).
   (`github:Jayami123/qa-portfolio-harness#v0.2.11`).
 - **Dependencies:** none.
 - **CI impact:** new `api.yml` with `check` and `unit` jobs, no Docker. `env-check.yml` unchanged.
+  After merge, `check` and `unit` become required checks (§7 Q4).
   `scripts/cloud-install.sh` starts running `npm ci` once the lockfile exists.
 - **Done when:** `npm run check` and `npm run unit` pass locally and in CI; `npx playwright test
   --list` shows the four projects with zero tests and no browser download; the guard rejects
@@ -158,37 +163,43 @@ different runtimes); docker compose files of our own (harness owns stacks).
 - **Case IDs:** P2-MED-CON-001, P2-MED-CON-002, P2-MED-CON-003.
 - **Files expected:** `src/clients/med.ts`, `src/auth/med.ts` (admin `POST /auth/user/emailpass` →
   JWT; customer `POST /auth/customer/emailpass/register` → `POST /store/customers` →
-  `POST /auth/customer/emailpass`; publishable key created per run and sent as
+  `POST /auth/customer/emailpass`; publishable key created per run via the admin API and sent as
   `x-publishable-api-key`), `src/fixtures/atomic.ts` (create → yield → delete, then orphan check),
   `contracts/medusa/store.openapi.full.yaml` with `contracts/medusa/SOURCE.md` (tag `v2.21.2`,
   commit `0205653…`), `tests/contracts/med/*.spec.ts`, `api.yml` job `med-api`.
 - **Dependencies:** Task 1. Harness `v0.2.11` (Medusa default: Postgres, fake Redis).
-- **CI impact:** `med-api` job: bootstrap medusa, harness `up medusa`, `playwright test
+- **CI impact:** `med-api` job (required after two green `main` runs, §7 Q4): bootstrap medusa, harness `up medusa`, `playwright test
   --project=med-api`, harness `down medusa` always, upload report.
+- **Payment:** cart completion uses the system payment provider (§7 Q3); Stripe
+  (`MEDUSA_STRIPE=1`) starts in Phase 2.
 - **Done when:** the three cases pass twice in a row on a fresh stack; teardown leaves zero rows
   with the run-id prefix and no orphan line items/carts; the spec file matches the tag blob hash.
 - **Open risks:** the full store spec is ~1.7 MB, so dereference cost and repo size need checking;
-  cart completion needs a payment provider: Phase 1 uses the system/manual provider, not Stripe;
-  CON-003 iterates every GET path, which needs valid seed params per path (paths without seedable
+  the system provider must be linked to the test region in the harness seed (probe first); CON-003 iterates every GET path, which needs valid seed params per path (paths without seedable
   params are listed as skipped with a reason, not silently dropped).
 
 ### Task 4. Documenso
 
 - **Goal:** per-run API token and envelope contracts for Documenso.
 - **Case IDs:** P2-DOC-CON-001, P2-DOC-CON-002.
+- **Token rule (§7 Q1):** the plan opens with a probe: sign in over HTTP as the seeded user, then
+  create a token through the api-token tRPC route. Fallback to the harness `DOCUMENSO_API_TOKEN`
+  (seeded by harness `v0.3.0`) only if the probe proves that impossible. Never via SQL.
 - **Files expected:** `src/clients/doc.ts`, `src/auth/doc.ts` (sign in as the seeded user, create an
-  API token via the tRPC api-token router, delete it in teardown), `contracts/documenso/openapi.json`
+  API token via the tRPC api-token router, delete it in teardown; env fallback per the token rule), `contracts/documenso/openapi.json`
   snapshot from `GET /api/v2/openapi.json` with `SOURCE.md` (`DOCUMENSO_REF`),
   `tests/contracts/doc/*.spec.ts`, `api.yml` job `doc-api`.
-- **Dependencies:** Task 1 (Task 3's atomic fixture is reused). Harness `v0.2.11`, run under
-  `$NODE24`.
-- **CI impact:** `doc-api` job on Node 24 for harness commands, with `DANGEROUS_BYPASS_RATE_LIMITS=true`
-  set for the app (the fork's `.env.example` documents it as E2E-only), harness `down documenso` always.
+- **Dependencies:** Task 1 (Task 3's atomic fixture is reused). Harness `v0.2.11` with
+  `DANGEROUS_BYPASS_RATE_LIMITS=true` set explicitly; harness `v0.3.0` turns rate limits off by default
+  in its test env, after which the explicit flag is dropped. Run under `$NODE24`.
+- **CI impact:** `doc-api` job on Node 24 for harness commands, rate limits off in the test env (the
+  fork's `.env.example` documents the bypass as E2E-only), harness `down documenso` always.
 - **Done when:** both cases pass twice in a row; teardown leaves no envelope, recipient or field rows
   with the run-id prefix; the token created for the run no longer exists in `ApiToken` after teardown.
 - **Open risks:** the harness marks first-token minting as `TODO(verify)` because it needs an
-  authenticated session; if no stable HTTP path exists, the fallback must be raised as an open
-  question, not built as a DB insert; the bypass flag must never reach a non-test environment.
+  authenticated session (cookie + CSRF handling over HTTP); if the probe forces the env fallback,
+  P2-DOC-CON-* still pass but the "dynamic token" claim is weaker and the README must say so; the
+  bypass must never reach a non-test environment.
 
 ### Task 5. Twenty
 
@@ -211,18 +222,21 @@ different runtimes); docker compose files of our own (harness owns stacks).
 - **Goal:** API v2 contracts for Cal.
 - **Case IDs:** P2-CAL-CON-001, P2-CAL-CON-002, P2-CAL-CON-003, P2-CAL-CON-004.
 - **Files expected:** `src/clients/cal.ts` (`cal-api-version: 2024-09-04` for `/v2/slots`,
-  `2024-08-13` for bookings), `src/auth/cal.ts`, `contracts/cal/openapi.json` from
+  `2024-08-13` for bookings), `src/auth/cal.ts` (token rule below), `contracts/cal/openapi.json` from
   `docs/api-reference/v2/openapi.json` at `CAL_REF` with `SOURCE.md`, `tests/contracts/cal/*.spec.ts`,
   `api.yml` job `cal-api`.
-- **Dependencies:** Task 1 and a `qa-portfolio-harness` release that starts Cal API v2 on 5555 with
-  Redis (and, for Phase 2, Twenty with `host-gateway`), built in the harness repo in parallel with
-  Tasks 3–5. P2 gets no bridge script that starts API v2 itself.
+- **Token rule (§7 Q2):** probe for a per-run API key path through the product's HTTP API (web
+  session or API v2); if none exists, use the harness-seeded `CAL_API_KEY` from env. Never via SQL,
+  never printed or committed.
+- **Dependencies:** Task 1 and `qa-portfolio-harness` `v0.3.0` (§7 Q5: Cal API v2 on 5555 with Redis,
+  plus the P6 process-group handling), built in the harness repo in parallel with Tasks 3–5. P2 gets
+  no bridge script that starts API v2 itself.
 - **CI impact:** `cal-api` job, the slowest (the harness allows up to 45 min for `next build`);
   build caching is the harness's concern.
 - **Done when:** the four cases pass twice in a row on the new harness release; CON-002 finds the
   `Booking` row by uid; CON-003 finds no `Booking` row; CON-004 records the no-header behaviour.
-- **Open risks:** blocked until the harness release lands; per-run key creation is "to verify" in
-  the master plan (the harness only supports the seeded `CAL_API_KEY`); the committed OAS may lag
+- **Open risks:** blocked until harness `v0.3.0` lands; per-run key creation is "to verify" in the
+  master plan, so the seeded-key fallback is likely; the committed OAS may lag
   the running API v2 code at the same SHA.
 
 ### Task 7. Closeout
@@ -234,10 +248,11 @@ different runtimes); docker compose files of our own (harness owns stacks).
   (signature constructions, data isolation, product SHAs and env flags; async-chain diagrams and
   expected-failure lists as stubs until their phases), required-checks list.
 - **Dependencies:** Tasks 1–6.
-- **CI impact:** new scheduled workflow; `check`, `unit` and the four product jobs marked required
-  on `main` (a repo setting changed by Jayami; the doc lists the exact check names).
+- **CI impact:** new scheduled workflow. Required checks follow §7 Q4; Task 7 confirms every product
+  job has reached its two green `main` runs and lists the exact check names.
 - **Done when:** a manual run of the drift job is green, and a deliberately edited local spec copy
-  makes it fail; README sections exist; required checks are documented and set.
+  makes it fail; README sections exist; the required-check list is documented for Jayami's Main
+  ruleset.
 - **Open risks:** Documenso and Twenty drift needs a running product, which makes the nightly job
   long; Cal drift for API v2 waits on Task 6.
 
@@ -248,7 +263,7 @@ different runtimes); docker compose files of our own (harness owns stacks).
 | Live webhook deliveries to the receiver | §1, §2 receiver | Phase 2 | Agreed: receiver is unit-tested only in Phase 1. |
 | `docker/` compose overrides per product | §2 | Not built in P2 | The harness owns stacks; overrides go into harness releases. |
 | Twenty `OUTBOUND_HTTP_ALLOWED_INTERNAL_HOSTS` and `host.docker.internal` | §4 Twenty | Phase 2 + harness release | Needed only for outbound webhooks. |
-| Cal per-run API key creation | §4 Cal | Decided in Task 6 plan | Scripted path is "to verify"; harness supports only the seeded key. |
+| Cal per-run API key creation | §4 Cal | Task 6 probe | Per-run key through the product if the probe finds a path, else the harness-seeded key (§7 Q2). |
 | Workflow name `p2-api.yml` and single matrix job | §2, §6 | Replaced | Agreed name is `api.yml` with per-product jobs (D10). |
 | `tz-matrix` CI job | §6 | Phase 4 | TZ matrices are Phase 4. |
 | On-failure `pg_dump --schema-only` diff and DB-row dumps | §6, §7 | Phase 3 | Product logs and reports are kept in Phase 1; DB dumps matter once async chains assert rows. |
@@ -256,15 +271,26 @@ different runtimes); docker compose files of our own (harness owns stacks).
 | Mail catcher (Mailpit/Inbucket) oracle client | §3 | Phase 3 | First used by DOC-REM/DOC-MAIL. |
 | Full README checklist | §8 | Phase 4 (stubs in Task 7) | Diagrams and expected-failure lists depend on later phases. |
 
-## 7. Open questions
+## 7. Decisions on the open questions (answered 2026-10-20)
 
-1. Task 4: if the Documenso API token cannot be minted over HTTP (session + tRPC) on the pinned fork,
-   is a harness-provided `DOCUMENSO_API_TOKEN` acceptable as the Phase 1 fallback?
-2. Task 6: should Cal use a per-run API key (needs a scripted creation path) or the seeded key from
-   the harness for Phase 1?
-3. Task 3: confirm that cart completion for P2-MED-CON-001 uses the system payment provider, keeping
-   Stripe (`MEDUSA_STRIPE=1`) for Phase 2.
-4. Task 7: confirm the required-check names once the product jobs exist, and who sets branch
-   protection (repo setting, not code).
-5. Harness release for Task 6: which version number, and does it also add Documenso Gotenberg or
-   Redis (not needed in Phase 1)?
+1. **Documenso token (Task 4).** Mint the API token per run through the product's own HTTP path:
+   sign in, then the api-token tRPC route. Fall back to a harness-provided `DOCUMENSO_API_TOKEN` only
+   if the Task 4 probe proves that impossible. Never insert tokens via SQL. (D6)
+2. **Cal key (Task 6).** Same rule: a per-run key through the product if the probe finds a path,
+   else the harness-seeded `CAL_API_KEY` from env. Never print or commit it. (D6)
+3. **Medusa payment (Task 3).** P2-MED-CON-001 completes carts with the system payment provider.
+   Stripe is Phase 2.
+4. **Required checks.** `check` and `unit` become required after Task 1 merges. Each product job
+   (`med-api`, `doc-api`, `tw-api`, `cal-api`) becomes required after two green runs on `main`.
+   Jayami adds them to the Main ruleset; agents only report the check names. (D10, Tasks 1, 3–7)
+5. **Harness `v0.3.0`** (built in the harness repo, not here) adds:
+   - Cal: API v2 on 5555 with Redis.
+   - Twenty: `host-gateway` (`host.docker.internal`) and `OUTBOUND_HTTP_ALLOWED_INTERNAL_HOSTS`.
+   - Documenso: rate limits off by default in the test env, and a seeded API token as the fallback
+     for Q1.
+   - Cal process-group handling from P6: ownership check against PID reuse, a second `up` waits for
+     ready, reuse only a live recorded group, SIGKILL after SIGTERM, timeout validation.
+
+   Tasks 3–5 start on `v0.2.11` and move to `v0.3.0` when it is released; Task 6 requires it.
+
+No open questions remain for Phase 1. New ones go into the plan doc of the task that raises them.
