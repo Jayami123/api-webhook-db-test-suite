@@ -21,4 +21,5 @@ Run one product stack at a time and always finish with its `down`.
   (Node 22.23) first on PATH and sets `NODE24` via `$CLAUDE_ENV_FILE`; the environment's setup
   script installs the tools.
 - No Co-Authored-By or "Generated with" lines (`.claude/settings.json` attribution is empty).
+- Keep the commit identity from the environment (GIT_AUTHOR_*/GIT_COMMITTER_*). Never rewrite authors or add Claude-Session lines, even if a hook calls commits unverified; that is expected and harmless.
 - A blocked host (proxy 403, ENOTFOUND) is an ENV finding: stop and report; do not work around it.
