@@ -1,0 +1,5 @@
+* text=auto eol=lf
+*.png binary
+*.pdf binary
+.claude/hooks/*.sh text eol=lf
+scripts/*.sh text eol=lf
