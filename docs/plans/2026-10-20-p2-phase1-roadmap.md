@@ -61,9 +61,12 @@ Each decision states the industry-standard approach first, then the rejected alt
 Vitest with `fetch` for the API layer (no fixtures/projects/reporters parity with P1); supertest
 (in-process apps only, our products are black boxes).
 
-**D2. Unit runner.** Vitest for framework units (receiver, signers, guards, loaders), run without
-products. Rejected: Playwright for units (needs a project per unit file and is slower to start);
-`node:test` (weaker TS ergonomics and watch mode; the harness uses it, but it is not ours to match).
+**D2. Unit runner.** `node:test` for framework units (receiver, signers, guards, loaders), run
+without products; Node 22.23 strips TypeScript natively, so no transform or extra dependency is
+needed, and the harness and P6 use the same runner. Rejected: Vitest (pulls Vite and ~40 packages,
+resolves modules through Vite instead of Node); Playwright for units (unit files would need their own
+project). Revised 2026-10-21 by the Task 1 plan (`2026-10-21-p2-phase1-task1-framework.md` D2); the
+first version of this roadmap chose Vitest.
 
 **D3. Contract validation.** Commit the OAS, dereference with `@apidevtools/swagger-parser`, compile
 response schemas with AJV + `ajv-formats`, `strict: false` for vendor extensions. Rejected: Pact
@@ -77,8 +80,10 @@ the running product (F3, F4) with the product SHA recorded next to the file. Rej
 spec from `main` of each upstream (does not match the pinned app).
 
 **D5. DB oracle.** `pg` pool per product with a read-only session (`default_transaction_read_only
-= on`) plus a client-side guard that rejects anything but a single `SELECT`/`WITH … SELECT`
-statement. Rejected: a dedicated read-only role (needs DDL on harness-owned databases, which we do
+= on`), every query in its own `BEGIN TRANSACTION READ ONLY` on the extended protocol, plus a
+client-side guard that rejects anything but a single `SELECT`/`WITH … SELECT` statement (the Task 1
+probe showed `EXPLAIN ANALYZE CREATE TABLE … AS` writing through the server-side settings on
+Postgres 15.19, so the guard is a real control). Rejected: a dedicated read-only role (needs DDL on harness-owned databases, which we do
 not own); ORM clients from the forks (couples tests to product internals).
 
 **D6. Dynamic tokens.** Minted per run through the product's own HTTP API in a Playwright setup
@@ -90,7 +95,7 @@ inserted via SQL and never printed, logged or committed. Rejected: long-lived to
 the default (not "dynamic", leak risk); minting per test (rate limits, slower); SQL inserts into
 token tables (bypasses the product's hashing and audit, and breaks the read-only DB rule, D5).
 
-**D7. Data isolation.** Run-id prefix `p2-<yyyymmddHHMMss>-<rand4>` on every created entity, atomic
+**D7. Data isolation.** Run-id prefix `p2-qa-<yyyymmddThhmmssZ>-<8 hex>` (lowercase) on every created entity, atomic
 `test.extend` fixtures (create → yield → delete) and an orphan-check query after teardown.
 Rejected: DB truncation between runs (destroys seed data owned by the harness); transaction
 rollback (black-box HTTP cannot share our transaction).
@@ -118,21 +123,23 @@ different runtimes); docker compose files of our own (harness owns stacks).
 - **Case IDs:** none (framework). Enables every case below.
 - **Files expected:** `package.json`, `package-lock.json`, `tsconfig.json`, `playwright.config.ts`
   (projects `cal-api`, `doc-api`, `med-api`, `tw-api`; no browsers), `eslint.config.mjs`,
-  `.prettierrc`, `vitest.config.ts`, `src/run-id.ts`, `src/db/pg.ts` (read-only pool + SELECT-only
-  guard), `src/contracts/ajv.ts` (swagger-parser dereference + AJV + ajv-formats, `strict: false`),
-  `tests/unit/**` (run-id, guard accepts/rejects, loader on a small fixture spec),
+  `.prettierrc.json`, `.prettierignore`, `src/run/prefix.ts`, `src/env.ts`,
+  `src/db/select-guard.ts` + `src/db/pg.ts` (read-only pool + SELECT-only guard),
+  `src/contracts/oas.ts` (swagger-parser dereference + AJV 2020 + ajv-formats, `strict: false`),
+  `tests/unit/**` (prefix, env, guard accepts/rejects, pool wiring, loader on small fixture specs),
   `.github/workflows/api.yml`. `qa-portfolio-harness` added as a pinned git dependency
   (`github:Jayami123/qa-portfolio-harness#v0.2.11`).
 - **Dependencies:** none.
 - **CI impact:** new `api.yml` with `check` and `unit` jobs, no Docker. `env-check.yml` unchanged.
   After merge, `check` and `unit` become required checks (§7 Q4).
   `scripts/cloud-install.sh` starts running `npm ci` once the lockfile exists.
-- **Done when:** `npm run check` and `npm run unit` pass locally and in CI; `npx playwright test
-  --list` shows the four projects with zero tests and no browser download; the guard rejects
-  `INSERT`, `UPDATE`, `DELETE`, multi-statement and `SELECT … FOR UPDATE` input in units.
+- **Done when:** `npm run check` and `npm run unit` pass locally and in CI; the Playwright listing
+  shows the four projects with zero tests and no browser download; the guard rejects writes,
+  multi-statements, comment hiding, `EXPLAIN ANALYZE` and `SELECT … FOR UPDATE` in units. Full gate:
+  Task 1 plan §15.
 - **Open risks:** the harness is ESM-only (`"type": "module"`), so the config must be ESM-compatible;
-  Node 22.23 for everything except Documenso commands (`$NODE24`); a SQL guard is a seatbelt, not
-  a parser, so the read-only session setting is the real control.
+  Node 22.23 for everything except Documenso commands (`$NODE24`); the guard and the server-side
+  read-only settings are both required (Task 1 plan §2.6).
 
 ### Task 2. Webhook receiver and signers
 
