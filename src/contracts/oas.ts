@@ -51,7 +51,8 @@ const pointerToken = (token: string): string => token.replace(/~/g, "~0").replac
 
 /**
  * OAS 3.0 schemas use draft-04 style boolean exclusiveMinimum/Maximum, which JSON Schema 2020-12
- * rejects at compile time. Rewrite them in place; leave everything else alone. Cycle-safe.
+ * rejects at compile time. Rewrite them in place; also drop a `nullable` that has no sibling
+ * `type`. Leave everything else alone. Cycle-safe.
  */
 export function normaliseOas30Exclusives(node: unknown, seen = new WeakSet<object>()): void {
   if (!isObject(node) || seen.has(node)) return;
@@ -69,6 +70,10 @@ export function normaliseOas30Exclusives(node: unknown, seen = new WeakSet<objec
         Reflect.deleteProperty(node, flag);
       }
     }
+  }
+  // OAS 3.0: `nullable` only has effect next to a `type`; without one it is dropped, not wrapped.
+  if (typeof node["nullable"] === "boolean" && !("type" in node)) {
+    Reflect.deleteProperty(node, "nullable");
   }
   for (const child of Object.values(node)) normaliseOas30Exclusives(child, seen);
 }

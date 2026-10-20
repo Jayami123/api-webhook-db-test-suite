@@ -1,0 +1,16 @@
+openapi: 3.0.3
+info: { title: p2 fixture nullable without type, version: "1" }
+paths:
+  /things:
+    get:
+      operationId: getThing
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                nullable: true
+                properties:
+                  name: { type: string }
+                  note: { type: string, nullable: true }

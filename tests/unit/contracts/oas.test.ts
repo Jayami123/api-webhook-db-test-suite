@@ -12,6 +12,7 @@ const FIXTURES = path.join(
   "oas",
 );
 const SPEC_30 = path.join(FIXTURES, "mini-3.0.yaml");
+const SPEC_NULLABLE = path.join(FIXTURES, "nullable-untyped-3.0.yaml");
 const SPEC_31 = path.join(FIXTURES, "mini-3.1.json");
 const getItem = { operationId: "getItem" } as const;
 const ok = { status: 200, contentType: "application/json; charset=utf-8" } as const;
@@ -166,5 +167,19 @@ describe("OAS contract loader", () => {
       loadSpec("old", path.join(FIXTURES, "swagger-2.0.json")),
       /only OpenAPI 3\.0 and 3\.1/,
     );
+  });
+
+  test("OAS 3.0 nullable without a sibling type is dropped (it has no effect there)", async () => {
+    const node: Record<string, unknown> = { nullable: true, properties: { a: { type: "string" } } };
+    normaliseOas30Exclusives(node);
+    assert.deepEqual(node, { properties: { a: { type: "string" } } });
+    const typed: Record<string, unknown> = { type: "string", nullable: true };
+    normaliseOas30Exclusives(typed);
+    assert.deepEqual(typed, { type: "string", nullable: true });
+
+    const spec = await loadSpec("nullable-untyped", SPEC_NULLABLE);
+    const op = { operationId: "getThing" };
+    assert.equal(spec.validate(op, { status: 200 }, { name: "a", note: null }).valid, true);
+    assert.equal(spec.validate(op, { status: 200 }, { name: 1 }).valid, false);
   });
 });
