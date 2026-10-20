@@ -1,0 +1,25 @@
+name: env-check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  env-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: bash -n on every shell script
+        run: git ls-files -z '*.sh' | xargs -0 -n1 bash -n
+      - name: shellcheck
+        run: shellcheck scripts/*.sh .claude/hooks/*.sh
+      - name: JSON config parses
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('.claude/settings.json'));JSON.parse(require('fs').readFileSync('.cursor/environment.json'));console.log('json-ok')"
+      - name: .env is not tracked
+        run: |
+          if git ls-files --error-unmatch .env >/dev/null 2>&1; then
+            echo ".env is tracked" >&2
+            exit 1
+          fi
