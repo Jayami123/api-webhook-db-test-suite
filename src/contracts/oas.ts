@@ -46,6 +46,28 @@ type JsonObject = Record<string, unknown>;
 const isObject = (value: unknown): value is JsonObject =>
   typeof value === "object" && value !== null;
 
+const normaliseMediaType = (value: string): string =>
+  value.split(";")[0]?.trim().toLowerCase() ?? "";
+
+/**
+ * Pick the spec's content key for an actual media type by precedence, never by key order:
+ * exact match, then a type-level range (image/ plus a star), then the full wildcard (star/star).
+ * Keys and the actual type are compared normalised.
+ */
+function pickContentKey(keys: readonly string[], mediaType: string): string | undefined {
+  const type = mediaType.split("/")[0] ?? "";
+  const matchers = [
+    (key: string) => key === mediaType,
+    (key: string) => type !== "" && key === `${type}/*`,
+    (key: string) => key === "*/*",
+  ];
+  for (const matches of matchers) {
+    const found = keys.find((key) => matches(normaliseMediaType(key)));
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
 /** RFC 6901 JSON Pointer token. */
 const pointerToken = (token: string): string => token.replace(/~/g, "~0").replace(/\//g, "~1");
 
@@ -198,9 +220,7 @@ export class ContractSpec {
       ? responses[matchedStatus]["content"]
       : undefined;
     const contentKeys = isObject(content) ? Object.keys(content) : [];
-    const contentKey = contentKeys.find(
-      (key) => key.split(";")[0]?.trim().toLowerCase() === mediaType,
-    );
+    const contentKey = pickContentKey(contentKeys, mediaType);
     if (
       contentKey === undefined ||
       !isObject(content) ||

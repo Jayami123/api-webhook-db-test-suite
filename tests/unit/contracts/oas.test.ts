@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { ContractError, loadSpec, normaliseOas30Exclusives } from "../../../src/contracts/oas.ts";
+import {
+  ContractError,
+  ContractSpec,
+  loadSpec,
+  normaliseOas30Exclusives,
+} from "../../../src/contracts/oas.ts";
 
 const FIXTURES = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -181,5 +186,63 @@ describe("OAS contract loader", () => {
     const op = { operationId: "getThing" };
     assert.equal(spec.validate(op, { status: 200 }, { name: "a", note: null }).valid, true);
     assert.equal(spec.validate(op, { status: 200 }, { name: 1 }).valid, false);
+  });
+
+  describe("media-type range precedence", () => {
+    const str = { schema: { type: "string" } };
+    const obj = { schema: { type: "object", required: ["a"] } };
+    const specFor = (content: Record<string, unknown>): ContractSpec =>
+      new ContractSpec(
+        "ranges",
+        {
+          openapi: "3.0.3",
+          paths: { "/x": { get: { responses: { "200": { description: "ok", content } } } } },
+        },
+        [],
+      );
+    const op = { method: "get", path: "/x" } as const;
+
+    test("image/* matches image/png", () => {
+      const spec = specFor({ "image/*": str });
+      assert.equal(
+        spec.validate(op, { status: 200, contentType: "image/png" }, "bytes").valid,
+        true,
+      );
+      assert.equal(spec.validate(op, { status: 200, contentType: "image/png" }, 1).valid, false);
+    });
+
+    test("*/* matches text/plain", () => {
+      const spec = specFor({ "*/*": str });
+      assert.equal(spec.validate(op, { status: 200, contentType: "text/plain" }, "hi").valid, true);
+    });
+
+    test("an exact match beats */* even when */* is listed first", () => {
+      const spec = specFor({ "*/*": str, "application/json": obj });
+      const json = { status: 200, contentType: "application/json; charset=utf-8" };
+      assert.equal(spec.validate(op, json, { a: 1 }).valid, true);
+      assert.equal(spec.validate(op, json, "just a string").valid, false);
+    });
+
+    test("image/* beats */* for image/png when */* is listed first", () => {
+      const spec = specFor({ "*/*": obj, "image/*": str });
+      const png = { status: 200, contentType: "image/png" };
+      assert.equal(spec.validate(op, png, "bytes").valid, true);
+      assert.equal(spec.validate(op, png, { a: 1 }).valid, false);
+    });
+
+    test("keys are compared normalised: parameters, case and spaces are ignored", () => {
+      const spec = specFor({ " Image/* ; q=1": str });
+      assert.equal(spec.validate(op, { status: 200, contentType: "IMAGE/PNG" }, "b").valid, true);
+    });
+
+    test("a non-matching type with no wildcard still throws ContractError", () => {
+      const spec = specFor({ "application/json": obj, "image/*": str });
+      assert.throws(
+        () => spec.validator(op, { status: 200, contentType: "text/plain" }),
+        (error: unknown) =>
+          error instanceof ContractError &&
+          /has no text\/plain schema \(content: application\/json, image\/\*\)/.test(error.message),
+      );
+    });
   });
 });
