@@ -1,0 +1,111 @@
+name: api
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  # Playwright 1.64 has no install script; this only guards against a future one. No browsers.
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Format, lint, typecheck
+        run: npm run check:static
+      - name: Playwright has the four API projects and no browser
+        run: |
+          set -euo pipefail
+          npm run list:api
+          out="$(npx playwright test --list --project=__list_projects__ 2>&1 || true)"
+          echo "$out" | grep -F 'Available projects: "cal-api", "doc-api", "med-api", "tw-api"'
+          if [ -d "$HOME/.cache/ms-playwright" ]; then
+            echo "A Playwright browser cache exists; P2 must not download browsers." >&2
+            exit 1
+          fi
+
+  unit:
+    name: unit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Unit tests (node:test, no product)
+        run: |
+          mkdir -p results
+          npm run unit:ci
+      - name: Upload unit JUnit
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unit-junit
+          path: results/unit-junit.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+  # Proves the server-side read-only layers on a real Postgres (plan D5, D14). Not a product.
+  # Not required at first; joins check and unit in the Main ruleset after two green main runs.
+  db-guard:
+    name: db-guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          # Throwaway service container that lives only for this job; not a secret.
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      P2_DB_GUARD_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Read-only layers against postgres:15 (25006, 42601, 57014, EXPLAIN ANALYZE)
+        run: npm run test:db
