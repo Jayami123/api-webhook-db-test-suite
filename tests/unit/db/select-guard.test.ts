@@ -18,6 +18,7 @@ const ACCEPT: readonly string[] = [
   "SeLeCt id FROM product WHERE id = ANY($1)",
   "SELECT 1\nUNION ALL\nSELECT 2",
   'SELECT starts_at, "startTime" FROM t',
+  'SELECT "id" FROM "Booking" WHERE "startTime" > now()',
 ];
 
 const REJECT: readonly (readonly [string, GuardReason])[] = [
@@ -63,6 +64,11 @@ const REJECT: readonly (readonly [string, GuardReason])[] = [
   ["SELECT pg_terminate_backend(1)", "forbidden-function"],
   ["SELECT dblink_exec('x', 'DELETE FROM t')", "forbidden-function"],
   ["SELECT txid_current()", "forbidden-function"],
+  ['SELECT "pg_advisory_lock"(1)', "forbidden-function"],
+  ['SELECT "PG_ADVISORY_LOCK"(1)', "forbidden-function"],
+  ["SELECT \"set_config\"('a','b',false)", "forbidden-function"],
+  ["SELECT U&\"\\0073et_config\"('a','b',false)", "escape-string"],
+  ["SELECT query_to_xml('select 1', true, false, '')", "forbidden-function"],
 ];
 
 describe("assertSelectOnly", () => {

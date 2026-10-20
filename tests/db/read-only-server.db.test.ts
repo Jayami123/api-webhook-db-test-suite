@@ -103,4 +103,12 @@ describe("read-only oracle against a real postgres:15", () => {
     );
     assert.equal(await tableExists("p2_guard_blocked"), false);
   });
+
+  test("the guard rejects a double-quoted advisory lock call before it reaches the server", async () => {
+    await assert.rejects(
+      guarded.select('SELECT "pg_advisory_lock"(1)'),
+      (error: unknown) =>
+        error instanceof ReadOnlyGuardError && error.reason === "forbidden-function",
+    );
+  });
 });

@@ -74,10 +74,14 @@ const FORBIDDEN_KEYWORD_RE = new RegExp(`\\b(${FORBIDDEN_KEYWORDS.join("|")})\\b
 const ROW_LOCK_RE = /\bfor\s+(no\s+key\s+update|key\s+share|update|share)\b/i;
 // Functions that have side effects even inside a READ ONLY transaction (probed on Postgres 15.19).
 const FORBIDDEN_FUNCTION_RE =
-  /\b(set_config|lo_\w+|pg_notify|pg_(try_)?advisory\w*|pg_cancel_backend|pg_terminate_backend|pg_reload_conf|pg_rotate_logfile|pg_read_file|pg_read_binary_file|pg_ls_\w+|pg_stat_reset\w*|dblink\w*|txid_current|pg_current_xact_id)\s*\(/i;
+  /\b(set_config|lo_\w+|pg_notify|pg_(try_)?advisory\w*|pg_cancel_backend|pg_terminate_backend|pg_reload_conf|pg_rotate_logfile|pg_read_file|pg_read_binary_file|pg_ls_\w+|pg_stat_reset\w*|dblink\w*|query_to_xml\w*|txid_current|pg_current_xact_id)\s*\(/i;
 
-/** Replace '…' literals and "…" identifiers with empty placeholders so keywords inside them are ignored. */
-function maskQuoted(sql: string): string {
+/**
+ * Replace '…' literals and "…" identifiers with empty placeholders so keywords inside them are
+ * ignored. With `keepIdentifiers`, "…" identifiers keep their content unquoted (case preserved),
+ * so a quoted function name such as "pg_advisory_lock"(1) is still visible to the function check.
+ */
+function maskQuoted(sql: string, keepIdentifiers = false): string {
   let out = "";
   let i = 0;
   while (i < sql.length) {
@@ -97,7 +101,8 @@ function maskQuoted(sql: string): string {
         }
         j += 1;
       }
-      out += quote === "'" ? "''" : '""';
+      if (quote === "'") out += "''";
+      else out += keepIdentifiers ? sql.slice(i + 1, j).replaceAll('""', '"') : '""';
       i = j + 1;
       continue;
     }
@@ -113,8 +118,11 @@ export function assertSelectOnly(sql: string): void {
   if (/--|\/\*/.test(sql)) throw new ReadOnlyGuardError("comment", "comments are not allowed");
   if (/\$[A-Za-z_]?\w*\$/.test(sql))
     throw new ReadOnlyGuardError("dollar-quote", "dollar quoting is not allowed");
-  if (/(^|[^\w])(e|u&)'/i.test(sql))
-    throw new ReadOnlyGuardError("escape-string", "E'' and U&'' strings are not allowed");
+  if (/(^|[^\w])(e'|u&['"])/i.test(sql))
+    throw new ReadOnlyGuardError(
+      "escape-string",
+      "E'' strings and U&'' / U&\"\" escapes are not allowed",
+    );
 
   const masked = maskQuoted(sql).trim().replace(/;\s*$/, "");
   if (masked.includes(";"))
@@ -125,6 +133,6 @@ export function assertSelectOnly(sql: string): void {
     throw new ReadOnlyGuardError("row-lock", "FOR UPDATE/SHARE takes row locks");
   const keyword = FORBIDDEN_KEYWORD_RE.exec(masked);
   if (keyword?.[1]) throw new ReadOnlyGuardError("forbidden-keyword", keyword[1].toUpperCase());
-  const fn = FORBIDDEN_FUNCTION_RE.exec(masked);
+  const fn = FORBIDDEN_FUNCTION_RE.exec(maskQuoted(sql, true));
   if (fn?.[1]) throw new ReadOnlyGuardError("forbidden-function", `${fn[1]}()`);
 }
