@@ -136,11 +136,13 @@ SQLSTATE 42P01/42703; it **did run clean against both workspace schemas inside t
 - **P2-X-DB-001** (a review ID, not a label; Task 2 section 4): the sweep, all four products.
 - Prepared (time travel only; no case runs here): P2-CAL-SCH-002 (field `startAfter`, index section 9), P2-CAL-SCH-003 (new;
   `startAfter`), P2-CAL-TASK-001/002 (driven by a connection reset in Task 2), P2-DOC-EXP-001/002, P2-DOC-REM-001/002
-  (field `nextReminderAt`, index section 9). Not preparable: P2-DOC-JOB-003 (OD-2). P2-CAL-IDEM-001 (new): no rule is
-  prepared in this task (its scope text is the owner's, index section 9).
+  (field `nextReminderAt`, index section 9). Not preparable: P2-DOC-JOB-003 (OD-2). P2-CAL-IDEM-001 (new; a booking case: PENDING
+  booking client retry creates no duplicate, oracle: at most 1 PENDING Booking per eventTypeId, startTime and attendee email):
+  no rule is prepared in this task; the Cal lane adds it.
 - Rules prepare the lanes' own assertions: P2-CAL-DST-002 (booking end after start), P2-CAL-TASK-* (attempts),
   P2-DOC-SM-* / P2-DOC-SIG-* (completed has completedAt), P2-MED-WH-* (authorized session has authorized_at),
-  P2-CAL-CON-002 / P2-DOC-CON-002 (leak rules after the atomic fixture's cleanup).
+  P2-CAL-CON-002 (leak rules after the atomic fixture's cleanup). The Documenso leak rule becomes the afterEach invariant
+  P2-X-DB-001 (section 6.3).
 
 Framework checks (not case IDs): qa_ro cannot write (two SQLSTATEs), qa_fixture cannot touch any other column or
 statement, password rotation invalidates the old password, a table and a schema created after provisioning stay
@@ -2618,12 +2620,12 @@ Counts: `roles.test.ts` 14, `fixture.test.ts` 9, `engine.test.ts` 16 = **39** un
 ## 8. Build steps (repo root; `export PATH="/usr/local/bin:$PATH"`; on any differing output STOP and paste it)
 
 0. Branch: `git fetch origin && git checkout -b feat/$(date -u +%F)-p2-task3-db-roles-invariants origin/feat/<date>-p2-task2-receiver-signers`
-   (or the local Task 2 branch); `git rev-parse HEAD` recorded. `npm ci && npm run check` -> `# tests 175`.
+   (or the local Task 2 branch); `BASE=$(git rev-parse HEAD)` recorded (the gate of section 9 uses it). `npm ci && npm run check` -> `# tests 175`.
 1. Throwaway server for the db tests (not a product; removed at the end):
    ```bash
    docker run -d --rm --name p2guard -e POSTGRES_PASSWORD=postgres -p 127.0.0.1:55433:5432 postgres:15
    timeout 60 bash -c 'until docker exec p2guard pg_isready -h 127.0.0.1 -U postgres -q; do sleep 1; done' \
-     || { echo "ENV finding: p2guard not ready within 60 s"; docker logs p2guard 2>&1 | tail -n 40; echo STOP; }
+     || { echo "ENV finding: p2guard not ready within 60 s"; docker logs p2guard 2>&1 | tail -n 40; exit 1; }
    export P2_DB_GUARD_URL=postgres://postgres:postgres@127.0.0.1:55433/postgres
    npm run test:db        # baseline: "# tests 8" "# pass 8"
    ```
@@ -2652,7 +2654,8 @@ Counts: `roles.test.ts` 14, `fixture.test.ts` 9, `engine.test.ts` 16 = **39** un
 
 ```bash
 npm run check                                   # exit 0; "# tests 214" "# pass 214" "# fail 0"
-git log origin/feat/2026-11-01-p2-task2-receiver-signers..HEAD --format=%B | grep -iE 'co-?authored-?by|generated[ ]with|claude-?session' ; test $? -eq 1   # no trailers, before any push
+git rev-parse --verify "$BASE" >/dev/null || { echo "STOP: BASE not found"; exit 1; }
+! git log --format=%B "$BASE"..HEAD | grep -iE 'co-?authored-?by|generated[ ]with|claude-?session'   # empty: no trailers, before any push
 P2_DB_GUARD_URL=postgres://postgres:postgres@127.0.0.1:55433/postgres npm run test:db   # "# tests 22" "# pass 22" "# fail 0"
 node --test tests/unit/db/roles.test.ts tests/unit/db/fixture.test.ts tests/unit/invariants/engine.test.ts 2>&1 | grep -E '^# (tests|pass)'   # 39 / 39
 npm run list:api                                # "Total: 0 tests in 0 files"

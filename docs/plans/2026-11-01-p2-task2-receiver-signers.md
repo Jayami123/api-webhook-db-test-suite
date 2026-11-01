@@ -134,7 +134,7 @@ moderate `fast-uri` and `minimatch` advisories that already exist on `main` (dev
 - **D6. Signers return `{headers, body}` where `body` is the `Buffer` that was signed.** The test cannot sign one
   byte sequence and send another. All inputs, including timestamps and nonces, are parameters (pure functions).
 - **D7. Daily has two modes.** `raw` signs the bytes as sent; `reserialised` signs `JSON.stringify(JSON.parse(bytes))`,
-  which is what Cal recomputes. Live proof in 2.2. Groundwork for P2-CAL-DLY-001 and P2-CAL-DLY-002.
+  which is what Cal recomputes. Live proof in 2.2. Groundwork for P2-CAL-DLY-002 (its sibling case is CUT: index section 9).
 - **D8. Stripe only through the SDK** (`Stripe.webhooks.generateTestHeaderString` and `constructEvent`), static
   methods, no API key and no network. The 300 s tolerance is read from `Stripe.webhooks.DEFAULT_TOLERANCE`, never
   hard-coded. Rejected: a hand-rolled `t=,v1=` signer (drifts from the verifier); the Stripe CLI (account and
@@ -153,19 +153,17 @@ moderate `fast-uri` and `minimatch` advisories that already exist on `main` (dev
 
 ## 4. Case mapping
 
-Review IDs only: the senior review's current IDs. Nothing here executes a product case; the pieces prepare the IDs below.
-Dropped (CUT) IDs are removed from the lanes' lists: `P2-CAL-DLY-001`, `P2-TW-WH-002`, `P2-MED-WH-004`, `P2-MED-WH-005`,
-`P2-MED-WH-007` and the others named in index section 4. Rewritten IDs take the rewrite list of index section 9 (their
-master-plan text is replaced by the code-defined text there). New IDs (`TW-WH-007/008/009`, `DOC-WH-006/007`, `MED-WH-008`,
-`CAL-SCH-003`, `CAL-IDEM-001`) have their scope text in the review, which is not in this repository: the lanes take it from
-the owner (index section 9); this plan only names the piece that serves them.
+Review IDs only: the 2026-10-29 senior review's current IDs. Nothing here executes a product case; the pieces prepare the IDs
+below. CUT IDs are listed only in index section 9 and are mapped nowhere here. Rewritten IDs take the rewrite list of index
+section 9 (the master-plan text is replaced by the code-defined text there). NEW IDs are named below only where a piece serves
+them; their scope is in the 2026-10-29 review, not in this repository, unless the review quotes it.
 
 | Piece | Prepares |
 |---|---|
 | receiver paths, `ok`, `slow`, `redirect`, log, query | P2-CAL-WH-001/002, P2-CAL-SCH-002 (exactly one delivery; field `startAfter`, index section 9), P2-CAL-SCH-003 (new), P2-DOC-WH-001, P2-DOC-WH-003..005, P2-DOC-WH-006/007 (new), P2-TW-WH-001/003, P2-TW-WH-007..009 (new), P2-MED-WH-001/002/003/006, P2-MED-WH-008 (new) |
 | receiver `500` | P2-CAL-WH-003 (rewritten: **1 attempt, no retry**), P2-TW-WH-004 (rewritten: **1 request**), P2-DOC-WH-002 (rewritten: **4 deliveries, no back-off**) |
-| receiver `reset` (socket destroy, ECONNRESET) | P2-CAL-TASK-001/002 (rewritten: **driven by a connection reset**), P2-CAL-IDEM-001 (new) |
-| receiver `timeout` | P2-TW-WH-005/006 (rewrite: **the 5 000 ms timeout boundary and a stable event id**, or cut; index section 9) |
+| receiver `reset` (socket destroy, ECONNRESET) | P2-CAL-TASK-001/002 (rewritten: **driven by a connection reset**); serves Cal's retry-on-thrown-error behaviour, with no case ID of its own |
+| receiver `timeout` | P2-TW-WH-005/006 (rewrite: **the 5 000 ms timeout boundary and a stable event id**; index section 9) |
 | `signCal` / `verifyCal` | P2-CAL-WH-001 |
 | `signDaily` (raw, reserialised) / `verifyDaily` | P2-CAL-DLY-002 |
 | `signDocumenso` / `verifyDocumenso` | P2-DOC-WH-001 |

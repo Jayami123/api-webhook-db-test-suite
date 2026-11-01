@@ -164,14 +164,15 @@ Wall-clock numbers are read from log timestamps (+-1 min); they feed the lane bu
   A harness release that is not tagged is a STOP, never a `test.fixme` or a skip (HR-1 to HR-3 are required first).
 - **D4. Named SLO budgets** (`src/slo.ts`), each derived from a code-defined timeout plus a stated margin, never
   from an observed latency: Cal delivery 10 s, Documenso 20 s (call timeout 10 s), Twenty 35 s (10 s memo + 5 s
-  call + re-trigger), Twenty allow-list 45 s (15 s refresh x 2 + margin), Medusa 25 s (`webhook_delay` 5 s).
+  call + 20 s margin; the canary precondition waits one memo window), no allow-list budget (the allow-list is set at `up`, HR-2), Medusa 25 s (`webhook_delay` 5 s).
 - **D5. A worker-scoped `receiverHandle`** starts the receiver once for the project's product, on the addresses
   the product can reach, and stops it at the end (log in `receiver-logs/<run id>.jsonl`).
-- **D6. Medusa: no shared-region mutation in the default path.** With OD-2 option (4) the flow uses the seed region that is
-  already linked to `pp_stripe_stripe` (Europe, 2.4) and changes nothing. Until option (4) is set up, the flow reads the region's
-  exact previous provider list, sets `pp_system_default`, asserts the new list, and restores the exact list it read (not `[]`)
-  and asserts the restore. The flow is labelled **route/signature reachability only**; MED-WH lanes must not reuse it. The guest
-  customer is deleted through the admin API; the cart is named with the run prefix and retained by id (section 7).
+- **D6. Medusa: the flow always changes the US region and restores it exactly.** It reads the region's exact provider list,
+  sets `pp_system_default`, asserts the new list, and restores the list it read (not `[]`) and asserts the restore. The flow is
+  labelled **route/signature reachability only**; MED-WH lanes must not reuse it. Option (4), a seed region already linked to
+  `pp_stripe_stripe` with no change, is **not implemented in this plan** (a later follow-up; UNPROBED). The guest customer is
+  deleted through the admin API. The cart is left in place, named with the run prefix; no leak rule covers carts, so it is
+  accepted residue (section 7).
 - **D7. Twenty: no admin-panel mutation and no warm-up loop.** The allow-list is the HR-2 environment value set at `up`. Each
   webhook test (a) creates the webhook with a per-run secret (`randomSecret()`); (b) asserts a **canary precondition**
   (`src/readiness/canary.ts`): one canary event at creation, a second after one memo window (10 s), and it asserts that the
@@ -190,17 +191,18 @@ No product case runs in this task. The readiness specs exercise, for real, the t
 all four products) and **P2-X-WH-001** (signed webhook round trip: Cal HMAC, Documenso secret header, Twenty timestamp HMAC,
 Medusa Stripe signature to the database). Both are **review IDs** (index section 4, C9): they are not in
 `docs/master-plan.html` (checked, no match), and the owner adds their rows (index section 9, item 5). They prepare the WH, DLY,
-STR, EB, KEY and CON cases that the review keeps. `P2-MED-WH-001..008` do not use the Medusa readiness flow (D6: route and
+STR, EB, KEY and CON cases that the review keeps. `P2-MED-WH-001..003, 006, 008` do not use the Medusa readiness flow (D6: route and
 signature reachability only); `P2-DOC-STR-001` and its signature rows use the table of 2.5.
-Contradictions with the master plan, recorded for the lanes: P2-TW-WH-004 (1 request, not 5), P2-MED-WH-001/007 ("captured"
-vs authorized, 2.4), P2-CAL-WH-003 and P2-CAL-TASK-001 (Task 2, 2.1), field names in P2-CAL-SCH-002 and P2-DOC-REM-001 (Task 3, 2.2).
+Contradictions with the master plan, recorded for the lanes: P2-TW-WH-004 (1 request, not 5), the captured case of P2-MED-WH-001 ("captured"
+vs authorized, 2.4; the other captured case is CUT, index section 9), P2-CAL-WH-003 and P2-CAL-TASK-001 (Task 2, 2.1), field names in P2-CAL-SCH-002 and P2-DOC-REM-001 (Task 3, 2.2).
 
 **Lane item, not built here: the Twenty B1 test.** Its ID is assigned by the owner (`<TW-B1-ID>`).
 
-1. Setup in `beforeAll` (must pass): a per-run webhook and the canary precondition of D7.
+1. Setup in `beforeAll` (must pass): the control's own per-run webhook and its canary precondition of D7.
 2. Positive control, asserted **first**, a normal test that must pass: one event after the canary is delivered, and its
    timestamp HMAC verifies (`verifyTwenty`).
-3. The only assertion under `test.fail`: **"first event delivered"**: a person created at once after the webhook is created,
+3. The only assertion under `test.fail`: **"first event delivered"**: in its own fresh webhook (never the canary-warmed one of
+   the control, which would deliver the first event and turn `test.fail` red), a person created at once after the webhook is created,
    `expect.poll` within `SLO.twWebhookDelivery` for its record id. While B1 is open this assertion fails, so the test passes as
    expected. Playwright's `test.fail` applies to a whole test, so the assertion sits alone in its own test, after the control
    inside a `test.describe.serial` block: if the control fails, the block stops and nothing is marked expected.
@@ -685,7 +687,7 @@ import { signStripe } from "../../src/webhooks/sign.ts";
  * STRIPE_WEBHOOK_SECRET in the environment of `up` (plan Task 5). The round trip uses a payment session of
  * the system provider: the Stripe-signed event carries its id as metadata.session_id and payment-stripe's
  * getWebhookActionAndData needs no Stripe API call. Label: route/signature reachability only (not a MED-WH case).
- * With the Stripe test key (OD-2 option 4) the seed region linked to pp_stripe_stripe is used and nothing is changed.
+ * The region's provider list is read, changed and restored exactly (D6).
  */
 test.describe("medusa readiness", () => {
   test("the backend answers and the run-id header is not rejected", async ({ request }) => {
@@ -1014,7 +1016,7 @@ import { verifyTwenty } from "../../src/webhooks/verify.ts";
 
 /**
  * Twenty readiness. The server runs in Docker; the receiver's name is on the outbound allow-list from the
- * environment of `up` (HR-2, src/webhooks/reach.ts). No admin-panel write and no warm-up loop.
+ * environment of `up` (HR-2, src/webhooks/reach.ts). No product-database write and no warm-up loop.
  */
 test.describe("twenty readiness", () => {
   test("the server answers and the run-id header is not rejected", async ({ request }) => {
@@ -1044,7 +1046,7 @@ test.describe("twenty readiness", () => {
     tw,
     receiverHandle,
   }) => {
-    const secret = randomSecret(); // per run; the literal "warmup-warmup-warmup" of revision 1 is gone
+    const secret = randomSecret(); // per run; no fixed literal
     const key = receiverHandle.key("tw-ready-wh");
     const people: string[] = [];
     const createdAt = Date.now();
@@ -1062,8 +1064,12 @@ test.describe("twenty readiness", () => {
         receiverHandle.receiver.deliveries(key).some((d) => recordIdOf(d) === canaryId);
 
       // Precondition (asserted): the webhook is visible to the worker within the memo-derived bound.
+      let canarySent = 0;
       const canaryTriggers = await canaryPrecondition({
         trigger: async () => {
+          canarySent += 1;
+          // The bound is enforced at the send, so a regression in canaryPrecondition fails here.
+          if (canarySent > CANARY_MAX_TRIGGERS) throw new Error("TEST BUG: canary bound exceeded");
           canaryId = await tw.people.create(runScopedName("ready-canary"));
           people.push(canaryId);
         },
@@ -1076,9 +1082,8 @@ test.describe("twenty readiness", () => {
         deliveryMs: SLO.twWebhookDelivery.ms,
         marginMs: CANARY_MARGIN_MS,
       });
-      expect(canaryTriggers, "canary triggers within the memo-derived bound").toBeLessThanOrEqual(
-        CANARY_MAX_TRIGGERS,
-      );
+      expect(canarySent, "triggers reported equal the canary events actually sent").toBe(canaryTriggers);
+      expect(canarySent, "canary sent within the memo-derived bound").toBeLessThanOrEqual(CANARY_MAX_TRIGGERS);
 
       // The real event: fired once, asserted by its own record id.
       const realId = await tw.people.create(runScopedName("ready-real"));
@@ -1218,8 +1223,7 @@ STRIPE_API_KEY=
 STRIPE_WEBHOOK_SECRET=
 ```
 
-`AGENTS.md`, under "Cursor Cloud specific instructions" add (and in the same edit replace the personal name on the
-commit-note line by "the maintainer"):
+`AGENTS.md`, under "Cursor Cloud specific instructions" add (the personal-name line is changed by Task 3 only; this task makes no name edit):
 
 ```text
 - `scripts/ensure-receiver-hostname.sh` and `npm run qa:passwords` run from the `start` command (both idempotent).
@@ -1450,9 +1454,9 @@ Counts: `reach.test.ts` 6, `checks.test.ts` 4, `canary.test.ts` 5, `flows.test.t
 ## 7. Data isolation, cleanup and leak check
 
 - Everything the specs create carries the run prefix and is removed in `finally`: Cal webhook; Documenso webhook and envelope;
-  Medusa guest customer (deleted through the admin API); Medusa cart, **named with the run prefix and retained by id** in the
-  retained list (the leak rule for carts is not widened; the system-provider session leaves it); the region's provider list
-  restored to the exact list read, and asserted (D6); Twenty person(s) and webhook.
+  Medusa guest customer (deleted through the admin API); the Medusa cart, left in place and named with the run prefix (accepted
+  residue: no leak rule covers carts, so nothing is widened); the region's provider list restored to the exact list read, and
+  asserted (D6); Twenty person(s) and webhook.
 - No test writes an allow-list variable to Twenty: the allow-list is HR-2's environment value.
 - The P2-X-DB-001 sweep runs after every test (Task 3) and each spec also runs all rules of its product once.
 - Credentials: worker-scoped, revoked and verified dead at worker end (Task 4); `retained` covers them meanwhile.
@@ -1461,16 +1465,29 @@ Counts: `reach.test.ts` 6, `checks.test.ts` 4, `canary.test.ts` 5, `flows.test.t
 
 ## 8. Build steps (repo root; on any differing output STOP and paste it; one stack at a time, always ending with `down`)
 
-0. Branch from the Task 4 head, record the SHA. `export PATH="/usr/local/bin:$PATH"`; `npm ci && npm run check` -> `# tests 250`.
-   **Harness release acceptance (HR-1, HR-2, HR-3 tagged `v0.3.0`; index section 8).** Run before step 1; a failing check is a STOP:
-   - HR-1: `node $H/up.mjs cal`; `curl -sf "$CAL_API_BASE_URL/v2/health"` returns 200 (the path is UNPROBED until HR-1 is tagged);
-     after `down`, `ss -ltn | grep -c ':5555 '` prints `0`.
-   - HR-2: `docker exec <twenty server container> getent hosts host.docker.internal` prints a gateway address;
-     `docker exec <twenty server container> printenv OUTBOUND_HTTP_ALLOWED_INTERNAL_HOSTS` prints the value given to `up`.
-   - HR-3: with `NODE_OPTIONS=--use-openssl-ca` preset and no heap variable exported by this plan,
-     `node -e 'console.log(require("v8").getHeapStatistics().heap_size_limit >= 7e9)'` prints `true` under the harness environment,
-     and the Documenso `up` build passes.
-1. Harness pin (6.1). `npm run check` still `# tests 250`. Commit 1.
+0. Branch from the Task 4 head. `export PATH="/usr/local/bin:$PATH"`. `BASE=$(git rev-parse HEAD)` (the gate of section 9 uses it).
+   **0a. Tag gate, before any change.** `HARNESS_URL=$(node -p "require('./package.json').dependencies['qa-portfolio-harness'].replace(/^git\\+/, '').replace(/#.*$/, '')")`
+   (the repository named in `package.json`, read at run time; the exact spec format is UNPROBED here), then
+   `git ls-remote --tags "$HARNESS_URL" refs/tags/v0.3.0` must print one line ending in `refs/tags/v0.3.0`. Empty output means the
+   tag is missing: STOP (section 14).
+   **0b. Pin and install.** Edit `package.json` (6.1) to `#v0.3.0`, then `npm ci` (it builds the harness dist through `prepare`).
+   `npm run check` -> `# tests 250`. This is commit 1 (section 11).
+   **0c. Harness path, defined before first use.** `H=node_modules/qa-portfolio-harness/scripts`;
+   `node -e 'console.log(require("./node_modules/qa-portfolio-harness/package.json").version)'` -> `0.3.0`;
+   `test -f "$H/up.mjs" && test -f "$H/down.mjs"` exits 0.
+   **0d. HR-1, HR-2, HR-3 acceptance.** Each block is one stack, ends with `down`, and any mismatch is a STOP. First:
+   `set -a && . ./.env && set +a`.
+   - HR-1 (Cal API v2): `timeout 1080 node "$H/up.mjs" cal`; `curl -s -o /dev/null -w '%{http_code}\n' "$CAL_API_BASE_URL/v2/health"`
+     -> `200` (the path is UNPROBED until HR-1 is tagged); `node "$H/down.mjs" cal`; `ss -ltn | grep -c ':5555 '` -> `0`.
+   - HR-2 (Twenty allow-list and host name): `OUTBOUND_HTTP_ALLOWED_INTERNAL_HOSTS=host.docker.internal timeout 180 node "$H/up.mjs" twenty`;
+     `TW=$(docker ps -q --filter label=com.docker.compose.project=qa-harness-twenty --filter label=com.docker.compose.service=server)`;
+     `docker exec "$TW" getent hosts host.docker.internal` -> one line with an IPv4 address (the compose gateway; UNPROBED);
+     `docker exec "$TW" printenv OUTBOUND_HTTP_ALLOWED_INTERNAL_HOSTS` -> `host.docker.internal`; `node "$H/down.mjs" twenty`.
+     The project name is the reach table's network `qa-harness-twenty_default` (2.1, D2); the compose labels are UNPROBED here.
+   - HR-3 (heap merged into an existing `NODE_OPTIONS`): `NODE_OPTIONS=--use-openssl-ca timeout 1020 env PATH="$(dirname "$NODE24"):$PATH" node "$H/up.mjs" documenso`
+     -> exit 0 (exit 134 before HR-3). While it is up: `for p in $(pgrep -f 'documenso|react-router'); do tr '\0' '\n' < /proc/$p/environ | grep -E '^NODE_OPTIONS=.*--max-old-space-size=[0-9]+' && echo "heap set on pid $p"; done`
+     -> at least one `heap set on pid` line (the process pattern is UNPROBED); `grep -rnE 'max-old-space' .claude scripts .cursor AGENTS.md .env.example ; test $? -eq 1`
+     -> exit 0 (no P2 file sets a heap). Then `PATH="$(dirname "$NODE24"):$PATH" node "$H/down.mjs" documenso`.
 2. `src/slo.ts`, `src/webhooks/reach.ts`, `src/readiness/*.ts`, their unit tests and the `twenty.ts`/`medusa.ts` edits. `node --test tests/unit/webhooks/reach.test.ts tests/unit/readiness/*.test.ts` -> all pass. Commit 2.
 3. `src/fixtures/index.ts`, the four specs, `playwright.config.ts`, `eslint.config.mjs`. `npx playwright test --list` -> `Total: 21 tests in 4 files`; `npm run check` -> `# tests 265`. Commit 3.
 4. Scripts, hook, Cursor command, `.env.example`, `AGENTS.md`. `shellcheck scripts/*.sh .claude/hooks/*.sh`
@@ -1485,6 +1502,12 @@ Counts: `reach.test.ts` 6, `checks.test.ts` 4, `canary.test.ts` 5, `flows.test.t
    bash scripts/bootstrap.sh <medusa|documenso|cal|twenty>      # idempotent
    H=node_modules/qa-portfolio-harness/scripts
    ```
+   *Stripe reachability (option 4, only with a real test key set; expectations UNPROBED)*
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' https://api.stripe.com/v1/charges                              # expect 401 (no key)
+   curl -s -o /dev/null -w '%{http_code}\n' -u "$STRIPE_API_KEY:" 'https://api.stripe.com/v1/charges?limit=1'  # expect 200 (test key)
+   ```
+   Any other code is an ENV finding (section 14). The sandbox proxy answers 403 for this host (section 2.5), so this probe runs in CI or on a cloud VM.
    *Medusa*
    ```bash
    export MEDUSA_REDIS=1 MEDUSA_STRIPE=1
@@ -1524,6 +1547,9 @@ Counts: `reach.test.ts` 6, `checks.test.ts` 4, `canary.test.ts` 5, `flows.test.t
    ```
    The record-id field of the Twenty payload (`recordIdOf`) is UNPROBED in this plan (Task 2, section 2 does not record it). The
    first Twenty run reads it from the receiver log; if the field is absent, it is a STOP (section 14).
+5b. **Reaper wiring (Task 4 section 6.2b).** Add the per-product list and revoke adapters and the worker-start call (once per
+   worker, before the first mint). Probe each product's list call once, here, where the stacks are up (U16); a response shape
+   the code does not know is a STOP. Commit with the readiness specs.
 6. If a stack cannot start, or Docker is missing, or a host is blocked (proxy 403, ENOTFOUND): ENV finding, STOP.
    Mark that product's runs "UNPROBED in the build session" in the PR and report the task PARTIAL. Never skip silently.
 
@@ -1602,7 +1628,7 @@ database through its admin panel; export a heap variable (HR-3 owns it).
 | OD-1 | Twenty needs HR-2 for the allow-list, `host.docker.internal` and the billing variables | (a) HR-2 required, environment route; (b) an admin-panel write | 2.1, 2.3 | (a): HR-2 is **required** and tagged before this task; no admin-panel write |
 | OD-2 | Stripe-dependent rows (Documenso STR-002/003, Twenty STR, Medusa flow) | (4) a Stripe test-mode key as CI and cloud secrets, against `api.stripe.com`; (c) unit-level only. Rejected: stripe-mock (no host option), TLS interception, a fork change | 2.5 (sandbox proxy 403 re-check) | (4). The first CI run probes `curl -s -o /dev/null -w '%{http_code}' https://api.stripe.com/v1/charges`: expect `401` (UNPROBED expectation); any other code is an ENV finding and the fallback is (c). Not BLOCKING |
 | OD-3 | P2-TW-WH-004 expects 5 requests; the pinned code and image give 1 | (a) lane records 1 as the baseline and changes the case text; (b) investigate a different image | `call-webhook.job.ts` catch block; live 45 s watch | (a) |
-| OD-4 | P2-MED-WH-001/007 expect "captured"; payment_intent.succeeded authorizes first | (a) lane asserts the code-defined state (authorized, then capture); (b) change the case | 2.4 | (a) |
+| OD-4 | P2-MED-WH-001 expects "captured" (the other captured case is CUT, index section 9); payment_intent.succeeded authorizes first | (a) lane asserts the code-defined state (authorized, then capture); (b) change the case | 2.4 | (a) |
 | OD-5 | Cal `/v2` check needs HR-1 | (a) HR-1 required, a real test with no `test.fixme`; (b) wait | 2.6 | (a); HR-1 is **required** before this task |
 | OD-6 | DANGEROUS_BYPASS_RATE_LIMITS is UNPROBED | (a) leave unset; (b) probe where the sandbox allows it | the classifier refused; two sign-ins per run do not hit the limit | (a) |
 | OD-7 | Cold start times (Cal ~12 min, Documenso ~11 min) | build caching keyed on product, pinned SHA, harness tag, Node version and lockfile hash (Task 6 D4/OD-4), or prebuilt harness images | harness marker is the git SHA (2.1) | the caching decision is Task 6's; this task's timeouts use the cold times (section 8 step 5) |
@@ -1610,7 +1636,7 @@ database through its admin panel; export a heap variable (HR-3 owns it).
 Risks: `up` for Cal and Documenso is long and memory hungry (15 GB machine used about 11 GB during Cal's build); without HR-3 the
 Documenso build hits the heap limit (exit 134, 2.1); Twenty's lazy application can change in a new image (the SLO constants name
 the source lines; the canary precondition bounds it and the B1 lane test pins it); the guest-customer residue of Medusa carts
-(retained by id, section 7); the hosts line requires root or sudo.
+(accepted residue, section 7); the hosts line requires root or sudo.
 
 ## 14. Builder STOP conditions
 
@@ -1655,7 +1681,7 @@ Repo rules that apply to this task (restated from the planning brief; `AGENTS.md
    products. A harness change is a separate harness-release prerequisite (its own repo, PR and tag).
 9. Never use the GitHub account Bridge-bss.
 10. No personal name in any repo text (code, comments, docs, commits, PR text): write "the owner"
-    or "the maintainer". Fix `AGENTS.md:16` only if this task already edits `AGENTS.md`.
+    or "the maintainer". `AGENTS.md:16` is fixed by Task 3, which edits `AGENTS.md`; this task does not.
 11. Do not run CodeRabbit; the owner runs it after.
 12. One product stack at a time; every stack run ends with that product's `down`.
 

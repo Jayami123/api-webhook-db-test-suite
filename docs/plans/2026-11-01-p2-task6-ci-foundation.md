@@ -101,8 +101,7 @@ all four "success"                       -> exit 0
 
 None. Framework checks: workflow shape (7 tests), OAS discovery and validation (5 tests), project/product map for the
 serial twins (1 changed test). Prepares: the lane jobs of all products (`needs: foundation`), P2-CAL-SCH-002 (`startAfter`), P2-CAL-SCH-003 (new),
-P2-CAL-TASK-001/002 (driven by a connection reset), P2-DOC-REM-001/002 (`nextReminderAt`), P2-DOC-EXP-*, P2-DOC-JOB-* and
-P2-TW-JOB-001 (serial projects). The CUT IDs of index section 9 are not used here.
+P2-CAL-TASK-001/002 (driven by a connection reset), P2-DOC-REM-001/002 (`nextReminderAt`), P2-DOC-EXP-*, P2-DOC-JOB-* (serial projects). The Twenty serial project has no case in this task (its review case is CUT, index section 9).
 
 ## 5. Architecture
 
@@ -777,7 +776,7 @@ provisioned and torn down, `down` in an `if: always()` step, artefacts without s
 
 ## 8. Build steps (repo root; `export PATH="/usr/local/bin:$PATH"`; on any differing output STOP and paste it)
 
-0. Branch from the Task 5 head, record the SHA. `npm ci && npm run check` -> `# tests 265`. `npx playwright test --list --project=__list_projects__ 2>&1 | grep -F 'Available projects'`
+0. Branch from the Task 5 head, record the SHA and `BASE=$(git rev-parse HEAD)` (the gate of section 9 uses it). `npm ci && npm run check` -> `# tests 265`. `npx playwright test --list --project=__list_projects__ 2>&1 | grep -F 'Available projects'`
    shows the four `-api` projects.
 1. `src/contracts/validate-specs.ts`, `scripts/validate-specs.ts`, `tests/fixtures/oas-invalid/broken-ref.yaml`,
    `tests/unit/contracts/validate-specs.test.ts`, the `package.json` script. `npm run specs:validate` ->
@@ -807,8 +806,9 @@ npm run list:api | tail -1            # "Total: 0 tests in 0 files"
 npx playwright test --list --project=__list_projects__ 2>&1 | grep -c 'Available projects: "cal-api", "doc-api", "med-api", "tw-api", "cal-serial", "doc-serial", "med-serial", "tw-serial"'   # 1
 python3 -c "import yaml; d=yaml.safe_load(open('.github/workflows/api.yml')); print(list(d['jobs']), d['jobs']['foundation']['needs'], [j['timeout-minutes'] for j in d['jobs'].values()])"
 #   ['check', 'unit', 'db-guard', 'specs', 'foundation'] ['check', 'unit', 'db-guard', 'specs'] [10, 10, 10, 10, 5]
-git diff <task5-head>..HEAD -- .github/workflows/api.yml | grep -E '^-' | grep -v '^---' | grep -vE 'Available projects|Playwright has the four'   # empty: no existing line removed except the assertion and its step name
-git log origin/feat/2026-11-01-p2-task5-env-prereqs-readiness..HEAD --format=%B | grep -iE 'co-?authored-?by|generated[ ]with|claude-?session' ; test $? -eq 1   # no trailers, before any push
+git diff <task5-head>..HEAD -- .github/workflows/api.yml | grep -E '^-' | grep -v '^---' | grep -vE 'Available projects|Playwright has the four|--health-cmd'   # empty: no existing line removed except the assertion and its step name
+git rev-parse --verify "$BASE" >/dev/null || { echo "STOP: BASE not found"; exit 1; }
+! git log --format=%B "$BASE"..HEAD | grep -iE 'co-?authored-?by|generated[ ]with|claude-?session'   # empty: no trailers, before any push
 git status --porcelain                # empty after the commits
 git diff <task5-head>..HEAD | grep -E '^\+' | grep -niE 'j[a]yami|h[e]ttigoda' ; test $? -eq 1
 # in the PR, after the first CI run:
@@ -825,12 +825,13 @@ the timeout; find the slow step).
 | `db-guard` | 10 (unchanged) | 1.5 + 0.6 + 1.5 (postgres service pull and health) + 0.3 (22 db tests) = about 3.9 min | 6.1 min |
 | `specs` (new) | 10 | 1.5 + 0.6 + 0.1 = about 2.2 min | 7.8 min |
 | `foundation` (new) | 5 | about 0.5 min (runner start; no checkout) | 4.5 min |
+| bootstrap (clone and install), each lane product, **cold** | 30 (shared with the lane rows) | UNPROBED: not measured here, and the cold rows below exclude it; the first lane run records it, then it gets its own budget | not budgeted yet |
 | lane (later), Cal, **cold** | 30 (25 + 5) | 1.5 x the probed cold start (12 min, Task 5 2.7) = 18 min, + 1.5 min setup + 2 min tests + 1 min `down` = **22.5 min** (estimate; the 1.5x is the factor of Task 5 section 8 step 5) | 7.5 min |
 | lane (later), Documenso, **cold** | 30 (25 + 5) | 1.5 x 11 min = 16.5 min, + 1.5 + 2 + 1 = **21 min** (estimate) | 9 min |
 | lane (later), Cal, **warm** (cache hit) | 30 (25 + 5) | 3 x the probed warm start (about 1 min, Task 5 2.7) = 3 min, + 1.5 + 2 + 1 = **7.5 min** (estimate) | 22.5 min |
 | lane (later), Documenso, **warm** (cache hit) | 30 (25 + 5) | 3 x about 1 min = 3 min, + 1.5 + 2 + 1 = **7.5 min** (estimate) | 22.5 min |
 
-Every cold and warm row is at least 3 min under the timeout. The cold rows use 1.5 x the probe (the same factor as Task 5's
+The cold rows do **not** include product bootstrap (clone and install); see the bootstrap row (UNPROBED). Every cold and warm row is at least 3 min under the timeout. The cold rows use 1.5 x the probe (the same factor as Task 5's
 timeouts) because 3 x the cold start would exceed the 30 min timeout; no timeout is raised for it.
 
 These are estimates (UNPROBED on CI); the PR replaces them with measured durations.
@@ -852,7 +853,7 @@ PR title: `ci(api): add the foundation gate for the product lanes`. No trailers.
 
 - Automatic from the repo: the workflow (`.github/workflows/api.yml`). No cloud environment (Cursor or Claude Code) changes.
 - Pasted by hand (CI only): the owner adds two GitHub Actions secrets, `STRIPE_API_KEY` (a Stripe test-mode `sk_test_` key) and
-  `STRIPE_WEBHOOK_SECRET` (`whsec_`), for the lanes that use option (4) of Task 5 OD-2. Nothing else is pasted.
+  `STRIPE_WEBHOOK_SECRET` (`whsec_`), for the lanes that use option (4) of Task 5 OD-2. Nothing else is pasted. Task 6 has no Stripe reachability step: D6 forbids `secrets.` in the workflow, so the 200/401 probe is in Task 5 step 5 (UNPROBED expectations).
 - The CI db-guard job generates its two DB-role passwords per job (Task 3 section 12); they never reach a log.
 
 **Manual repository setting (the owner, after the PR merges and two green runs on `main`):** add these checks to the
