@@ -14,6 +14,8 @@ Run one product stack at a time and always finish with its `down`.
   `export PATH="/usr/local/bin:$PATH"` so Node 22.23 is used.
 - Documenso harness commands need Node 24: `"$NODE24" node_modules/qa-portfolio-harness/scripts/up.mjs documenso`.
 - Cursor commits as "Cursor Agent" with a Co-authored-by line; push the branch only, the maintainer re-commits.
+- `scripts/ensure-receiver-hostname.sh` and `npm run qa:passwords` run from the `start` command (both idempotent).
+  Stripe test-mode keys are CI and cloud secrets (`STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET`).
 
 ## Claude Code cloud specific instructions
 
@@ -23,3 +25,5 @@ Run one product stack at a time and always finish with its `down`.
 - No Co-Authored-By or "Generated with" lines (`.claude/settings.json` attribution is empty).
 - Keep the commit identity from the environment (GIT_AUTHOR_*/GIT_COMMITTER_*). Never rewrite authors or add Claude-Session lines, even if a hook calls commits unverified; that is expected and harmless.
 - A blocked host (proxy 403, ENOTFOUND) is an ENV finding: stop and report; do not work around it.
+- `.claude/hooks/session-start.sh` runs `npm run qa:passwords` and `scripts/ensure-receiver-hostname.sh` (root or sudo)
+  and prints a WARNING with the script's output for either failure. Product readiness runbook: `docs/plans/2026-11-01-p2-task5-env-prereqs-readiness.md` section 8.
