@@ -35,7 +35,9 @@ export default defineConfig({
   use: {
     // No browserName and no page fixture: these projects use APIRequestContext only.
     extraHTTPHeaders: { accept: "application/json" },
-    trace: "retain-on-failure",
+    // Traces record request headers, including Authorization. API projects have no browser, so no
+    // trace: failures are diagnosed from the scrubbed ApiError text and the receiver/fixture logs.
+    trace: "off",
   },
   projects: [
     apiProject("cal-api", "cal"),
