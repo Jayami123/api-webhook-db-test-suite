@@ -12,11 +12,11 @@ revoked at the end and proven dead.
   of the Task 3 branch**, record that SHA. PR base: the Task 3 branch.
 - Depends on Tasks 1 to 3 (uses `runScopedName`, `readOnlyDb`/`qa_ro`, the `retained` registry and the `test` of
   `src/invariants/fixture.ts`). Receiver and signers (Task 2) are not used here.
-- Unit chain: Task 3 head **211** -> this task **245** (+34). db-guard unchanged (22).
+- Unit chain: Task 3 head **214** -> this task **250** (+36: 34 plus the 2 reaper tests). db-guard unchanged (22).
 - Harness stays `v0.2.11` here; Task 5 moves it to `v0.2.18`. Nothing in this task starts a product.
 - Probe date 2026-11-01. Each product was started with the harness (`v0.2.18` scripts from a scratch clone, same
   product refs as `scripts/bootstrap.sh`), probed, and ended with its `down`.
-- Verification of this plan: the code below was built in a scratch copy (`npm run check` exit 0, 245/245) and the
+- Verification of this plan: the code below was built in a scratch copy (`npm run check` exit 0, 250/250) and the
   same modules then ran **live** against all four products inside the Task 5 readiness specs (section 2.6).
 
 ## 2. Probe findings (P5: how each product mints and revokes a credential for this run)
@@ -149,8 +149,8 @@ an email also creates a guest customer (cleanup in Task 5).
 
 ## 4. Case mapping
 
-No case is executed. The modules are prerequisites of: P2-CAL-CON-001..004 (blocked by HR-1 for `/v2`),
-P2-DOC-CON-001/002, P2-MED-CON-001..003, P2-TW-CON-001/002, every webhook and chain case (clients for webhook
+No case is executed. The modules are prerequisites of: P2-CAL-CON-001..004 (`/v2` needs HR-1, required before this task),
+P2-DOC-CON-001/002, P2-MED-CON-001..003, P2-TW-CON-001/002, every webhook and chain case (the review's kept IDs, index section 4) (clients for webhook
 CRUD, envelope, cart, person), and P2-TW-KEY-001 (cut, D10). Framework checks (not IDs): secret never printed by
 any of six output paths, scrub of echoed credentials, mint order and names per product, double revoke is a no-op,
 a failed second Medusa key revokes the first, a stale Twenty access token signs in again once, a still-valid
@@ -165,6 +165,7 @@ credential after revoke fails the run, the structural request type accepts a rea
 | `src/auth/env.ts` | new | seeded account credentials and defaults, each with its source line |
 | `src/auth/{medusa,twenty,documenso,cal}.ts` | new | mint and revoke per product |
 | `src/auth/lifecycle.ts` | new | `revokeAndVerify` |
+| `src/auth/lifetime.ts`, `src/auth/reaper.ts` | new | the 1 h credential lifetime; the worker-start reaper of run-prefix leftovers |
 | `src/clients/base.ts` | new | structural request type, `createCaller`, `ApiError`, run-id header |
 | `src/clients/{medusa,twenty,documenso,cal}.ts` | new | typed methods for the first routes |
 | `src/fixtures/auth.ts` | new | worker-scoped credentials and per-test clients, with leak-rule retention |
@@ -783,7 +784,9 @@ export async function mintDocumenso(input: {
     };
   };
   const label = input.name("doc-token");
-  const created = await trpc("apiToken.create", { teamId, tokenName: label, expirationDate: null });
+  // Short expiry (section 6.2b). The value format of expirationDate is UNPROBED: the first live create probes it.
+  const expiresAt = new Date(Date.now() + CREDENTIAL_TTL_MS).toISOString();
+  const created = await trpc("apiToken.create", { teamId, tokenName: label, expirationDate: expiresAt });
   const token = created.data as { id?: number; token?: string } | undefined;
   if (created.status !== 200 || typeof token?.id !== "number" || typeof token.token !== "string") {
     throw new AuthError("documenso apiToken.create", created.status);
@@ -887,7 +890,10 @@ export async function mintCal(input: {
     return { status: res.status, data: parsed[0]?.result?.data?.json };
   };
   const label = input.name("cal-key");
-  const created = await trpc("apiKeys/create", { note: label, neverExpires: true });
+  // Short expiry, never `neverExpires: true` (section 6.2b). The field name `expiresAt` on Cal's tRPC input is UNPROBED:
+  // the first live create probes it, and a rejection is a STOP (section 14).
+  const expiresAt = new Date(Date.now() + CREDENTIAL_TTL_MS).toISOString();
+  const created = await trpc("apiKeys/create", { note: label, neverExpires: false, expiresAt });
   if (
     created.status !== 200 ||
     typeof created.data !== "string" ||
@@ -919,6 +925,64 @@ export async function mintCal(input: {
   };
 }
 ```
+
+### 6.2b Credential lifetime and the worker-start reaper
+
+Documenso and Cal keys used to be minted without expiry (`expirationDate: null`, `neverExpires: true`, section 2). They now
+expire on their own after `CREDENTIAL_TTL_MS` (1 h, longer than the 30 min lane timeout of Task 6, D4). A worker killed hard
+skips its teardown; the reaper removes what such a dead run left behind. It is run once per worker, at worker start, before
+the first mint.
+
+`src/auth/lifetime.ts`
+
+```ts
+/** P2 credentials expire on their own after this long: longer than the lane job timeout (Task 6 D4, 30 min). */
+export const CREDENTIAL_TTL_MS = 60 * 60 * 1000;
+```
+
+`src/auth/reaper.ts`
+
+```ts
+/** Lane job timeout (Task 6 D4: `timeout-minutes: 30`). A run older than this is dead, not running. */
+export const JOB_TIMEOUT_MS = 30 * 60 * 1000;
+
+const PREFIX_IN_NAME = /^(p2-qa-(\d{4})(\d{2})(\d{2})t(\d{2})(\d{2})(\d{2})z-[0-9a-f]{8})(?:-|$)/;
+
+/** The UTC start of a run, read from its name's prefix `p2-qa-<yyyymmddThhmmssZ>-<8 hex>` (Task 1 D9). */
+export function runStartedAt(name: string): number | undefined {
+  const m = PREFIX_IN_NAME.exec(name);
+  if (m === null) return undefined;
+  return Date.UTC(+m[2]!, +m[3]! - 1, +m[4]!, +m[5]!, +m[6]!, +m[7]!);
+}
+
+export interface Leftover {
+  readonly id: string;
+  readonly name: string;
+}
+
+/**
+ * Pure. Selects only leftovers whose name carries a run prefix (the pattern of Task 1 D9), that do NOT belong to the
+ * current run, and whose run started at least `jobTimeoutMs` ago. Anything else is never touched.
+ */
+export function selectStaleLeftovers(input: {
+  readonly leftovers: readonly Leftover[];
+  readonly currentPrefix: string;
+  readonly nowMs: number;
+  readonly jobTimeoutMs: number;
+}): Leftover[] {
+  return input.leftovers.filter((leftover) => {
+    const m = PREFIX_IN_NAME.exec(leftover.name);
+    if (m === null || m[1] === input.currentPrefix) return false;
+    const started = runStartedAt(leftover.name);
+    return started !== undefined && input.nowMs - started >= input.jobTimeoutMs;
+  });
+}
+```
+
+The list call of each product (Documenso token list, Cal key list, Medusa `GET /admin/api-keys`, Twenty `apiKeys` query)
+is UNPROBED in this plan. The build probes each with one request; a response shape the code does not know is a STOP. The
+reaper revokes each selected leftover through the product's own revoke and reports every failure (it does not stop at the
+first). Its two unit tests are in section 6.6 and step 2b.
 
 ### 6.3 Clients
 
@@ -1560,6 +1624,55 @@ TWENTY_PASSWORD=
 ```
 
 ### 6.6 Tests (exact names are the contract)
+
+`tests/unit/auth/reaper.test.ts` (new, 2 tests)
+
+```ts
+import assert from "node:assert/strict";
+import { describe, test } from "node:test";
+import { JOB_TIMEOUT_MS, runStartedAt, selectStaleLeftovers } from "../../../src/auth/reaper.ts";
+
+const NOW = Date.UTC(2026, 10, 1, 12, 0, 0);
+const OLD = "p2-qa-20261101t113000z-1a2b3c4d"; // started 30 min before NOW
+const FRESH = "p2-qa-20261101t115500z-5e6f7a8b"; // started 5 min before NOW
+const CURRENT = "p2-qa-20261101t100000z-9c0d1e2f"; // the run doing the sweep
+
+describe("reaper", () => {
+  test("removes only run-pattern leftovers older than the job timeout", () => {
+    const picked = selectStaleLeftovers({
+      leftovers: [
+        { id: "1", name: `${OLD}-doc-token` },
+        { id: "2", name: `${FRESH}-doc-token` },
+        { id: "3", name: "manual-key" },
+        { id: "4", name: `${CURRENT}-cal-key` },
+      ],
+      currentPrefix: CURRENT,
+      nowMs: NOW,
+      jobTimeoutMs: JOB_TIMEOUT_MS,
+    });
+    assert.deepEqual(
+      picked.map((l) => l.id),
+      ["1"],
+    );
+  });
+
+  test("a name that only partly matches the pattern, or an impossible date, is never selected", () => {
+    assert.equal(runStartedAt("xp2-qa-20261101t113000z-1a2b3c4d-tw"), undefined);
+    const picked = selectStaleLeftovers({
+      leftovers: [
+        { id: "a", name: "xp2-qa-20261101t113000z-1a2b3c4d-tw" },
+        { id: "b", name: "p2-qa-20261399t999999z-1a2b3c4d-tw" },
+      ],
+      currentPrefix: CURRENT,
+      nowMs: NOW,
+      jobTimeoutMs: JOB_TIMEOUT_MS,
+    });
+    assert.deepEqual(picked, []);
+  });
+});
+```
+
+
 
 `tests/unit/auth/secret.test.ts`
 
@@ -2424,21 +2537,24 @@ Counts: `secret.test.ts` 8, `flows.test.ts` 15, `clients.test.ts` 11 = **34**.
 ## 8. Build steps (repo root; `export PATH="/usr/local/bin:$PATH"`; on any differing output STOP and paste it)
 
 0. Branch from the Task 3 head: `git checkout -b feat/$(date -u +%F)-p2-task4-api-clients-tokens <task3 branch>`;
-   `git rev-parse HEAD` recorded. `npm ci && npm run check` -> `# tests 211`.
+   `git rev-parse HEAD` recorded. `npm ci && npm run check` -> `# tests 214`.
 1. `src/auth/secret.ts`, `src/auth/http.ts`, `src/auth/lifecycle.ts`, `tests/unit/auth/secret.test.ts` (it also
    tests `revokeAndVerify`). `node --test tests/unit/auth/secret.test.ts` -> `# tests 8`. Commit 1.
 2. `src/auth/env.ts`, the four `src/auth/<product>.ts`, `tests/unit/auth/flows.test.ts` -> `# tests 15`. Commit 2.
 3. `src/clients/*.ts`, `tests/unit/clients/clients.test.ts` -> `# tests 11`. Commit 3.
 4. `src/fixtures/auth.ts`, the `playwright.config.ts` edit, `.env.example` lines. `npx tsc -p tsconfig.json` clean.
    Commit 4.
-5. `npm run check` -> exit 0, `# tests 245`. Run `node --test "tests/unit/**/*.test.ts"` three times: always 245/0.
+2b. `src/auth/lifetime.ts`, `src/auth/reaper.ts`, `tests/unit/auth/reaper.test.ts` -> `# tests 2`, `# pass 2`. Probe each
+   product's list call once (section 6.2b) and record its shape; an unknown shape is a STOP. Commit 2b.
+5. `npm run check` -> exit 0, `# tests 250`. Run `node --test "tests/unit/**/*.test.ts"` three times: always 250/0.
 6. Optional live proof when a stack is available (else write "UNPROBED in this session: Task 5 proves it"):
    Task 5's specs are the live proof; do not write another harness here.
 
 ## 9. Done criteria (machine-checkable)
 
 ```bash
-npm run check                                   # exit 0; "# tests 245" "# pass 245" "# fail 0"
+npm run check                                   # exit 0; "# tests 250" "# pass 250" "# fail 0"
+git log origin/feat/2026-11-01-p2-task3-db-roles-invariants..HEAD --format=%B | grep -iE 'co-?authored-?by|generated[ ]with|claude-?session' ; test $? -eq 1   # no trailers, before any push
 node --test tests/unit/auth/*.test.ts tests/unit/clients/*.test.ts 2>&1 | grep -E '^# (tests|pass|fail)'   # 34 / 34 / 0
 grep -n 'trace:' playwright.config.ts           # one line: trace: "off",
 grep -rnE 'console\.(log|error|warn|info|debug)\(' src/auth src/clients src/fixtures ; test $? -eq 1   # no console call in credential code
@@ -2470,11 +2586,10 @@ PR title: `feat(auth): add per-run credentials and typed api clients`. No traile
 
 ## 12. Environment changes
 
-- Automatic from the repo: nothing new to install.
-- Cursor cloud and Claude Code cloud: no change to `.cursor/*`, `scripts/cloud-install.sh`, the setup script or
-  the SessionStart hook. The Medusa admin pair is chosen by whoever starts the stack (harness `seed()` reads the same
-  two variables): `export MEDUSA_ADMIN_EMAIL=... MEDUSA_ADMIN_PASSWORD="$(openssl rand -hex 12)"` for that
-  session; CI generates them per job. Task 5 documents the whole prerequisite table.
+- Automatic from the repo: `npm ci` (the harness pin comes from Task 5). The reaper and the lifetime are code, not settings.
+- Pasted by hand: nothing. The credentials are minted per run and never stored in an environment.
+- The idempotent `npm run qa:passwords` calls (Cursor `start`, Claude SessionStart hook) are added by Task 5 (its section 12);
+  this task adds no environment step.
 - Manual repository setting: none.
 
 ## 13. Will NOT do / Open decisions / Risks
@@ -2487,13 +2602,13 @@ add a setup/teardown project (OD-1); start a product; add lane routes beyond the
 | OD-1 | Brief asks for setup-project minting and teardown revocation | (a) worker-scoped fixture (D1); (b) setup project + file hand-off | 2.5: different processes; a file is a secret in an artefact | (a). Not BLOCKING |
 | OD-2 | `x-p2-run-id` on POST/auth routes is UNPROBED | (a) keep, Task 5 asserts a GET per product (done live: all four answer 200 with it); (b) drop the header, keep names | no product code reads unknown headers on the paths read | (a); a lane that finds a rejection removes the header for that route and records it |
 | OD-3 | Documenso team id via `qa_ro` | (a) read-only query; (b) tRPC team list (UNPROBED) | 2.3 | (a) |
-| OD-4 | Cal key cannot be exercised on `/v2` | (a) accept, presence/removal proven by DB; (b) wait for HR-1 | 2.4 | (a) now, (b) before any Cal `/v2` case |
-| OD-5 | Twenty keys expire after 1 h even if teardown never runs | (a) keep (`ttlMs` 3 600 000); (b) shorter | long runs must stay under it | (a) |
+| OD-4 | Cal key cannot be exercised on `/v2` | (a) accept, presence and removal proven by DB; (b) HR-1 | 2.4 | (a) here; Task 5 needs HR-1 tagged for its `/v2` check |
+| OD-5 | Keys expire after 1 h even if teardown never runs (Documenso and Cal too, section 6.2b) | (a) keep (`CREDENTIAL_TTL_MS` = 3 600 000, above the 30 min job timeout); (b) shorter | long runs must stay under it | (a) |
 | OD-6 | Medusa publishable key links the channel named "Default Sales Channel", else the first | (a) keep; (b) link all | seed has one default channel | (a) |
 
-Risks: a Playwright worker killed hard (SIGKILL) skips its teardown, leaving a credential until its own expiry
-(Twenty 1 h; Cal/Medusa/Documenso keys have none) - the next run's leak rule names the leftover row by its run
-prefix; the `HttpPort` is a second HTTP stack next to `APIRequestContext` (small, unit-tested); Medusa `isAccepted`
+Risks: a Playwright worker killed hard (SIGKILL) skips its teardown, leaving a credential behind. Documenso, Cal and Twenty
+keys expire after 1 h (section 6.2b); Medusa keys have no expiry in this plan (UNPROBED). The sweep uses `currentRunPrefix()`,
+so it never flags an earlier run's leftover; the worker-start reaper (`src/auth/reaper.ts`) revokes it instead; the `HttpPort` is a second HTTP stack next to `APIRequestContext` (small, unit-tested); Medusa `isAccepted`
 uses `/admin/regions?limit=1`, which a future permission change could restrict.
 
 ## 14. Builder STOP conditions
@@ -2527,8 +2642,10 @@ Repo rules that apply to this task (restated from the planning brief; `AGENTS.md
 5. Lowercase Conventional Commits. Dated branches. Stage explicit paths only, never `git add -A`.
    No force-push, no rebase of pushed work, no tags, no merges.
 6. No `Co-authored-by`, "Generated with" or session-link lines in commits, PR text or files. Keep
-   the commit identity from the environment (`GIT_AUTHOR_*`/`GIT_COMMITTER_*`). If the builder is
-   Cursor cloud (it adds a `Co-authored-by` trailer), do not push such commits: stop and report.
+   the commit identity from the environment (`GIT_AUTHOR_*`/`GIT_COMMITTER_*`). Build environment: Claude Code cloud
+   (its `.claude/settings.json` turns attribution off). A Cursor build needs the owner to turn off Cursor's commit
+   attribution first (index section 9); a build that still adds a trailer stops before push. The trailer grep in
+   section 9 is the pre-push gate.
 7. Never print, log, commit or upload secrets or tokens. Redact them in artefacts and traces.
 8. Never edit product forks, `node_modules` or the harness. The harness owns starting and stopping
    products. A harness change is a separate harness-release prerequisite (its own repo, PR and tag).

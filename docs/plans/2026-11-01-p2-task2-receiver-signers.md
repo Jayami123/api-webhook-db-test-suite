@@ -20,7 +20,7 @@ foundation: `docs/plans/2026-11-01-p2-foundation-index.md`.
   Docker 29.9.2, Playwright 1.64.0, 4 cores, 15 GB RAM. Product forks at the pinned refs of `scripts/bootstrap.sh`
   (Cal `c2b7ac4`, Documenso `f4105e4`, Medusa starter `f677db4`, Twenty `7cbdfec`, image `v2.44.0`).
 - Verification of this plan: every code block in section 6 was built in a scratch copy of `main`
-  (outside the repo) with the pins below. `npm run check` exit 0, **172 tests, 172 pass**; the receiver file
+  (outside the repo) with the pins below. `npm run check` exit 0, **175 tests, 175 pass**; the receiver file
   passed 40 runs in a row and the whole unit suite 15 runs in a row.
 
 ## 2. Probe findings (raw, trimmed; secrets redacted)
@@ -117,11 +117,15 @@ moderate `fast-uri` and `minimatch` advisories that already exist on `main` (dev
   each other's deliveries; one path per test and a filter by run id isolates them. `runId` must match
   `RUN_PREFIX_PATTERN`, `testId` must match `[a-z0-9][a-z0-9-]{0,63}`. Anything else is a 404 that is counted, not
   recorded.
-- **D3. Modes `ok|500|slow|timeout|redirect`, switchable per path at runtime.** `slow` and `timeout` use an
+- **D3. Modes `ok|500|slow|timeout|redirect|reset`, switchable per path at runtime.** `slow` and `timeout` use an
   **injected timer** (`Timers`), so unit tests drive them without waiting. `timeout` never answers until the
   client gives up or `stop()` runs. `redirect` answers 302 (or the given status) to the path plus `/redirected`,
   which is itself a recorded path: a client that followed would show up as a second delivery (positive control for
-  the products that send `redirect: "manual"`).
+  the products that send `redirect: "manual"`). `reset` records the delivery, then destroys the socket with no status line, so
+  the client sees a connection reset (`ECONNRESET` or `socket hang up`, as the `timeout` test accepts). It exists because Cal
+  retries only a **thrown** error: a 5xx is returned as `{ok:false}` without a throw (`sendPayload.ts:324-327`,
+  `tasker/tasks/sendWebook.ts:21-27`), so only a reset makes the client throw. The retry path itself is UNPROBED in this plan
+  (OD-3); `reset` is what the rewritten P2-CAL-TASK-001/002 are driven by.
 - **D4. JSONL log, one line per delivery.** Fields: `v,ts,seq,method,path,runId,testId,attempt,mode,remoteAddress,headers,bodySha256,bodyBytes`.
   Secret headers are replaced by `<redacted:N>` (length only). The body text is **not** logged (hash and length
   only), because bodies can carry tokens. The raw body stays in memory for assertions.
@@ -149,20 +153,28 @@ moderate `fast-uri` and `minimatch` advisories that already exist on `main` (dev
 
 ## 4. Case mapping
 
-Existing master-plan IDs only. Nothing here executes a product case; the pieces prepare:
+Review IDs only: the senior review's current IDs. Nothing here executes a product case; the pieces prepare the IDs below.
+Dropped (CUT) IDs are removed from the lanes' lists: `P2-CAL-DLY-001`, `P2-TW-WH-002`, `P2-MED-WH-004`, `P2-MED-WH-005`,
+`P2-MED-WH-007` and the others named in index section 4. Rewritten IDs take the rewrite list of index section 9 (their
+master-plan text is replaced by the code-defined text there). New IDs (`TW-WH-007/008/009`, `DOC-WH-006/007`, `MED-WH-008`,
+`CAL-SCH-003`, `CAL-IDEM-001`) have their scope text in the review, which is not in this repository: the lanes take it from
+the owner (index section 9); this plan only names the piece that serves them.
 
 | Piece | Prepares |
 |---|---|
-| receiver (paths, modes, log, query) | P2-CAL-WH-001/002/003, P2-CAL-SCH-002 (exactly one delivery), P2-CAL-TASK-001/002, P2-DOC-WH-001..005, P2-TW-WH-001..006 |
+| receiver paths, `ok`, `slow`, `redirect`, log, query | P2-CAL-WH-001/002, P2-CAL-SCH-002 (exactly one delivery; field `startAfter`, index section 9), P2-CAL-SCH-003 (new), P2-DOC-WH-001, P2-DOC-WH-003..005, P2-DOC-WH-006/007 (new), P2-TW-WH-001/003, P2-TW-WH-007..009 (new), P2-MED-WH-001/002/003/006, P2-MED-WH-008 (new) |
+| receiver `500` | P2-CAL-WH-003 (rewritten: **1 attempt, no retry**), P2-TW-WH-004 (rewritten: **1 request**), P2-DOC-WH-002 (rewritten: **4 deliveries, no back-off**) |
+| receiver `reset` (socket destroy, ECONNRESET) | P2-CAL-TASK-001/002 (rewritten: **driven by a connection reset**), P2-CAL-IDEM-001 (new) |
+| receiver `timeout` | P2-TW-WH-005/006 (rewrite: **the 5 000 ms timeout boundary and a stable event id**, or cut; index section 9) |
 | `signCal` / `verifyCal` | P2-CAL-WH-001 |
-| `signDaily` (raw, reserialised) / `verifyDaily` | P2-CAL-DLY-001, P2-CAL-DLY-002 |
+| `signDaily` (raw, reserialised) / `verifyDaily` | P2-CAL-DLY-002 |
 | `signDocumenso` / `verifyDocumenso` | P2-DOC-WH-001 |
-| `signTwenty` / `verifyTwenty` | P2-TW-WH-001, P2-TW-WH-002 |
-| `signStripe` / `verifyStripe` | P2-DOC-STR-001/002/003, P2-MED-WH-001..007, P2-TW-STR-001 |
+| `signTwenty` / `verifyTwenty` | P2-TW-WH-001 |
+| `signStripe` / `verifyStripe` | P2-DOC-STR-001/002/003, P2-MED-WH-001/002/003/006/008, P2-TW-STR-001 |
 
-**P2-X-WH-001** is the label the brief uses for the webhook framework checks below. It is **not an ID in
-`docs/master-plan.html`** (its cross-cutting sections are named `X-P2-CON` only). It is used here as a label,
-exactly as given, and recorded as open decision OD-1.
+**P2-X-WH-001** and **P2-X-DB-001** are **review IDs**, not labels: they are new in the senior review and are not in
+`docs/master-plan.html` (its cross-cutting sections are named `X-P2-CON` only; index section 4, C9). The owner adds their rows
+(index section 9, item 5). OD-1 is closed.
 
 Framework checks (inside the framework, not new case IDs): replay (the same signed request verifies twice and
 the receiver does not de-duplicate), tamper (one flipped byte, per scheme), wrong secret, missing header,
@@ -182,7 +194,7 @@ malformed header, stale timestamp (Stripe, Twenty, Daily with a tolerance), boun
 | `.env.example` | edit | replace `P2_RECEIVER_HOST` by `P2_RECEIVER_HOSTS` |
 | `docs/probes/2026-11-01-p2-foundation-probes.md` | new | the probe record, copied **unchanged** from the plan branch (step 0b) |
 | `package.json`, `package-lock.json` | edit | `stripe` 23.0.1 (devDependency, exact) |
-| `tests/unit/webhooks/{vectors.ts,redact,sign,verify,receiver,docker-net}.test.ts` | new | 67 tests |
+| `tests/unit/webhooks/{vectors.ts,redact,sign,verify,receiver,docker-net}.test.ts` | new | 70 tests |
 | `tests/unit/env.test.ts` | edit | +3 tests |
 
 Not touched: `.gitignore` (already ignores `receiver-logs/`), `eslint.config.mjs` (the sleep ban applies to
@@ -596,6 +608,8 @@ export type ReceiverMode =
   | { readonly kind: "500" }
   | { readonly kind: "slow"; readonly delayMs: number }
   | { readonly kind: "timeout" }
+  /** Records the delivery, then destroys the socket with no status line (the client sees a connection reset). */
+  | { readonly kind: "reset" }
   | {
       readonly kind: "redirect";
       readonly status?: 301 | 302 | 303 | 307 | 308;
@@ -795,6 +809,10 @@ export async function startReceiver(options: ReceiverOptions): Promise<Receiver>
         });
         return;
       }
+      case "reset":
+        // The delivery is already recorded (the body was read first); no status line, the socket goes.
+        res.socket?.destroy();
+        return;
       case "timeout": {
         // Never answered: the socket stays open until the client gives up or stop() runs.
         const entry: Pending = { res, timer: undefined };
@@ -1882,6 +1900,40 @@ describe("receiver: modes", () => {
     );
   });
 
+  test("reset destroys the socket after the delivery is recorded: the client sees a reset, not a status", async () => {
+    const receiver = await start();
+    receiver.setMode(A, { kind: "reset" });
+    const { done } = post(receiver, A, "r1");
+    await assert.rejects(done, /socket hang up|ECONNRESET/);
+    assert.equal(receiver.deliveries(A).length, 1);
+    assert.equal(receiver.deliveries(A)[0]?.mode, "reset");
+    await receiver.stop();
+  });
+
+  test("reset is per path: a neighbouring path in ok mode still answers 200", async () => {
+    const receiver = await start();
+    receiver.setMode(A, { kind: "reset" });
+    await assert.rejects(post(receiver, A, "r2").done, /socket hang up|ECONNRESET/);
+    assert.equal((await post(receiver, B, "ok").done).status, 200);
+    await receiver.stop();
+  });
+
+  test("a reset path switched back to ok answers 200 on the next attempt, and attempts are counted", async () => {
+    const receiver = await start();
+    receiver.setMode(A, { kind: "reset" });
+    await assert.rejects(post(receiver, A, "r3").done, /socket hang up|ECONNRESET/);
+    receiver.setMode(A, { kind: "ok" });
+    assert.equal((await post(receiver, A, "r3-again").done).status, 200);
+    assert.deepEqual(
+      receiver.deliveries(A).map((d) => [d.attempt, d.mode]),
+      [
+        [1, "reset"],
+        [2, "ok"],
+      ],
+    );
+    await receiver.stop();
+  });
+
   test("redirect answers with Location and does not touch the target; the target path is recorded when requested", async () => {
     const receiver = await start();
     receiver.setMode(A, { kind: "redirect" });
@@ -2216,7 +2268,7 @@ Test count by file: redact 4, sign 17, verify 21, docker-net 5, receiver 20, env
 4. `src/webhooks/docker-net.ts` + test -> `# tests 5`. Then check the helper against the real Docker once:
    `node --input-type=module -e 'import("./src/webhooks/docker-net.ts").then(async m=>console.log(await m.networkGateway("bridge")))'`
    prints an IPv4 (`172.17.0.1` on the probe VM). Commit 4.
-5. `src/webhooks/receiver.ts` + test -> `# tests 20`, `# pass 20`. Run the file 20 times:
+5. `src/webhooks/receiver.ts` + test -> `# tests 23`, `# pass 23`. Run the file 20 times:
    `for i in $(seq 1 20); do node --test tests/unit/webhooks/receiver.test.ts >/dev/null 2>&1 || echo FAIL $i; done`
    prints nothing. Commit 5.
 6. `npm run format:check` (Prettier ignores `.env.example`), then the done criteria.
@@ -2224,8 +2276,8 @@ Test count by file: redact 4, sign 17, verify 21, docker-net 5, receiver 20, env
 ## 9. Done criteria (machine-checkable)
 
 ```bash
-npm run check                         # exit 0; "# tests 172" "# pass 172" "# fail 0" "# cancelled 0"
-node --test "tests/unit/webhooks/*.test.ts" 2>&1 | grep -E '^# (tests|pass|fail)'   # 67 / 67 / 0
+npm run check                         # exit 0; "# tests 175" "# pass 175" "# fail 0" "# cancelled 0"
+node --test "tests/unit/webhooks/*.test.ts" 2>&1 | grep -E '^# (tests|pass|fail)'   # 70 / 70 / 0
 node --test tests/unit/env.test.ts 2>&1 | grep -E '^# (tests|pass)'                 # 10 / 10
 npm ls stripe --depth=0               # stripe@23.0.1 (or the newest at least 7 days old on the build day)
 git status --porcelain                # empty after the commits
@@ -2234,6 +2286,7 @@ git diff --exit-code <(git show origin/plan/2026-11-01-p2-foundation:docs/probes
 git diff origin/main..HEAD -- . ':(exclude)tests/unit' | grep -E '^\+' | grep -nE 'sk_live_|sk_test_[A-Za-z0-9]{10,}|whsec_[A-Za-z0-9]{10,}|Bearer [A-Za-z0-9._-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY|postgres(ql)?://[A-Za-z0-9_]+:[A-Za-z0-9]{8,}@' ; test $? -eq 1     # no match
 git diff origin/main..HEAD | grep -niE 'j[a]yami|h[e]ttigoda' ; test $? -eq 1            # no personal name
 npm run list:api                      # still "Total: 0 tests in 0 files" (no spec yet)
+git log origin/main..HEAD --format=%B | grep -iE 'co-?authored-?by|generated[ ]with|claude-?session' ; test $? -eq 1   # no trailers, checked before any push
 ```
 
 The unit fixtures under `tests/unit` use throwaway strings (`whsec_unit`, `p2-vector-secret`) on purpose; the
@@ -2262,7 +2315,8 @@ PR title: `feat(webhooks): add receiver, signers and verifiers`. No trailers of 
 None. No new tool, package manager, image or setting. Cursor cloud (`.cursor/environment.json`,
 `.cursor/Dockerfile`, `scripts/cloud-install.sh`) and Claude Code cloud (setup script, `.claude/hooks/session-start.sh`,
 `$CLAUDE_ENV_FILE`) already provide Node 22.23 and run `npm ci`, which installs `stripe` from the lockfile.
-Automatic from the repo: `npm ci`. Pasted by hand: nothing. Manual repository setting: none.
+Automatic from the repo: `npm ci`. Pasted by hand: nothing. Manual repository setting: none. The idempotent `npm run qa:passwords`
+calls from the Cursor `start` command and the Claude SessionStart hook are added by Task 5 (its section 12); this task adds no environment step.
 
 ## 13. Will NOT do / Open decisions / Risks
 
@@ -2273,9 +2327,9 @@ Open decisions (default is taken by the builder; none is BLOCKING):
 
 | ID | Question | Options | Evidence | Recommended default |
 |---|---|---|---|---|
-| OD-1 | `P2-X-WH-001` and `P2-X-DB-001` are not IDs in `docs/master-plan.html` | (a) keep them as framework-check labels; (b) the owner adds two rows to the master plan; (c) rename | master plan section 5 lists `X-P2-CON` sections only | (a) now, (b) when the owner next edits the master plan |
+| OD-1 | `P2-X-WH-001` and `P2-X-DB-001` are not IDs in `docs/master-plan.html` | **CLOSED.** They are review IDs, not labels (section 4). The owner adds their master-plan rows (index section 9) | `X-P2-CON` sections only | closed |
 | OD-2 | Multi-host bind has no portable unit test (D12) | (a) accept, rely on readiness; (b) add a Linux-only test | macOS and Windows lack `127.0.0.2` | (a) |
-| OD-3 | Cal receiver-500 behaviour (2.1) contradicts P2-CAL-WH-003 and P2-CAL-TASK-001 as written | (a) the Cal lane records "no retry" as the baseline and drives TASK-001 by a connection failure; (b) change the case text | `sendWebook.ts:21-27` | (a); decided in the Cal lane, nothing here depends on it |
+| OD-3 | Cal receiver-500 behaviour (2.1) contradicts P2-CAL-WH-003 and P2-CAL-TASK-001 as written | (a) the Cal lane records "1 attempt, no retry" as the baseline for `500`, and drives TASK-001/002 by a connection reset (`reset` mode, D3); (b) change the case text | `sendPayload.ts:324-327`, `tasker/tasks/sendWebook.ts:21-27`; the retry-on-throw path is UNPROBED | (a); built here, decided in the Cal lane |
 
 Risks: a future stripe release changes an error message (the tests pin three substrings and the 300 s default, so
 the build fails loudly rather than silently); Node's `getActiveResourcesInfo` names could change (the test
@@ -2312,8 +2366,10 @@ Repo rules that apply to this task (restated from the planning brief; `AGENTS.md
 5. Lowercase Conventional Commits. Dated branches. Stage explicit paths only, never `git add -A`.
    No force-push, no rebase of pushed work, no tags, no merges.
 6. No `Co-authored-by`, "Generated with" or session-link lines in commits, PR text or files. Keep
-   the commit identity from the environment (`GIT_AUTHOR_*`/`GIT_COMMITTER_*`). If the builder is
-   Cursor cloud (it adds a `Co-authored-by` trailer), do not push such commits: stop and report.
+   the commit identity from the environment (`GIT_AUTHOR_*`/`GIT_COMMITTER_*`). Build environment: Claude Code cloud
+   (its `.claude/settings.json` turns attribution off). A Cursor build needs the owner to turn off Cursor's commit
+   attribution first (index section 9); a build that still adds a trailer stops before push. The trailer grep in
+   section 9 is the pre-push gate.
 7. Never print, log, commit or upload secrets or tokens. Redact them in artefacts and traces.
 8. Never edit product forks, `node_modules` or the harness. The harness owns starting and stopping
    products. A harness change is a separate harness-release prerequisite (its own repo, PR and tag).

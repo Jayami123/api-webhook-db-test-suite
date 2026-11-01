@@ -12,10 +12,10 @@ Builds on Task 2 (`docs/plans/2026-11-01-p2-task2-receiver-signers.md`). Index:
   Task 2 branch (GitHub retargets to `main` when it merges and is deleted).
 - Depends on: Task 1 (merged) and Task 2 (stacked; this task does not use the receiver or the signers, so a
   Task 2 stop does not block it, see the index).
-- Unit chain: Task 2 head **172** -> this task **211** (+39). db-guard: **8 -> 22** tests (+14).
+- Unit chain: Task 2 head **175** -> this task **214** (+39). db-guard: **8 -> 22** tests (+14).
 - Harness stays `v0.2.11` in this task. Probe date 2026-11-01 on the Claude Code cloud VM (Node 22.23.3, Docker 29.9.2).
 - Verification of this plan: all code below was built in a scratch copy on top of the Task 2 code. `npm run check`
-  exit 0 (211/211), `npm run test:db` against a throwaway `postgres:15` 22/22 three times in a row, and the
+  exit 0 (214/214), `npm run test:db` against a throwaway `postgres:15` 22/22 three times in a row, and the
   provisioning, the writer and every product rule were also run against the real harness databases
   (section 2).
 
@@ -133,9 +133,11 @@ SQLSTATE 42P01/42703; it **did run clean against both workspace schemas inside t
 
 ## 4. Case mapping
 
-- **P2-X-DB-001** (label from the brief, see Task 2 OD-1): the sweep, all four products.
-- Prepared (time travel only; no case runs here): P2-CAL-SCH-002, P2-CAL-TASK-001/002, P2-DOC-EXP-001/002,
-  P2-DOC-REM-001/002. Not preparable: P2-DOC-JOB-003 (OD-2).
+- **P2-X-DB-001** (a review ID, not a label; Task 2 section 4): the sweep, all four products.
+- Prepared (time travel only; no case runs here): P2-CAL-SCH-002 (field `startAfter`, index section 9), P2-CAL-SCH-003 (new;
+  `startAfter`), P2-CAL-TASK-001/002 (driven by a connection reset in Task 2), P2-DOC-EXP-001/002, P2-DOC-REM-001/002
+  (field `nextReminderAt`, index section 9). Not preparable: P2-DOC-JOB-003 (OD-2). P2-CAL-IDEM-001 (new): no rule is
+  prepared in this task (its scope text is the owner's, index section 9).
 - Rules prepare the lanes' own assertions: P2-CAL-DST-002 (booking end after start), P2-CAL-TASK-* (attempts),
   P2-DOC-SM-* / P2-DOC-SIG-* (completed has completedAt), P2-MED-WH-* (authorized session has authorized_at),
   P2-CAL-CON-002 / P2-DOC-CON-002 (leak rules after the atomic fixture's cleanup).
@@ -1263,6 +1265,14 @@ export const test = base.extend<{ dbInvariants: undefined }>({
   dbInvariants: [
     // eslint-disable-next-line no-empty-pattern -- Playwright requires the destructuring pattern
     async ({}, use, testInfo) => {
+      // The sweep is scoped by run prefix, not by worker: two workers in one run would see each other's rows.
+      // Asserted here, not assumed (the alternative, rules scoped per test, is not chosen). UNPROBED: the
+      // `testInfo.config.workers` field on Playwright 1.64.0.
+      if (testInfo.config.workers !== 1) {
+        throw new Error(
+          `TEST BUG: the P2-X-DB-001 sweep needs workers 1 (found ${String(testInfo.config.workers)}); scope the rules per test first`,
+        );
+      }
       await use(undefined);
       const product = productOfProject(testInfo.project.name);
       if (product === undefined) return;
@@ -2608,16 +2618,18 @@ Counts: `roles.test.ts` 14, `fixture.test.ts` 9, `engine.test.ts` 16 = **39** un
 ## 8. Build steps (repo root; `export PATH="/usr/local/bin:$PATH"`; on any differing output STOP and paste it)
 
 0. Branch: `git fetch origin && git checkout -b feat/$(date -u +%F)-p2-task3-db-roles-invariants origin/feat/<date>-p2-task2-receiver-signers`
-   (or the local Task 2 branch); `git rev-parse HEAD` recorded. `npm ci && npm run check` -> `# tests 172`.
+   (or the local Task 2 branch); `git rev-parse HEAD` recorded. `npm ci && npm run check` -> `# tests 175`.
 1. Throwaway server for the db tests (not a product; removed at the end):
    ```bash
    docker run -d --rm --name p2guard -e POSTGRES_PASSWORD=postgres -p 127.0.0.1:55433:5432 postgres:15
-   until docker exec p2guard pg_isready -U postgres >/dev/null 2>&1; do :; done
+   timeout 60 bash -c 'until docker exec p2guard pg_isready -h 127.0.0.1 -U postgres -q; do sleep 1; done' \
+     || { echo "ENV finding: p2guard not ready within 60 s"; docker logs p2guard 2>&1 | tail -n 40; echo STOP; }
    export P2_DB_GUARD_URL=postgres://postgres:postgres@127.0.0.1:55433/postgres
    npm run test:db        # baseline: "# tests 8" "# pass 8"
    ```
-   (`until ... do :; done` is a readiness loop on a command's exit code, not a sleep; if the server is slow, run it
-   again. If the container cannot start, that is an ENV finding: STOP.)
+   (A bounded readiness check in the runbook, not a test: the sleep ban covers `tests/`, and the 60 s cap is a hard
+   deadline. On failure, or if the container cannot start, that is an ENV finding: STOP, with the log tail above.
+   The CI health check of Task 6 uses the same `pg_isready -h 127.0.0.1` form.)
 2. `src/db/fixture-allowlist.ts`, `src/db/roles.ts`, `tests/unit/db/roles.test.ts`, the `env.ts` edit.
    `node --test tests/unit/db/roles.test.ts` -> `# tests 14`. Commit 1.
 3. `src/db/fixture.ts`, `tests/unit/db/fixture.test.ts` -> `# tests 9`. Commit 2.
@@ -2629,7 +2641,7 @@ Counts: `roles.test.ts` 14, `fixture.test.ts` 9, `engine.test.ts` 16 = **39** un
    -> `600`; `awk -F= '/^P2_QA/{print $1, length($2)}' .env` -> each `32`. Commit 4.
 6. `tests/db/roles-and-invariants.db.test.ts`; `npm run test:db` -> `# tests 22`, `# pass 22`; run it three times.
    Commit 5.
-7. `npm run check` -> exit 0, `# tests 211`. `docker rm -f p2guard`.
+7. `npm run check` -> exit 0, `# tests 214`. `docker rm -f p2guard`.
 8. Optional but expected when a stack is available (otherwise record "UNPROBED: no stack in this session"): bring
    one product up with its harness `up`, then `npm run qa:passwords && npm run db:roles:provision -- <product>`
    twice (`db-roles provision: <product> ok` both times), then
@@ -2639,7 +2651,8 @@ Counts: `roles.test.ts` 14, `fixture.test.ts` 9, `engine.test.ts` 16 = **39** un
 ## 9. Done criteria (machine-checkable)
 
 ```bash
-npm run check                                   # exit 0; "# tests 211" "# pass 211" "# fail 0"
+npm run check                                   # exit 0; "# tests 214" "# pass 214" "# fail 0"
+git log origin/feat/2026-11-01-p2-task2-receiver-signers..HEAD --format=%B | grep -iE 'co-?authored-?by|generated[ ]with|claude-?session' ; test $? -eq 1   # no trailers, before any push
 P2_DB_GUARD_URL=postgres://postgres:postgres@127.0.0.1:55433/postgres npm run test:db   # "# tests 22" "# pass 22" "# fail 0"
 node --test tests/unit/db/roles.test.ts tests/unit/db/fixture.test.ts tests/unit/invariants/engine.test.ts 2>&1 | grep -E '^# (tests|pass)'   # 39 / 39
 npm run list:api                                # "Total: 0 tests in 0 files"
@@ -2670,15 +2683,16 @@ PR title: `feat(db): add qa_ro and qa_fixture roles and the p2-x-db-001 sweep`. 
 
 ## 12. Environment changes
 
-- Automatic from the repo: `npm ci`; `scripts/qa-passwords.sh` is a repo script. Nothing else.
-- Cursor cloud: add one line to `AGENTS.md` under "Cursor Cloud specific instructions" (this task edits
-  `AGENTS.md`, so it also changes `AGENTS.md:16` from the personal name to "the maintainer"): "Before DB-role work run
-  `npm run qa:passwords`." No change to `.cursor/environment.json`, `.cursor/Dockerfile` or `scripts/cloud-install.sh`
-  (generating passwords there would bake them into the snapshot).
-- Claude Code cloud: pasted by hand into the environment's setup script: nothing. In `.claude/hooks/session-start.sh`
-  nothing either; the agent runs `npm run qa:passwords` once per session (same AGENTS.md line).
-- CI: no workflow change. A lane job (later) generates the two passwords per job with `openssl rand -hex 16` and
-  masks them before `npm run db:roles:provision -- <product>`.
+- Automatic from the repo: `npm ci`; `scripts/qa-passwords.sh` (through `npm run qa:passwords`; idempotent: `generated`
+  on the first run, `already set` on the next).
+- **Cursor cloud (automatic from the repo once Task 5 is merged):** the `start` command runs `npm run qa:passwords`
+  (Task 5 section 12). It runs at start, not in `install`, so no password is baked into the snapshot. This task adds the
+  AGENTS line (section 6.4) and changes `AGENTS.md:16` from the personal name to "the maintainer".
+- **Claude Code cloud (automatic from the repo once Task 5 is merged):** `.claude/hooks/session-start.sh` runs
+  `npm run qa:passwords`. The setup script is unchanged.
+- Pasted by hand: nothing in either environment. The passwords are generated per machine into the gitignored `.env`.
+- CI: no workflow change. A lane job (later) generates the two passwords per job with `openssl rand -hex 16` and masks them
+  before `npm run db:roles:provision -- <product>`.
 - Manual repository setting: none.
 
 ## 13. Will NOT do / Open decisions / Risks
@@ -2730,8 +2744,10 @@ Repo rules that apply to this task (restated from the planning brief; `AGENTS.md
 5. Lowercase Conventional Commits. Dated branches. Stage explicit paths only, never `git add -A`.
    No force-push, no rebase of pushed work, no tags, no merges.
 6. No `Co-authored-by`, "Generated with" or session-link lines in commits, PR text or files. Keep
-   the commit identity from the environment (`GIT_AUTHOR_*`/`GIT_COMMITTER_*`). If the builder is
-   Cursor cloud (it adds a `Co-authored-by` trailer), do not push such commits: stop and report.
+   the commit identity from the environment (`GIT_AUTHOR_*`/`GIT_COMMITTER_*`). Build environment: Claude Code cloud
+   (its `.claude/settings.json` turns attribution off). A Cursor build needs the owner to turn off Cursor's commit
+   attribution first (index section 9); a build that still adds a trailer stops before push. The trailer grep in
+   section 9 is the pre-push gate.
 7. Never print, log, commit or upload secrets or tokens. Redact them in artefacts and traces.
 8. Never edit product forks, `node_modules` or the harness. The harness owns starting and stopping
    products. A harness change is a separate harness-release prerequisite (its own repo, PR and tag).
