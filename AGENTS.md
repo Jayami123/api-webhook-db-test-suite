@@ -13,7 +13,7 @@ Run one product stack at a time and always finish with its `down`.
 - Cursor puts its own Node first on PATH. Before any harness command, run
   `export PATH="/usr/local/bin:$PATH"` so Node 22.23 is used.
 - Documenso harness commands need Node 24: `"$NODE24" node_modules/qa-portfolio-harness/scripts/up.mjs documenso`.
-- Cursor commits as "Cursor Agent" with a Co-authored-by line; push the branch only, Jayami re-commits.
+- Cursor commits as "Cursor Agent" with a Co-authored-by line; push the branch only, the maintainer re-commits.
 
 ## Claude Code cloud specific instructions
 
