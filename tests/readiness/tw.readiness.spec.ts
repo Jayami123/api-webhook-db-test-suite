@@ -11,7 +11,7 @@ import { rulesFor } from "../../src/invariants/rules.ts";
 import { connectedRole, randomSecret, recordIdOf } from "../../src/readiness/checks.ts";
 import { canaryPrecondition, CANARY_MAX_TRIGGERS } from "../../src/readiness/canary.ts";
 import { currentRunPrefix, runScopedName } from "../../src/run/prefix.ts";
-import { CANARY_MARGIN_MS, SLO, TWENTY_WEBHOOK_MEMO_MS } from "../../src/slo.ts";
+import { POLL_INTERVALS, CANARY_MARGIN_MS, SLO, TWENTY_WEBHOOK_MEMO_MS } from "../../src/slo.ts";
 import { verifyTwenty } from "../../src/webhooks/verify.ts";
 
 /**
@@ -76,7 +76,9 @@ test.describe("twenty readiness", () => {
         delivered: canaryDelivered,
         elapsedMs: () => Date.now() - createdAt,
         waitUntil: async (predicate, timeoutMs, message) => {
-          await expect.poll(predicate, { timeout: timeoutMs, message }).toBe(true);
+          await expect
+            .poll(predicate, { timeout: timeoutMs, intervals: POLL_INTERVALS, message })
+            .toBe(true);
         },
         memoTtlMs: TWENTY_WEBHOOK_MEMO_MS,
         deliveryMs: SLO.twWebhookDelivery.ms,
@@ -96,7 +98,11 @@ test.describe("twenty readiness", () => {
         .poll(
           () =>
             receiverHandle.receiver.deliveries(key).filter((d) => recordIdOf(d) === realId).length,
-          { timeout: SLO.twWebhookDelivery.ms, message: "Twenty real event delivered" },
+          {
+            timeout: SLO.twWebhookDelivery.ms,
+            intervals: POLL_INTERVALS,
+            message: "Twenty real event delivered",
+          },
         )
         .toBe(1);
       const delivery = receiverHandle.receiver

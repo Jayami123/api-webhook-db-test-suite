@@ -10,7 +10,7 @@ import { retained } from "../../src/invariants/fixture.ts";
 import { rulesFor } from "../../src/invariants/rules.ts";
 import { connectedRole } from "../../src/readiness/checks.ts";
 import { currentRunPrefix, runScopedName } from "../../src/run/prefix.ts";
-import { SLO } from "../../src/slo.ts";
+import { POLL_INTERVALS, SLO } from "../../src/slo.ts";
 import { signStripe } from "../../src/webhooks/sign.ts";
 
 /**
@@ -94,7 +94,11 @@ test.describe("medusa readiness", () => {
                 [sessionId],
               )
             )[0]?.status,
-          { timeout: SLO.medWebhookProcessing.ms, message: "Medusa payment webhook processing" },
+          {
+            timeout: SLO.medWebhookProcessing.ms,
+            intervals: POLL_INTERVALS,
+            message: "Medusa payment webhook processing",
+          },
         )
         .toBe("authorized");
     } finally {
