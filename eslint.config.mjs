@@ -8,7 +8,14 @@ const NO_SLEEP = "No sleeps in API tests: use expect.poll with an explicit timeo
 
 export default tseslint.config(
   {
-    ignores: ["node_modules/", "test-results/", "playwright-report/", "results/", "receiver-logs/"],
+    ignores: [
+      "node_modules/",
+      "test-results/",
+      "playwright-report/",
+      "results/",
+      "receiver-logs/",
+      "fixture-logs/",
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
@@ -47,6 +54,33 @@ export default tseslint.config(
     rules: {
       "no-restricted-syntax": [
         "error",
+        {
+          selector: "Property[key.name='unsafeDisableGuardForServerTests']",
+          message: "Only tests/db/** may disable the read-only guard.",
+        },
+      ],
+    },
+  },
+  {
+    // The harness owner URL is for the provisioning script and the db-guard tests only (plan Task 3).
+    files: [
+      "tests/contracts/**",
+      "tests/webhooks/**",
+      "tests/integration/**",
+      "tests/readiness/**",
+      "src/clients/**",
+      "src/auth/**",
+      "src/fixtures/**",
+      "src/invariants/**",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "ImportSpecifier[imported.name='dbUrl']",
+          message:
+            "Use roleDbUrl(): the owner-role URL is for scripts/db-roles.ts and tests/db only.",
+        },
         {
           selector: "Property[key.name='unsafeDisableGuardForServerTests']",
           message: "Only tests/db/** may disable the read-only guard.",

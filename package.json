@@ -16,7 +16,10 @@
     "check:static": "npm run format:check && npm run lint && npm run typecheck",
     "check": "npm run check:static && npm run unit",
     "list:api": "playwright test --list --pass-with-no-tests",
-    "test:api": "playwright test"
+    "test:api": "playwright test",
+    "db:roles:provision": "node scripts/db-roles.ts provision",
+    "db:roles:teardown": "node scripts/db-roles.ts teardown",
+    "qa:passwords": "bash scripts/qa-passwords.sh"
   },
   "dependencies": {
     "qa-portfolio-harness": "github:Jayami123/qa-portfolio-harness#v0.2.11"
