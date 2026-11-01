@@ -2439,7 +2439,7 @@ Counts: `secret.test.ts` 8, `flows.test.ts` 15, `clients.test.ts` 11 = **34**.
 npm run check                                   # exit 0; "# tests 245" "# pass 245" "# fail 0"
 node --test tests/unit/auth/*.test.ts tests/unit/clients/*.test.ts 2>&1 | grep -E '^# (tests|pass|fail)'   # 34 / 34 / 0
 grep -n 'trace:' playwright.config.ts           # one line: trace: "off",
-grep -rn 'console\.' src/auth src/clients src/fixtures ; test $? -eq 1         # no console output in credential code
+grep -rnE 'console\.(log|error|warn|info|debug)\(' src/auth src/clients src/fixtures ; test $? -eq 1   # no console call in credential code
 grep -rn 'process\.env\[' src/auth src/clients  ; test $? -eq 1                # only src/auth/env.ts reads env, via loadAuthEnv
 npm run list:api                                # "Total: 0 tests in 0 files"
 git status --porcelain                          # empty after the commits
