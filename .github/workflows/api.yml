@@ -1,3 +1,5 @@
+# Foundation shape (plan Task 6). The four product lanes (cal, doc, med, tw) are added later as jobs
+# that declare `needs: foundation`; see the commented skeleton at the end of this file.
 name: api
 
 on:
@@ -38,12 +40,12 @@ jobs:
         run: npm ci
       - name: Format, lint, typecheck
         run: npm run check:static
-      - name: Playwright has the four API projects and no browser
+      - name: Playwright has the four API projects, their serial twins and no browser
         run: |
           set -euo pipefail
           npm run list:api
           out="$(npx playwright test --list --project=__list_projects__ 2>&1 || true)"
-          echo "$out" | grep -F 'Available projects: "cal-api", "doc-api", "med-api", "tw-api"'
+          echo "$out" | grep -F 'Available projects: "cal-api", "doc-api", "med-api", "tw-api", "cal-serial", "doc-serial", "med-serial", "tw-serial"'
           if [ -d "$HOME/.cache/ms-playwright" ]; then
             echo "A Playwright browser cache exists; P2 must not download browsers." >&2
             exit 1
@@ -91,7 +93,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres"
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -109,3 +111,60 @@ jobs:
         run: npm ci
       - name: Read-only layers against postgres:15 (25006, 42601, 57014, EXPLAIN ANALYZE)
         run: npm run test:db
+
+  # Offline OAS validity: every committed spec dereferences, validates and compiles (no product).
+  specs:
+    name: specs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Committed OAS files are valid (contracts/ and tests/fixtures/oas/)
+        run: npm run specs:validate
+
+  # The single gate the product lanes depend on. It runs even when a dependency failed (always())
+  # so that its own result is a failure then, not "skipped".
+  foundation:
+    name: foundation
+    needs: [check, unit, db-guard, specs]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Every foundation job succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success")' >/dev/null
+
+  # ---- Lane skeleton (guidance only; lanes are added by their own tasks) -----------------------
+  # A lane is one job per product, about 25 minutes at most, with its own stack:
+  #
+  #   cal-api:                          # doc-api, med-api, tw-api alike
+  #     name: cal-api
+  #     needs: foundation
+  #     runs-on: ubuntu-24.04
+  #     timeout-minutes: 30            # 25 min budget + 5 min for the always() cleanup below
+  #     env:
+  #       P2_QA_RO_PASSWORD / P2_QA_FIXTURE_PASSWORD: generated per job (openssl rand -hex 16, ::add-mask::)
+  #     steps:
+  #       - checkout, setup-node, npm ci                       # same pinned actions as above
+  #       - bootstrap the product at its pinned ref            # bash scripts/bootstrap.sh cal
+  #       - harness up                                          # node node_modules/qa-portfolio-harness/scripts/up.mjs cal
+  #       - provision roles                                     # npm run db:roles:provision -- cal
+  #       - start the receiver and run the lane                 # npx playwright test --project=cal-api --project=cal-serial
+  #       - upload report, junit, receiver-logs/, fixture-logs/ # if: always(), retention-days: 7
+  #       - harness down                                        # if: always(); the job must always end with `down`
+  #
+  # Cron, tasker and sweep cases live in tests/serial/<code>/ and run in the <code>-serial project
+  # after <code>-api (workers=1 already; the project only fixes their place and name).
