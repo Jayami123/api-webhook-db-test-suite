@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { apiBaseUrl, dbStatementTimeoutMs, dbUrl, loadEnv } from "../../src/env.ts";
+import { apiBaseUrl, dbStatementTimeoutMs, dbUrl, loadEnv, receiverConfig } from "../../src/env.ts";
 
 describe("env", () => {
   test("defaults are the harness loopback defaults", () => {
@@ -69,6 +69,30 @@ describe("env", () => {
           !error.message.includes("[bad") &&
           !error.message.includes("s3cr3t"),
       );
+    }
+  });
+
+  test("receiver defaults to 127.0.0.1:4317 and blank values fall back", () => {
+    assert.deepEqual(receiverConfig({}), { hosts: ["127.0.0.1"], port: 4317 });
+    assert.deepEqual(receiverConfig({ P2_RECEIVER_HOSTS: "  ", P2_RECEIVER_PORT: "" }), {
+      hosts: ["127.0.0.1"],
+      port: 4317,
+    });
+  });
+
+  test("receiver accepts a list of explicit IP literals and a port", () => {
+    assert.deepEqual(
+      receiverConfig({ P2_RECEIVER_HOSTS: "127.0.0.1, 172.17.0.1,::1", P2_RECEIVER_PORT: "4400" }),
+      { hosts: ["127.0.0.1", "172.17.0.1", "::1"], port: 4400 },
+    );
+  });
+
+  test("receiver refuses wildcards, names and out-of-range ports", () => {
+    for (const bad of ["0.0.0.0", "::", "localhost", "127.0.0.1,0.0.0.0", "example.com"]) {
+      assert.throws(() => receiverConfig({ P2_RECEIVER_HOSTS: bad }), /P2_RECEIVER_HOSTS/, bad);
+    }
+    for (const bad of ["80", "1023", "65536", "abc", "4317.5"]) {
+      assert.throws(() => receiverConfig({ P2_RECEIVER_PORT: bad }), /P2_RECEIVER_PORT/, bad);
     }
   });
 });

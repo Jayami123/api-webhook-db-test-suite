@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import * as z from "zod";
 
 export type ProductId = "cal" | "documenso" | "medusa" | "twenty";
@@ -25,6 +26,28 @@ const loopbackPgUrl = z.string().trim().refine(isLoopbackPgUrl, {
   message: "must be a postgres:// URL on 127.0.0.1, localhost or [::1]",
 });
 
+/** An explicit IP literal. Wildcards would expose the receiver beyond this machine, so they are refused. */
+const WILDCARD_HOSTS = new Set(["0.0.0.0", "::", "[::]"]);
+const bindHostList = z
+  .string()
+  .trim()
+  .transform((raw) =>
+    raw
+      .split(",")
+      .map((part) => part.trim())
+      .filter((part) => part !== ""),
+  )
+  .pipe(
+    z
+      .array(
+        z.string().refine((host) => isIP(host) !== 0 && !WILDCARD_HOSTS.has(host), {
+          message:
+            "must be explicit IP literals (no 0.0.0.0 or ::); wildcards expose the receiver beyond this machine",
+        }),
+      )
+      .min(1),
+  );
+
 // Defaults are the harness's public local defaults (qa-portfolio-harness v0.2.11 src/config.ts),
 // with localhost rewritten to 127.0.0.1. They are not secrets. Never log a URL taken from env.
 const schema = z.object({
@@ -48,6 +71,11 @@ const schema = z.object({
   TWENTY_DB_URL: z.preprocess(
     blankToUndefined,
     loopbackPgUrl.default("postgres://postgres:postgres@127.0.0.1:5434/default"),
+  ),
+  P2_RECEIVER_HOSTS: z.preprocess(blankToUndefined, bindHostList.default(["127.0.0.1"])),
+  P2_RECEIVER_PORT: z.preprocess(
+    blankToUndefined,
+    z.coerce.number().int().min(1024).max(65535).default(4317),
   ),
   P2_DB_STATEMENT_TIMEOUT_MS: z.preprocess(
     blankToUndefined,
@@ -91,4 +119,13 @@ export function dbUrl(product: ProductId, env: NodeJS.ProcessEnv = process.env):
 
 export function dbStatementTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
   return loadEnv(env).P2_DB_STATEMENT_TIMEOUT_MS;
+}
+
+/** Where the webhook receiver binds (src/webhooks/receiver.ts). Loopback unless the caller adds more. */
+export function receiverConfig(env: NodeJS.ProcessEnv = process.env): {
+  readonly hosts: readonly string[];
+  readonly port: number;
+} {
+  const parsed = loadEnv(env);
+  return { hosts: parsed.P2_RECEIVER_HOSTS, port: parsed.P2_RECEIVER_PORT };
 }
