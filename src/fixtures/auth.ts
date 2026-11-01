@@ -5,6 +5,7 @@ import { mintMedusa, type MedusaAuth } from "../auth/medusa.ts";
 import { mintTwenty, type TwentyAuth } from "../auth/twenty.ts";
 import { addSecret } from "../auth/secret.ts";
 import { revokeAndVerify } from "../auth/lifecycle.ts";
+import { reapOrThrow } from "../auth/reaper-run.ts";
 import { calClient, type CalClient } from "../clients/cal.ts";
 import { documensoClient, type DocumensoClient } from "../clients/documenso.ts";
 import { medusaClient, type MedusaClient } from "../clients/medusa.ts";
@@ -41,6 +42,8 @@ export const test = withInvariants.extend<Clients, Workers>({
   calAuth: [
     // eslint-disable-next-line no-empty-pattern -- Playwright requires the destructuring pattern
     async ({}, use) => {
+      // Worker start, before the first mint: revoke credentials of dead runs (Task 4 section 6.2b).
+      await reapOrThrow("cal");
       const env = loadAuthEnv();
       addSecret(env.P2_CAL_USER_PASSWORD);
       const db = readOnlyDb("cal");
@@ -66,6 +69,8 @@ export const test = withInvariants.extend<Clients, Workers>({
   docAuth: [
     // eslint-disable-next-line no-empty-pattern -- Playwright requires the destructuring pattern
     async ({}, use) => {
+      // Worker start, before the first mint: revoke credentials of dead runs (Task 4 section 6.2b).
+      await reapOrThrow("documenso");
       const env = loadAuthEnv();
       addSecret(env.P2_DOC_USER_PASSWORD);
       const db = readOnlyDb("documenso");
@@ -95,6 +100,8 @@ export const test = withInvariants.extend<Clients, Workers>({
   medAuth: [
     // eslint-disable-next-line no-empty-pattern -- Playwright requires the destructuring pattern
     async ({}, use) => {
+      // Worker start, before the first mint: revoke credentials of dead runs (Task 4 section 6.2b).
+      await reapOrThrow("medusa");
       const env = loadAuthEnv();
       addSecret(env.MEDUSA_ADMIN_PASSWORD);
       const auth = await mintMedusa({
@@ -113,6 +120,8 @@ export const test = withInvariants.extend<Clients, Workers>({
   twAuth: [
     // eslint-disable-next-line no-empty-pattern -- Playwright requires the destructuring pattern
     async ({}, use) => {
+      // Worker start, before the first mint: revoke credentials of dead runs (Task 4 section 6.2b).
+      await reapOrThrow("twenty");
       const env = loadAuthEnv();
       addSecret(env.TWENTY_PASSWORD);
       const auth = await mintTwenty({
