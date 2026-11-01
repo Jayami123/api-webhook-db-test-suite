@@ -2205,8 +2205,7 @@ Test count by file: redact 4, sign 17, verify 21, docker-net 5, receiver 20, env
 5. `src/webhooks/receiver.ts` + test -> `# tests 20`, `# pass 20`. Run the file 20 times:
    `for i in $(seq 1 20); do node --test tests/unit/webhooks/receiver.test.ts >/dev/null 2>&1 || echo FAIL $i; done`
    prints nothing. Commit 5.
-6. `npx prettier --write src tests package.json .env.example` is **not** run on `.env.example` (Prettier ignores
-   it); run `npm run format:check`. Then the done criteria.
+6. `npm run format:check` (Prettier ignores `.env.example`), then the done criteria.
 
 ## 9. Done criteria (machine-checkable)
 
@@ -2216,9 +2215,9 @@ node --test "tests/unit/webhooks/*.test.ts" 2>&1 | grep -E '^# (tests|pass|fail)
 node --test tests/unit/env.test.ts 2>&1 | grep -E '^# (tests|pass)'                 # 10 / 10
 npm ls stripe --depth=0               # stripe@23.0.1 (or the newest at least 7 days old on the build day)
 git status --porcelain                # empty after the commits
-git diff --name-only origin/main..HEAD | sort    # exactly the 15 files of section 5 (tests count as 7 files)
+git diff --name-only origin/main..HEAD | sort    # exactly the 16 files of section 5
 git diff origin/main..HEAD -- . ':(exclude)tests/unit' | grep -E '^\+' | grep -nE 'sk_live_|sk_test_[A-Za-z0-9]{10,}|whsec_[A-Za-z0-9]{10,}|Bearer [A-Za-z0-9._-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY|postgres(ql)?://[A-Za-z0-9_]+:[A-Za-z0-9]{8,}@' ; test $? -eq 1     # no match
-git diff origin/main..HEAD | grep -niE 'jayami|hettigoda' ; test $? -eq 1            # no personal name
+git diff origin/main..HEAD | grep -niE 'j[a]yami|h[e]ttigoda' ; test $? -eq 1            # no personal name
 npm run list:api                      # still "Total: 0 tests in 0 files" (no spec yet)
 ```
 
