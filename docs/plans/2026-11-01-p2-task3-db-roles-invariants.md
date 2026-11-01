@@ -2643,7 +2643,7 @@ npm run list:api                                # "Total: 0 tests in 0 files"
 grep -rn "dbUrl" src tests --include=*.ts | grep -v -E '^(src/env.ts|src/db/roles-admin.ts|tests/unit/env.test.ts|tests/db/)'   # no output
 git status --porcelain                          # empty after the commits
 git diff --name-only <task2-head>..HEAD | sort  # exactly the files of section 5
-git diff <task2-head>..HEAD -- . ':(exclude)tests/unit' | grep -nE 'sk_live_|sk_test_[A-Za-z0-9]{10,}|whsec_[A-Za-z0-9]{10,}|Bearer [A-Za-z0-9._-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY|postgres(ql)?://[A-Za-z0-9_]+:[A-Za-z0-9]{8,}@' ; test $? -eq 1
+git diff <task2-head>..HEAD -- . ':(exclude)tests/unit' | grep -E '^\+' | grep -nE 'sk_live_|sk_test_[A-Za-z0-9]{10,}|whsec_[A-Za-z0-9]{10,}|Bearer [A-Za-z0-9._-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY|postgres(ql)?://[A-Za-z0-9_]+:[A-Za-z0-9]{8,}@' ; test $? -eq 1
 git diff <task2-head>..HEAD | grep -niE 'j[a]yami|h[e]ttigoda' ; test $? -eq 1
 ```
 

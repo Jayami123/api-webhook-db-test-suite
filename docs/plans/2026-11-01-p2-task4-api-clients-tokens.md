@@ -2444,7 +2444,7 @@ grep -rn 'process\.env\[' src/auth src/clients  ; test $? -eq 1                #
 npm run list:api                                # "Total: 0 tests in 0 files"
 git status --porcelain                          # empty after the commits
 git diff --name-only <task3-head>..HEAD | sort  # exactly the files of section 5
-git diff <task3-head>..HEAD -- . ':(exclude)tests/unit' | grep -nE 'sk_live_|sk_test_[A-Za-z0-9]{10,}|whsec_[A-Za-z0-9]{10,}|Bearer [A-Za-z0-9._-]{20,}|cal_[A-Za-z0-9]{20,}|api_[A-Za-z0-9]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY' ; test $? -eq 1
+git diff <task3-head>..HEAD -- . ':(exclude)tests/unit' | grep -E '^\+' | grep -nE 'sk_live_|sk_test_[A-Za-z0-9]{10,}|whsec_[A-Za-z0-9]{10,}|Bearer [A-Za-z0-9._-]{20,}|cal_[A-Za-z0-9]{20,}|api_[A-Za-z0-9]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY' ; test $? -eq 1
 git diff <task3-head>..HEAD | grep -niE 'j[a]yami|h[e]ttigoda' ; test $? -eq 1
 ```
 
