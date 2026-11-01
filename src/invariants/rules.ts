@@ -250,12 +250,16 @@ export function rulesFor(product: ProductId): readonly Rule[] {
   return RULES[product];
 }
 
-/** Playwright project name -> product (playwright.config.ts: cal-api, doc-api, med-api, tw-api). */
+/** Playwright project name -> product (playwright.config.ts: the four -api and the four -serial projects). */
 const PROJECT_PRODUCT: Readonly<Record<string, ProductId>> = {
   "cal-api": "cal",
   "doc-api": "documenso",
   "med-api": "medusa",
   "tw-api": "twenty",
+  "cal-serial": "cal",
+  "doc-serial": "documenso",
+  "med-serial": "medusa",
+  "tw-serial": "twenty",
 };
 
 export function productOfProject(projectName: string): ProductId | undefined {

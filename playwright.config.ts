@@ -21,6 +21,14 @@ function apiProject(name: string, code: string): Project {
   };
 }
 
+/**
+ * Cron, tasker and sweep cases: they trigger product-wide jobs, so they run alone, after the
+ * product's other tests (plan Task 6). Same single worker as everything else.
+ */
+function serialProject(name: string, code: string, after: string): Project {
+  return { name, testMatch: [`serial/${code}/**/*.spec.ts`], dependencies: [after] };
+}
+
 export default defineConfig({
   testDir: "tests",
   // API tests assert exact DB counts: one worker, no retries (a retry would hide a flaky oracle).
@@ -50,5 +58,9 @@ export default defineConfig({
     apiProject("doc-api", "doc"),
     apiProject("med-api", "med"),
     apiProject("tw-api", "tw"),
+    serialProject("cal-serial", "cal", "cal-api"),
+    serialProject("doc-serial", "doc", "doc-api"),
+    serialProject("med-serial", "med", "med-api"),
+    serialProject("tw-serial", "tw", "tw-api"),
   ],
 });
