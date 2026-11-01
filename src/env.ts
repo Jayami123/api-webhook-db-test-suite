@@ -77,6 +77,10 @@ const schema = z.object({
     blankToUndefined,
     z.coerce.number().int().min(1024).max(65535).default(4317),
   ),
+  // Passwords of the two roles scripts/db-roles.ts creates. Optional here: only code that connects as
+  // a role needs them, and it checks the shape (src/db/roles.ts assertPassword) without echoing it.
+  P2_QA_RO_PASSWORD: z.preprocess(blankToUndefined, z.string().trim().optional()),
+  P2_QA_FIXTURE_PASSWORD: z.preprocess(blankToUndefined, z.string().trim().optional()),
   P2_DB_STATEMENT_TIMEOUT_MS: z.preprocess(
     blankToUndefined,
     z.coerce.number().int().min(100).max(600_000).default(5_000),
@@ -128,4 +132,30 @@ export function receiverConfig(env: NodeJS.ProcessEnv = process.env): {
 } {
   const parsed = loadEnv(env);
   return { hosts: parsed.P2_RECEIVER_HOSTS, port: parsed.P2_RECEIVER_PORT };
+}
+
+export type DbRole = "qa_ro" | "qa_fixture";
+
+/**
+ * Connection string for a P2 role: the product's host, port and database with the role's name and
+ * password. `dbUrl()` (the harness owner) is for scripts/db-roles.ts and tests/db only; ESLint
+ * forbids importing it anywhere else. Errors never contain a URL or a password.
+ */
+export function roleDbUrl(
+  product: ProductId,
+  role: DbRole,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const parsed = loadEnv(env);
+  const variable = role === "qa_ro" ? "P2_QA_RO_PASSWORD" : "P2_QA_FIXTURE_PASSWORD";
+  const password = role === "qa_ro" ? parsed.P2_QA_RO_PASSWORD : parsed.P2_QA_FIXTURE_PASSWORD;
+  if (password === undefined || !/^[A-Za-z0-9_-]{16,128}$/.test(password)) {
+    throw new Error(
+      `TEST BUG: ${variable} is missing or malformed (run npm run db:roles:provision)`,
+    );
+  }
+  const url = new URL(dbUrl(product, env));
+  url.username = role;
+  url.password = password;
+  return url.toString();
 }
