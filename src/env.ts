@@ -48,7 +48,7 @@ const bindHostList = z
       .min(1),
   );
 
-// Defaults are the harness's public local defaults (qa-portfolio-harness v0.2.11 src/config.ts),
+// Defaults are the harness's public local defaults (qa-portfolio-harness v0.3.0 src/config.ts),
 // with localhost rewritten to 127.0.0.1. They are not secrets. Never log a URL taken from env.
 const schema = z.object({
   CAL_BASE_URL: z.preprocess(blankToUndefined, loopbackUrl.default("http://127.0.0.1:3000")),
