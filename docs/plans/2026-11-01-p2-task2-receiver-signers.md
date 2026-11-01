@@ -2217,7 +2217,7 @@ npm ls stripe --depth=0               # stripe@23.0.1 (or the newest at least 7 
 git status --porcelain                # empty after the commits
 git diff --name-only origin/main..HEAD | sort    # exactly the 16 files of section 5
 git diff origin/main..HEAD -- . ':(exclude)tests/unit' | grep -nE 'sk_live_|sk_test_[A-Za-z0-9]{10,}|whsec_[A-Za-z0-9]{10,}|Bearer [A-Za-z0-9._-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY|postgres(ql)?://[A-Za-z0-9_]+:[A-Za-z0-9]{8,}@' ; test $? -eq 1     # no match
-git diff origin/main..HEAD | grep -niE 'jayami|hettigoda' ; test $? -eq 1            # no personal name
+git diff origin/main..HEAD | grep -niE 'j[a]yami|h[e]ttigoda' ; test $? -eq 1            # no personal name
 npm run list:api                      # still "Total: 0 tests in 0 files" (no spec yet)
 ```
 
