@@ -92,7 +92,8 @@ rules judge only rows created at or after the run start.
 Cal (7 rules), Documenso (7), Medusa (5): every rule ran with no SQL error against the real database as `qa_ro`
 (`basis: "live"`). Twenty: the two `core` rules ran live; the per-workspace `person` rule is `basis: "source"` (its
 column `nameFirstName` comes from the person entity; the Task 5 readiness spec executes it and fails on
-SQLSTATE 42P01/42703). Positive control found live: the unscoped Documenso envelope rule returned the seeded rows.
+SQLSTATE 42P01/42703; it **did run clean against both workspace schemas inside the Task 5 readiness run of
+2026-11-01**, so the Task 5 builder may change its `basis` to `"live"`). Positive control found live: the unscoped Documenso envelope rule returned the seeded rows.
 
 ## 3. Resolved decisions
 
@@ -2686,7 +2687,7 @@ required criteria; add lane rules; touch Medusa/Twenty time columns (none exist)
 
 | ID | Question | Options | Evidence | Recommended default |
 |---|---|---|---|---|
-| OD-1 | Twenty person rule is `basis: "source"` | (a) keep, Task 5 executes it; (b) probe now | re-seeding Twenty costs ~5 min | (a); a failure there is a plan contradiction and STOPs Task 5 |
+| OD-1 | Twenty person rule is `basis: "source"` | (a) keep, Task 5 executes it; (b) probe now | it ran clean in the Task 5 readiness run (2.5) | (a); a failure there is a plan contradiction and STOPs Task 5 |
 | OD-2 | P2-DOC-JOB-003 needs an `INSERT` of a poison job | (a) leave it to the Documenso lane with its own narrow, reviewed grant on `BackgroundJob`; (b) create a job through the product and `UPDATE` its payload column (race); (c) drop the case | review limits the fixture to time columns | (a); **not BLOCKING for the foundation** |
 | OD-3 | Cal `Task.scheduledAt` is only needed if the chain sets `minRetryIntervalMins` | (a) keep the grant; (b) drop until the lane proves it | `repository.ts:136-141` | (a), it costs nothing |
 | OD-4 | Consistency rules are run-scoped, so a defect in seed data is invisible | (a) accept (seed is the harness's); (b) add a one-off seed audit | 2.4 | (a); report the 333 rows to the harness/fork owner as a follow-up |
