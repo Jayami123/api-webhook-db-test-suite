@@ -1,5 +1,10 @@
 import type { ProductId } from "../env.ts";
-import { networkGateway, type DockerRunner } from "./docker-net.ts";
+import {
+  composeServiceContainer,
+  dockerRunner,
+  resolveInContainer,
+  type DockerRunner,
+} from "./docker-net.ts";
 
 /**
  * How each product's process reaches the receiver (plan Task 5, probes P1/P3 on harness v0.2.18):
@@ -14,17 +19,20 @@ import { networkGateway, type DockerRunner } from "./docker-net.ts";
  */
 export type ReceiverReach =
   | { readonly kind: "host-loopback"; readonly urlHost: string }
-  | { readonly kind: "container-gateway"; readonly network: string }
+  | { readonly kind: "container-gateway" }
   | { readonly kind: "none" };
 
 export const DOCUMENSO_RECEIVER_HOSTNAME = "p2-receiver.test";
-export const TWENTY_COMPOSE_NETWORK = "qa-harness-twenty_default";
+export const TWENTY_COMPOSE_PROJECT = "qa-harness-twenty";
+export const TWENTY_SERVER_SERVICE = "server";
+/** The name the product calls; the receiver binds the address this name resolves to inside the server container. */
+export const TWENTY_RECEIVER_NAME = "host.docker.internal";
 
 export const PRODUCT_REACH: Readonly<Record<ProductId, ReceiverReach>> = {
   cal: { kind: "host-loopback", urlHost: "127.0.0.1" },
   documenso: { kind: "host-loopback", urlHost: DOCUMENSO_RECEIVER_HOSTNAME },
   medusa: { kind: "none" },
-  twenty: { kind: "container-gateway", network: TWENTY_COMPOSE_NETWORK },
+  twenty: { kind: "container-gateway" },
 };
 
 export interface ReachDeps {
@@ -67,12 +75,28 @@ export async function resolveReceiverTarget(
       return { bindHosts: ["127.0.0.1"], urlHost: reach.urlHost };
     }
     case "container-gateway": {
-      const gateway = await networkGateway(reach.network, deps.docker).catch(() => {
+      // D2 (deviation from the plan, probe 2026-11-01): the name resolves inside the server container to
+      // the docker0 bridge address, not to the compose gateway. The receiver binds exactly what the
+      // server container's resolver returns for the name, so the URL and the bind address agree.
+      const run = deps.docker ?? dockerRunner;
+      const container = await composeServiceContainer(
+        TWENTY_COMPOSE_PROJECT,
+        TWENTY_SERVER_SERVICE,
+        run,
+      );
+      if (container === "") {
         throw new ReachError(
-          `docker network ${reach.network} not found: is the ${product} stack up?`,
+          `no running ${TWENTY_COMPOSE_PROJECT} ${TWENTY_SERVER_SERVICE} container: is the ${product} stack up?`,
         );
-      });
-      return { bindHosts: ["127.0.0.1", gateway], urlHost: "host.docker.internal" };
+      }
+      const addresses = await resolveInContainer(container, TWENTY_RECEIVER_NAME, run);
+      const address = addresses[0];
+      if (address === undefined) {
+        throw new ReachError(
+          `${TWENTY_RECEIVER_NAME} does not resolve inside the ${product} server container`,
+        );
+      }
+      return { bindHosts: ["127.0.0.1", address], urlHost: TWENTY_RECEIVER_NAME };
     }
   }
 }

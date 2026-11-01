@@ -5,7 +5,8 @@ import {
   PRODUCT_REACH,
   ReachError,
   resolveReceiverTarget,
-  TWENTY_COMPOSE_NETWORK,
+  TWENTY_COMPOSE_PROJECT,
+  TWENTY_SERVER_SERVICE,
 } from "../../../src/webhooks/reach.ts";
 
 const lookupTo = (address: string) => (): Promise<string> => Promise.resolve(address);
@@ -16,9 +17,10 @@ describe("receiver reach per product", () => {
       cal: { kind: "host-loopback", urlHost: "127.0.0.1" },
       documenso: { kind: "host-loopback", urlHost: DOCUMENSO_RECEIVER_HOSTNAME },
       medusa: { kind: "none" },
-      twenty: { kind: "container-gateway", network: TWENTY_COMPOSE_NETWORK },
+      twenty: { kind: "container-gateway" },
     });
-    assert.equal(TWENTY_COMPOSE_NETWORK, "qa-harness-twenty_default");
+    assert.equal(TWENTY_COMPOSE_PROJECT, "qa-harness-twenty");
+    assert.equal(TWENTY_SERVER_SERVICE, "server");
   });
 
   test("cal binds and calls loopback without any lookup", async () => {
@@ -43,33 +45,93 @@ describe("receiver reach per product", () => {
     );
   });
 
-  test("twenty binds loopback plus the compose gateway and is called by host.docker.internal", async () => {
-    const asked: string[][] = [];
+  /** A fake docker: `ps` answers the container id, `exec ... getent` answers the given lines. */
+  function fakeDocker(getent: string, container = "a1b2c3d4e5f6") {
+    const calls: string[][] = [];
+    const run = (args: readonly string[]): Promise<string> => {
+      calls.push([...args]);
+      if (args[0] === "ps") return Promise.resolve(`${container}\n`);
+      if (args[0] === "exec") return Promise.resolve(getent);
+      return Promise.reject(new Error(`unexpected docker ${args.join(" ")}`));
+    };
+    return { run, calls };
+  }
+
+  test("twenty binds loopback and the address the server container resolves, IPv4", async () => {
+    const fake = fakeDocker("172.17.0.1      host.docker.internal\n");
     const target = await resolveReceiverTarget("twenty", {
       lookup: lookupTo("127.0.0.1"),
-      docker: (args) => {
-        asked.push([...args]);
-        return Promise.resolve("172.18.0.1\n");
-      },
+      docker: fake.run,
     });
     assert.deepEqual(target, {
-      bindHosts: ["127.0.0.1", "172.18.0.1"],
+      bindHosts: ["127.0.0.1", "172.17.0.1"],
       urlHost: "host.docker.internal",
     });
-    assert.deepEqual(asked[0]?.slice(0, 3), ["network", "inspect", "qa-harness-twenty_default"]);
+    assert.deepEqual(fake.calls[0], [
+      "ps",
+      "-q",
+      "--filter",
+      "label=com.docker.compose.project=qa-harness-twenty",
+      "--filter",
+      "label=com.docker.compose.service=server",
+    ]);
+    assert.deepEqual(fake.calls[1], [
+      "exec",
+      "a1b2c3d4e5f6",
+      "getent",
+      "hosts",
+      "host.docker.internal",
+    ]);
   });
 
-  test("twenty without its stack up is an ENV error that names the network", async () => {
+  test("twenty binds the IPv6 address the server container resolves, and never a wildcard", async () => {
+    const fake = fakeDocker("fd00:dead:beef::1  host.docker.internal\n");
+    const target = await resolveReceiverTarget("twenty", {
+      lookup: lookupTo("127.0.0.1"),
+      docker: fake.run,
+    });
+    assert.deepEqual(target, {
+      bindHosts: ["127.0.0.1", "fd00:dead:beef::1"],
+      urlHost: "host.docker.internal",
+    });
+    assert.ok(!target.bindHosts.includes("0.0.0.0") && !target.bindHosts.includes("::"));
+  });
+
+  test("twenty uses the first address when the resolver returns both families", async () => {
+    const fake = fakeDocker(
+      "172.17.0.1      host.docker.internal\nfd00::1           host.docker.internal\n",
+    );
+    const target = await resolveReceiverTarget("twenty", {
+      lookup: lookupTo("127.0.0.1"),
+      docker: fake.run,
+    });
+    assert.deepEqual(target.bindHosts, ["127.0.0.1", "172.17.0.1"]);
+  });
+
+  test("twenty without a running server container is an ENV error that names the project", async () => {
     await assert.rejects(
       resolveReceiverTarget("twenty", {
         lookup: lookupTo("127.0.0.1"),
-        docker: () => Promise.reject(new Error("docker network failed (exit 1)")),
+        docker: (args) => Promise.resolve(args[0] === "ps" ? "\n" : ""),
       }),
       (e: unknown) =>
         e instanceof ReachError &&
         e.message.startsWith("ENV:") &&
-        e.message.includes("qa-harness-twenty_default"),
+        e.message.includes("qa-harness-twenty"),
     );
+  });
+
+  test("twenty refuses a wildcard or empty answer from the container resolver", async () => {
+    for (const bad of ["0.0.0.0 host.docker.internal\n", ":: host.docker.internal\n", ""]) {
+      await assert.rejects(
+        resolveReceiverTarget("twenty", {
+          lookup: lookupTo("127.0.0.1"),
+          docker: fakeDocker(bad).run,
+        }),
+        /TEST BUG|does not resolve/,
+        JSON.stringify(bad),
+      );
+    }
   });
 
   test("medusa has no outgoing webhook and refuses a receiver URL", async () => {
