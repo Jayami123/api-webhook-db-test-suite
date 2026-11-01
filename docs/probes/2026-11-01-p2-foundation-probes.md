@@ -19,7 +19,7 @@ lands on `main`. Plans cite sections here instead of repeating raw output.
 - "Real output" is trimmed, never edited. Numbers in brackets are explanatory.
 
 Index: P1 env reach (1.1 to 1.4) | P2 stripe-mock reach (2.1 to 2.4) | P3 receiver reach (3) | P4 live webhook shapes (4.1 to 4.4)
-| P5 per-run tokens (5.1 to 5.4) | P6 roles (6.1 to 6.4) | P7 base counts (7) | S code-read facts for the review list (8).
+| P5 per-run tokens (5.1 to 5.4) | P6 roles (6.1 to 6.5) | P7 base counts (7) | S code-read facts for the review list (8).
 
 ---
 
@@ -320,6 +320,21 @@ Index: P1 env reach (1.1 to 1.4) | P2 stripe-mock reach (2.1 to 2.4) | P3 receiv
 - Output: `DRAFT 354 / 0`, `PENDING 337 / 0`, `COMPLETED 333 / 0`; titles like `[MEDIUM] Document 2 - COMPLETED`.
 - Citation: `packages/prisma/seed/documents.ts:65, 676`.
 - Status: CONFIRMED (seed data, not a runtime defect).
+
+---
+
+### 6.5 Playwright auto-fixture teardown order (basis of the P2-X-DB-001 sweep)
+- Date: 2026-11-01. No product. Playwright 1.64.0, toy project in the scratchpad.
+- Command: `npx playwright test` on a spec with an `auto: true` fixture `sweep` and an explicit fixture `created`, one passing and one failing test, logging setup and teardown.
+- Output:
+  ```text
+  ORDER t1 uses explicit fixture sweep:setup > created:setup > body > created:teardown(cleanup) > sweep:teardown(after use)
+  ORDER t2 fails in body        sweep:setup > created:setup > body-fail > created:teardown(cleanup) > sweep:teardown(after use)
+    1 failed
+    1 passed
+  ```
+- Establishes: an auto fixture tears down after the test's own fixtures, also when the body fails, so the sweep sees the state after atomic cleanup.
+- Status: CONFIRMED.
 
 ---
 

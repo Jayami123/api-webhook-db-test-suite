@@ -39,7 +39,14 @@ main --- Task 2 --- Task 3 --- Task 4 --- Task 5 --- Task 6 --- (lanes: cal, doc
 - Each plan was verified by building its code in a scratch copy of `main` outside the repo (`npm run check` exit 0 at
   every step: 172, 211, 245, 261, 273) and, for Tasks 3 to 5, against the real products (below).
 
-## 3. What was probed (live, 2026-11-01, one stack at a time, every run ended with `down`)
+## 3. Probe record
+
+Every probe result (P1 to P7, per product) is written once in `docs/probes/2026-11-01-p2-foundation-probes.md`: date (Asia/Colombo),
+pinned SHAs and harness tag, command, trimmed output, the fact, a citation and a status (CONFIRMED, UNPROBED, CONTRADICTS REVIEW).
+The plans cite it. **Task 2 copies it unchanged into `main`** (its step 0b). Later lanes add new dated files in `docs/probes/` and
+never edit an old one. Written up from what was recorded during the session; nothing was re-run for it.
+
+## 3a. What was probed (live, 2026-11-01, one stack at a time, every run ended with `down`)
 
 Claude Code cloud VM: Node 22.23.3 / 24.22.0, Docker 29.9.2, 4 cores, 15 GB RAM. Harness `v0.2.18` (`de561c5`) built
 from a scratch clone; products at the pinned refs of `scripts/bootstrap.sh`.

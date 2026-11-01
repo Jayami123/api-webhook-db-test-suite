@@ -19,6 +19,8 @@ Builds on Task 5 (`docs/plans/2026-11-01-p2-task5-env-prereqs-readiness.md`). In
 
 ## 2. Probe findings
 
+> No probe of the products was needed; local timings and the gate check are recorded here. The probe record is `docs/probes/2026-11-01-p2-foundation-probes.md` (section P7 for the base counts).
+
 ### 2.1 What exists
 
 `.github/workflows/api.yml` (Task 1): jobs `check`, `unit`, `db-guard`, each `timeout-minutes: 10`, `permissions:

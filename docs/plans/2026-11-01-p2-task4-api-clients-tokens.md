@@ -21,6 +21,8 @@ revoked at the end and proven dead.
 
 ## 2. Probe findings (P5: how each product mints and revokes a credential for this run)
 
+> Raw results live in `docs/probes/2026-11-01-p2-foundation-probes.md` (sections 5.1 to 5.5). The text below summarises and cites them.
+
 ### 2.1 Medusa 2.21.2 (starter `f677db4`)
 
 ```text

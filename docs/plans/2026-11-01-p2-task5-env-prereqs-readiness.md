@@ -25,6 +25,8 @@ products: harness, roles, credentials, receiver, signers and the invariant sweep
 
 ## 2. Probe findings
 
+> Raw results live in `docs/probes/2026-11-01-p2-foundation-probes.md` (sections 1.1 to 1.6, 2.1 to 2.4, 4.4, 4.5, 4.6). The text below summarises and cites them.
+
 ### 2.1 Probe P1: can a variable reach the product through the harness without editing it?
 
 The harness merges `process.env` into every process it spawns (`src/internal/spawn-detached.ts:46`,

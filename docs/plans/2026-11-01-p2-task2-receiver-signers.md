@@ -25,6 +25,8 @@ foundation: `docs/plans/2026-11-01-p2-foundation-index.md`.
 
 ## 2. Probe findings (raw, trimmed; secrets redacted)
 
+> Raw results of every probe live in `docs/probes/2026-11-01-p2-foundation-probes.md` (sections 1.1 to 1.6 env reach, 3 receiver reach, 4.1 to 4.6 webhook shapes, S code reads). The tables below summarise and cite them; do not re-run to "refresh" them, add a new dated file instead.
+
 ### 2.1 Signing constructions at the pinned refs
 
 | Scheme | Fact | Source (pinned ref) |
@@ -178,6 +180,7 @@ malformed header, stale timestamp (Stripe, Twenty, Daily with a tolerance), boun
 | `src/webhooks/docker-net.ts` | new | gateway of a Docker network, injectable runner |
 | `src/env.ts` | edit | `P2_RECEIVER_HOSTS`, `P2_RECEIVER_PORT`, `receiverConfig()` |
 | `.env.example` | edit | replace `P2_RECEIVER_HOST` by `P2_RECEIVER_HOSTS` |
+| `docs/probes/2026-11-01-p2-foundation-probes.md` | new | the probe record, copied **unchanged** from the plan branch (step 0b) |
 | `package.json`, `package-lock.json` | edit | `stripe` 23.0.1 (devDependency, exact) |
 | `tests/unit/webhooks/{vectors.ts,redact,sign,verify,receiver,docker-net}.test.ts` | new | 67 tests |
 | `tests/unit/env.test.ts` | edit | +3 tests |
@@ -2192,6 +2195,17 @@ Test count by file: redact 4, sign 17, verify 21, docker-net 5, receiver 20, env
    git rev-parse HEAD            # record: must be fd554c901e82a7a936fb0074af42de6b26f56ab1 or a later main
    npm ci && npm run check       # exit 0, "# tests 102", "# pass 102", "# fail 0"
    ```
+0b. Land the probe record on `main` through this PR, byte for byte:
+   ```bash
+   P=docs/probes/2026-11-01-p2-foundation-probes.md
+   git fetch origin plan/2026-11-01-p2-foundation
+   mkdir -p docs/probes && git show origin/plan/2026-11-01-p2-foundation:$P > $P
+   test "$(git hash-object $P)" = "$(git rev-parse origin/plan/2026-11-01-p2-foundation:$P)" && echo IDENTICAL   # must print IDENTICAL
+   git add $P && git commit -m "docs(probes): add the 2026-11-01 foundation probe record"
+   ```
+   The blob id recorded at plan time is `84fd690265df7ac66d9adbb7c2367e7560160813`; if the plan branch holds another id
+   because a later commit changed the file, STOP and report. Never edit this file afterwards: later lanes add **new
+   dated files** under `docs/probes/` (`docs/probes/<date>-<lane>-probes.md`) and never change an old one.
 1. Dependency: section 6.1. Then `git diff --stat -- package.json package-lock.json` shows 2 files, `package.json`
    +1 line. Commit 1.
 2. `src/env.ts` and `.env.example` (6.7), the three env tests. `node --test tests/unit/env.test.ts` -> `# tests 10`,
@@ -2215,7 +2229,8 @@ node --test "tests/unit/webhooks/*.test.ts" 2>&1 | grep -E '^# (tests|pass|fail)
 node --test tests/unit/env.test.ts 2>&1 | grep -E '^# (tests|pass)'                 # 10 / 10
 npm ls stripe --depth=0               # stripe@23.0.1 (or the newest at least 7 days old on the build day)
 git status --porcelain                # empty after the commits
-git diff --name-only origin/main..HEAD | sort    # exactly the 16 files of section 5
+git diff --name-only origin/main..HEAD | sort    # exactly the 17 files of section 5
+git diff --exit-code <(git show origin/plan/2026-11-01-p2-foundation:docs/probes/2026-11-01-p2-foundation-probes.md) docs/probes/2026-11-01-p2-foundation-probes.md   # exit 0: copied unchanged
 git diff origin/main..HEAD -- . ':(exclude)tests/unit' | grep -E '^\+' | grep -nE 'sk_live_|sk_test_[A-Za-z0-9]{10,}|whsec_[A-Za-z0-9]{10,}|Bearer [A-Za-z0-9._-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY|postgres(ql)?://[A-Za-z0-9_]+:[A-Za-z0-9]{8,}@' ; test $? -eq 1     # no match
 git diff origin/main..HEAD | grep -niE 'j[a]yami|h[e]ttigoda' ; test $? -eq 1            # no personal name
 npm run list:api                      # still "Total: 0 tests in 0 files" (no spec yet)
@@ -2232,6 +2247,7 @@ result may be claimed without pasted output.
 
 ## 11. Commit plan (lowercase Conventional Commits, explicit paths, never `git add -A`)
 
+0. `docs(probes): add the 2026-11-01 foundation probe record` - `docs/probes/2026-11-01-p2-foundation-probes.md`
 1. `build(deps): add stripe sdk for webhook signing` - `package.json package-lock.json`
 2. `feat(env): add receiver bind config` - `src/env.ts tests/unit/env.test.ts .env.example`
 3. `feat(webhooks): add signers and verifiers for cal, daily, documenso, twenty and stripe` -
@@ -2250,7 +2266,7 @@ Automatic from the repo: `npm ci`. Pasted by hand: nothing. Manual repository se
 
 ## 13. Will NOT do / Open decisions / Risks
 
-Will NOT do: start or probe a product here; add a CI job; add the Playwright wiring of the receiver (Task 5); add
+Will NOT do: edit the probe record after copying it; start or probe a product here; add a CI job; add the Playwright wiring of the receiver (Task 5); add
 any case spec; touch the harness or a fork; add a retry, a sleep or a skip; use `0.0.0.0`; log a body.
 
 Open decisions (default is taken by the builder; none is BLOCKING):

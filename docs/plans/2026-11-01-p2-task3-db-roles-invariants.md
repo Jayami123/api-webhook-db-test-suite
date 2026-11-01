@@ -21,6 +21,8 @@ Builds on Task 2 (`docs/plans/2026-11-01-p2-task2-receiver-signers.md`). Index:
 
 ## 2. Probe findings
 
+> Raw results live in `docs/probes/2026-11-01-p2-foundation-probes.md` (sections 6.1 to 6.4 roles and seed data, 6.5 Playwright fixture order). The text below summarises and cites them.
+
 ### 2.1 Who owns the harness databases (probe P6)
 
 | Product | Server | Admin user (default URL in `src/env.ts`) | Attributes |
