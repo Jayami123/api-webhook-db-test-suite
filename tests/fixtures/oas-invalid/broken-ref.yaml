@@ -1,0 +1,13 @@
+openapi: 3.0.3
+info: { title: broken, version: "1" }
+paths:
+  /x:
+    get:
+      operationId: getX
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Missing"

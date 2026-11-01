@@ -96,12 +96,14 @@ describe("rules: every product rule is well formed", () => {
         product,
       );
     }
-    assert.deepEqual(["cal-api", "doc-api", "med-api", "tw-api"].map(productOfProject), [
-      "cal",
-      "documenso",
-      "medusa",
-      "twenty",
-    ]);
+    const names = ["cal", "doc", "med", "tw"];
+    for (const suffix of ["api", "serial"]) {
+      assert.deepEqual(
+        names.map((code) => productOfProject(`${code}-${suffix}`)),
+        ["cal", "documenso", "medusa", "twenty"],
+        suffix,
+      );
+    }
     assert.equal(productOfProject("chromium"), undefined);
   });
 });
