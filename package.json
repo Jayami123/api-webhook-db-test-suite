@@ -19,7 +19,8 @@
     "test:api": "playwright test",
     "db:roles:provision": "node scripts/db-roles.ts provision",
     "db:roles:teardown": "node scripts/db-roles.ts teardown",
-    "qa:passwords": "bash scripts/qa-passwords.sh"
+    "qa:passwords": "bash scripts/qa-passwords.sh",
+    "specs:validate": "node scripts/validate-specs.ts"
   },
   "dependencies": {
     "qa-portfolio-harness": "github:Jayami123/qa-portfolio-harness#v0.3.0"
