@@ -3,5 +3,5 @@
     "dockerfile": "Dockerfile"
   },
   "install": "bash scripts/cloud-install.sh",
-  "start": "sudo service docker start"
+  "start": "sudo service docker start && { bash scripts/ensure-receiver-hostname.sh || echo 'WARNING: ensure-receiver-hostname.sh failed'; } && { npm run -s qa:passwords || echo 'WARNING: npm run qa:passwords failed'; }"
 }

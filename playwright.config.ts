@@ -12,7 +12,13 @@ const isCI = Boolean(process.env["CI"]);
 
 /** One project per product. Folder codes match the project names: cal, doc, med, tw. */
 function apiProject(name: string, code: string): Project {
-  return { name, testMatch: [`{contracts,webhooks,integration}/${code}/**/*.spec.ts`] };
+  return {
+    name,
+    testMatch: [
+      `{contracts,webhooks,integration}/${code}/**/*.spec.ts`,
+      `readiness/${code}.readiness.spec.ts`,
+    ],
+  };
 }
 
 export default defineConfig({

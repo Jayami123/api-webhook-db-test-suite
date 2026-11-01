@@ -22,7 +22,7 @@
     "qa:passwords": "bash scripts/qa-passwords.sh"
   },
   "dependencies": {
-    "qa-portfolio-harness": "github:Jayami123/qa-portfolio-harness#v0.2.11"
+    "qa-portfolio-harness": "github:Jayami123/qa-portfolio-harness#v0.3.0"
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "13.1.0",

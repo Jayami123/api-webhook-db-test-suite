@@ -38,7 +38,13 @@ export default tseslint.config(
     },
   },
   {
-    files: ["tests/contracts/**", "tests/webhooks/**", "tests/integration/**"],
+    files: [
+      "tests/contracts/**",
+      "tests/webhooks/**",
+      "tests/integration/**",
+      "tests/readiness/**",
+      "tests/serial/**",
+    ],
     rules: {
       "no-restricted-globals": [
         "error",
