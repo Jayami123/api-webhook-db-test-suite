@@ -68,7 +68,9 @@ export async function mintCal(input: {
       url: `${input.baseUrl}/api/trpc/${path}?batch=1`,
       headers: { "content-type": "application/json", cookie: jar.header() },
       // superjson: a Date travels as its ISO string with meta.values saying "Date".
-      body: JSON.stringify({ 0: { json: body, ...(values === undefined ? {} : { meta: { values } }) } }),
+      body: JSON.stringify({
+        0: { json: body, ...(values === undefined ? {} : { meta: { values } }) },
+      }),
     });
     const parsed = parseJson(`cal ${path}`, res) as { result?: { data?: { json?: unknown } } }[];
     return { status: res.status, data: parsed[0]?.result?.data?.json };

@@ -402,7 +402,11 @@ describe("cal mint and revoke", () => {
     );
     assert.deepEqual(JSON.parse(calls[2]?.body ?? "{}"), {
       0: {
-        json: { note: `${RUN}-cal-key`, neverExpires: false, expiresAt: "2026-11-01T11:00:00.000Z" },
+        json: {
+          note: `${RUN}-cal-key`,
+          neverExpires: false,
+          expiresAt: "2026-11-01T11:00:00.000Z",
+        },
         meta: { values: { expiresAt: ["Date"] } },
       },
     });
