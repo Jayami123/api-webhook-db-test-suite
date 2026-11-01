@@ -1,5 +1,5 @@
 import pg from "pg";
-import { dbStatementTimeoutMs, dbUrl, type ProductId } from "../env.ts";
+import { dbStatementTimeoutMs, roleDbUrl, type ProductId } from "../env.ts";
 import { assertSelectOnly } from "./select-guard.ts";
 
 /** A product, or the throwaway CI database the db-guard job proves the server layers against. */
@@ -153,12 +153,12 @@ export function createReadOnlyDb(product: OracleLabel, options: ReadOnlyDbOption
 
 const registry = new Map<ProductId, ReadOnlyDb>();
 
-/** One pool per product per worker process, configured from env (src/env.ts). */
+/** One pool per product per worker process, connecting as qa_ro (src/db/roles.ts). */
 export function readOnlyDb(product: ProductId, env: NodeJS.ProcessEnv = process.env): ReadOnlyDb {
   let db = registry.get(product);
   if (!db) {
     db = createReadOnlyDb(product, {
-      connectionString: dbUrl(product, env),
+      connectionString: roleDbUrl(product, "qa_ro", env),
       statementTimeoutMs: dbStatementTimeoutMs(env),
     });
     registry.set(product, db);
