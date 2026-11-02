@@ -1,0 +1,81 @@
+import type { ReadOnlyDb } from "../../db/pg.ts";
+import { apiBaseUrl, loadEnv } from "../../env.ts";
+import { calBookingApi, type BookingRequest } from "./booking.ts";
+import type { CalAuth } from "../../auth/cal.ts";
+import type { ApiRequestLike } from "../../clients/base.ts";
+
+/** The seeded pro user's 30-minute event type (seed: scripts/seed.ts, verified by probe P9). */
+export const PRO_EMAIL = "pro@example.com";
+export const PRO_SLUG_30 = "30min";
+
+/** Web app base (login, tRPC, cron and Daily routes). No trailing slash. */
+export const webBase = (): string => loadEnv().CAL_BASE_URL.replace(/\/$/, "");
+/** API v2 base (5555). No trailing slash. */
+export const apiBase = (): string => apiBaseUrl("cal").replace(/\/$/, "");
+
+/** ISO date (YYYY-MM-DD, UTC) `n` days from now. */
+export function isoDayFromNow(n: number, now: number = Date.now()): string {
+  return new Date(now + n * 864e5).toISOString().slice(0, 10);
+}
+
+/** The slot list of the seeded 30-minute type for days 3 to 12 ahead (wide enough that earlier bookings never exhaust it), as ISO instants. */
+export async function slotStartsAhead(
+  request: ApiRequestLike,
+  auth: CalAuth,
+  eventTypeId: number,
+  timeZone = "Europe/London",
+): Promise<string[]> {
+  const api = calBookingApi({ request, apiBaseUrl: apiBase(), auth });
+  return api.slots({
+    eventTypeId,
+    fromIsoDate: isoDayFromNow(3),
+    toIsoDate: isoDayFromNow(12),
+    timeZone,
+  });
+}
+
+/** Attendee rows of one email (the run prefix is in the email, so this finds only this run's bookings). */
+export function bookingRowsForEmail(
+  db: ReadOnlyDb,
+  email: string,
+): Promise<{ uid: string; status: string }[]> {
+  return db.select<{ uid: string; status: string }>(
+    `SELECT b."uid" AS uid, b."status"::text AS status FROM "Booking" b JOIN "Attendee" at ON at."bookingId" = b."id" WHERE at."email" = $1 ORDER BY b."id"`,
+    [email],
+  );
+}
+
+/** Count of all bookings of one event type (zero-writes checks). */
+export async function bookingCountForEventType(
+  db: ReadOnlyDb,
+  eventTypeId: number,
+): Promise<number> {
+  const rows = await db.select<{ n: number }>(
+    `SELECT count(*)::int AS n FROM "Booking" WHERE "eventTypeId" = $1`,
+    [eventTypeId],
+  );
+  return rows[0]?.n ?? 0;
+}
+
+/** A booking request for the standard lane type, with a fixed attendee zone. */
+export function standardBooking(
+  eventTypeId: number,
+  start: string,
+  attendeeEmail: string,
+  attendeeName = "P2 lane",
+): BookingRequest {
+  return { eventTypeId, start, attendeeEmail, attendeeName };
+}
+
+/**
+ * Slot results are cached per query key for SLOTS_CACHE_TTL (default 2000 ms: `withSlotsCache` and
+ * DEFAULT_SLOTS_CACHE_TTL in packages/platform/libraries/dist/slots.cjs, docs/probes/2026-11-02-p2-lane-cal-live-probes.md L7). A booked slot can
+ * therefore still be listed for that long on the same query. Budget: the TTL plus a 3 s margin (policy bound).
+ */
+export const SLOTS_CACHE_BUDGET_MS = 5_000;
+
+/** A value the test has just created or read. Absent means a broken setup: a labelled TEST BUG, never a silent default. */
+export function must<T>(value: T | undefined, label: string): T {
+  if (value === undefined) throw new Error(`TEST BUG: expected ${label}, found none`);
+  return value;
+}
