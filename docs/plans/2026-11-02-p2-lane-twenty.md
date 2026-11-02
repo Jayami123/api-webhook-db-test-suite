@@ -7,13 +7,12 @@ pinned fork). Nothing is built; no product, fork, harness or `.env` was changed.
 > **STATUS (second pass).** The harness gate passed after `npm ci` (harness `0.3.0`, stripe `23.0.1`, unit baseline **285**,
 > 0 failures). Probes P-TW-1 to P-TW-12 ran on the pinned harness, one stack at a time (two stacks; both ended with `down`).
 > Results that changed the plan:
-> 1. **B1 is a SUSPECTED intermittent PRODUCT BUG, now P2-TW-WH-010.** One drop in six first-event attempts so far (P-TW-2n). The regression check is replaced by a 50-case delivery study in the serial project (sections 6.8 and 8.7).
->    after idle gaps all delivered. No `test.fail()`: the drop is not reliable enough for a known-bug marker (rule 12). OD-15 is applied: a measured study replaces the check.
+> 1. **B1 is a SUSPECTED intermittent PRODUCT BUG, now P2-TW-WH-010.** One drop in six first-event attempts so far (P-TW-2n). It is measured by a 50-case study in its own scheduled workflow (sections 6.8 and 8.8). The study records delivered vs sent per case and asserts run validity only. No `test.fail()`.
 > 2. **The payload has no event id.** TW-WH-006 is rewritten to the identity fields the body really carries.
 > 3. **Webhook response rows are in ClickHouse** (not started by the harness). The response-row oracle is unavailable; the receiver is the oracle.
 > 4. **The OAS needs the bearer** (403 without); the contract cases save the authenticated document and load the file.
 > 5. **The billing schema is absent** on `twentycrm/twenty:v2.44.0` (billing on: the handler returns 500, no billing tables). Stripe-backed rows are BLOCKED.
-> 6. **Owner defaults applied:** OD-1 (two serial tests), OD-6 (WH-008 cut), OD-4 (identity wording), HR-4 and HR-5 DEFERRED
+> 6. **Owner defaults applied:** OD-1 (the B1 positive control is one test in the normal lane; the drop measurement is the separate study P2-TW-WH-010, not a second serial test), OD-6 (WH-008 cut), OD-4 (identity wording), HR-4 and HR-5 DEFERRED
 >    (CACHE-001, WH-009 and STR-002 deferred; no workaround planned).
 > 7. **Stale claim corrected:** the earlier plan said creating a webhook does not invalidate the worker cache. The migration runner
 >    does (`workspace-migration-runner.service.ts:101-123`).
@@ -32,7 +31,7 @@ Naming: the brief's short forms (`TW-WH-001`) are written as the index writes th
 | Harness | `qa-portfolio-harness` `0.3.0` (`be86e0e`), installed by `npm ci` (P0-r2) |
 | Build branches | `feat/<builder date>-p2-twenty-l<n>-<topic>`, `<builder date>` = `date -u +%F` at task start. L0 is cut from `origin/main`. Each later task is cut from the **previous task's branch head** while that PR is open, and its PR targets that branch. After the previous PR merges, re-cut from `origin/main`; the PR targets `main`. |
 | Unit baseline | **285** on `aa10ec1` (P0-r2; per-file record P0-r2b). Measured again at each task start (`npm run unit 2>&1 \| grep -E '^# (tests\|pass\|fail)'`). The plan's counts are **deltas**: "base + N". (The 277 in the index is out of date: the foundation build added tests.) |
-| Lane deltas | Unit **+21** (L0 +19; L5 +2), unchanged. Normal lane: **17** new `tw` tests (L1 7, L2 8, L3 2). Serial: **50** study cases for P2-TW-WH-010 in `tw-serial`. BLOCKED, not built: RT-001. Deferred: CACHE-001, WH-009, STR-002. `tw-api` listing = 5 readiness + 17 = **22**. |
+| Lane deltas | Unit **+21** (L0 +19; L5 +2), unchanged. Normal lane: **17** new `tw` tests (L1 7, L2 8, L3 2). Measurement: **50** study cases (P2-TW-WH-010), run by their own workflow (section 8.8), not by the lane job. BLOCKED, not built: RT-001. Deferred: CACHE-001, WH-009, STR-002. `tw-api` listing = 5 readiness + 17 = **22**. |
 | Ownership | P5 owns the security verdict (TW-WH-009, deferred); P6 owns user-action races; P2 keeps worker, cron and queue concurrency (TW-STR-001). |
 
 ---
@@ -103,12 +102,12 @@ Every runtime claim below is either in this table as CONFIRMED / PARTIAL, or mar
 | P2-TW-WH-005 | U ("4 s / 6 s against the 5000 ms timeout") | L2 | same | `P2-TW-WH-005: a 4 s receiver delay is delivered once` and `P2-TW-WH-005: a 6 s delay is one request; the 5000 ms timeout closes the call and nothing retries` (2 tests) | receiver count (the response row is in ClickHouse: unavailable) | built |
 | P2-TW-WH-006 | U (**wording changed, OD-4**) | L2 | same | `P2-TW-WH-006: the delivered body carries the created webhook id, the event name and the created person id, and one request is sent per event` | body fields vs created ids; count | built |
 | B1 control | working title; positive control for the B1 study | L2 | `tests/webhooks/tw/b1-drop.spec.ts` | `B1 control: a fresh webhook delivers an event sent after one memo window` (1 test, must pass) | receiver | built (1 test) |
-| P2-TW-WH-010 | B1 delivery study (ID assigned by the owner; SUSPECTED intermittent PRODUCT BUG) | L4 (serial) | `tests/serial/tw/b1-study.serial.spec.ts` | `P2-TW-WH-010 case <n> (<mode>): one event is delivered`, for 50 fixed cases; summary in `results/p2-tw-wh-010-study.json` | receiver count per case; worker log on failure | built (50 serial tests) |
+| P2-TW-WH-010 | B1 delivery measurement (ID assigned by the owner; SUSPECTED intermittent PRODUCT BUG) | study workflow (section 8.8), `--grep P2-TW-WH-010` | `tests/serial/tw/b1-study.serial.spec.ts` | `P2-TW-WH-010 case <n> (<mode>): send accepted, delivery recorded`, for 50 fixed cases; JSON in `results/p2-tw-wh-010-study.json` | receiver count recorded per case (not asserted); worker log attached when a case has no delivery | built (50 measurement tests; validity assertions only) |
 | P2-TW-STR-001 | U ("last-arrival-wins") | L3 | `tests/integration/tw/billing.spec.ts` | `P2-TW-STR-001: two subscription events sent out of order leave the newest one stored` | `qa_ro` billing row | **BLOCKED**: billing schema absent (P-TW-7b). Built as a gated skip with the reason (1 test) |
 | P2-TW-DEL-002 | U | L3 | `tests/integration/tw/soft-delete.spec.ts` | `P2-TW-DEL-002: a soft-deleted person is absent from the REST list and from search` | `qa_ro` `deletedAt IS NOT NULL` | built |
 | P2-TW-RT-001 | K | L3 | `tests/integration/tw/route-trigger.spec.ts` (not created) | `P2-TW-RT-001: POST to a route trigger runs its workflow and creates one record` | `qa_ro` count | **BLOCKED** (not built): P-TW-13 shows the route is not registered (404 `TRIGGER_NOT_FOUND`) and the driver is disabled in production (OD-13) |
 
-**Built new normal-lane `tw` tests: L1 = 7, L2 = 8 (WH-001 ×1, WH-007 ×1, WH-003 ×1, WH-004 ×1, WH-005 ×2, WH-006 ×1, B1 control ×1), L3 = 2 (STR-001 gated skip, DEL-002). Total 17.** The `tw-api` listing is 5 readiness + 17 = **22**. **Serial study (L4): 50 cases** in `tw-serial`.
+**Built new normal-lane `tw` tests: L1 = 7, L2 = 8 (WH-001 ×1, WH-007 ×1, WH-003 ×1, WH-004 ×1, WH-005 ×2, WH-006 ×1, B1 control ×1), L3 = 2 (STR-001 gated skip, DEL-002). Total 17.** The `tw-api` listing is 5 readiness + 17 = **22**. **Measurement study (L4): 50 cases** in their own workflow, not in the lane job.
 
 **DEFERRED (not built, no workaround planned; section 13):**
 - **P2-TW-CACHE-001**: HR-4 (two server replicas; P-TW-8).
@@ -198,7 +197,7 @@ export const TW_QUIET_TIMEOUT_MS = TW_QUIET_WINDOW_MS + 1_000;
 export const TW_VISIBLE_TIMEOUT_MS = TWENTY_WEBHOOK_MEMO_MS + CANARY_MARGIN_MS;
 /** Study delivery budget (P2-TW-WH-010): the 5 s outbound timeout plus a 10 s margin. Measured arrivals were within 0.2 s (P-TW-2a/b/c). */
 export const TW_STUDY_DELIVERY_MS = TW_OUTBOUND_TIMEOUT_MS + 10_000;
-/** Idle gap before an `idle12` study case: one memo window (10 s, workspace-cache.service.ts:56) plus 2 s. */
+/** CONTROLLED VARIABLE of the study: the idle gap before each `idle12` case (the experiment's independent variable). It is a FIXED WAIT, not a condition: memo expiry is time-based and emits no observable event, so the gap is a set time (memo window 10 s, workspace-cache.service.ts:56, plus 2 s), identical for every idle12 case. */
 export const TW_STUDY_IDLE_MS = TWENTY_WEBHOOK_MEMO_MS + 2_000;
 /** P2 receiver policy for |timestamp - receipt| (TW-WH-001). The product documents no tolerance. */
 export const TW_RECEIPT_TOLERANCE_MS = 5_000;
@@ -565,21 +564,36 @@ test("B1 control: a fresh webhook delivers an event sent after one memo window",
 });
 ```
 
-**`tests/serial/tw/b1-study.serial.spec.ts`** (P2-TW-WH-010; `tw-serial` project only; not in the normal lane). A fixed batch of 50 cases, one Playwright test per case, so each case stays inside the 60 s test timeout (`playwright.config.ts`). Every case asserts that its event is delivered within `TW_STUDY_DELIVERY_MS`. A case that fails before the send is reported as a setup failure, not a drop. On a drop, the case attaches the worker log (the CallWebhookJob and Outbound lines since the case started). The summary (count, rate, dropped case ids) is written in `afterAll`. Nothing is retried, nothing is marked `test.fail()`, and the timeout is not raised (rules 5 and 12).
+**`tests/serial/tw/b1-study.serial.spec.ts`** (P2-TW-WH-010; a MEASUREMENT, not a gate). It runs only in the study workflow (section 8.8), never in the lane job. It records, per case, whether the event was sent and how many deliveries arrived. Its only assertions check that the run is valid:
+
+- every one of the 50 cases executed (checked in `afterAll`);
+- every send was accepted (the `people.create` call returns an id; a rejected send fails that case);
+- every cleanup succeeded (removals are not wrapped in `catch`; a failure fails the case and is recorded as not cleaned);
+- no leaked rows of this run (the same sweep the foundation runs after each test, repeated over the whole run).
+
+The observation of delivery is NOT an assertion. Its poll returns `true` at its deadline whatever the count, so a case with no delivery is recorded as `delivered: false` and the run stays valid. No case asserts `toBe(1)` on delivery.
+
+**Controlled variable.** The `idle12` gap is the experiment's independent variable, so it is held constant: the same fixed wait before every `idle12` case. It is a fixed wait, not a condition, because memo expiry is time-based and produces no observable event to poll for. Its length is `TW_STUDY_IDLE_MS` (`src/lanes/tw/slo.ts`).
 
 ```ts
 import { execFile } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { promisify } from "node:util";
 import { test, expect } from "../../../src/fixtures/index.ts";
+import { readOnlyDb } from "../../../src/db/pg.ts";
+import { runSweep } from "../../../src/invariants/engine.ts";
+import { retained } from "../../../src/invariants/fixture.ts";
+import { rulesFor } from "../../../src/invariants/rules.ts";
 import { deliveriesOf } from "../../../src/lanes/tw/visible.ts";
 import { createFreshWebhook, primeWorkspaceCache } from "../../../src/lanes/tw/webhook-factory.ts";
 import { POLL_INTERVALS, TW_STUDY_DELIVERY_MS, TW_STUDY_IDLE_MS } from "../../../src/lanes/tw/slo.ts";
-import { runScopedName } from "../../../src/run/prefix.ts";
+import { composeServiceContainer } from "../../../src/webhooks/docker-net.ts";
+import { TWENTY_COMPOSE_PROJECT } from "../../../src/webhooks/reach.ts";
+import { currentRunPrefix, runScopedName } from "../../../src/run/prefix.ts";
 
 const exec = promisify(execFile);
 
-/** idle12: an idle gap before the webhook; warm0: no gap after the previous case; prime: one priming event first. */
+/** idle12: controlled idle gap before the webhook; warm0: no gap after the previous case; prime: one priming event first. */
 export type StudyMode = "idle12" | "warm0" | "prime";
 
 /** The fixed batch: 20 idle12, 20 warm0, 10 prime, in this order on every run. */
@@ -589,128 +603,113 @@ export const STUDY_CASES: readonly { readonly n: number; readonly mode: StudyMod
   ...Array.from({ length: 10 }, (_, i) => ({ n: 41 + i, mode: "prime" as const })),
 ];
 
-interface CaseOutcome {
+interface CaseRecord {
   readonly n: number;
   readonly mode: StudyMode;
-  /** True when the event was sent (a case that fails before the send is a setup failure, not a drop). */
   readonly sent: boolean;
-  readonly delivered: boolean;
-  readonly deliveries: number;
   readonly sentAt: string;
+  readonly deliveries: number;
+  readonly delivered: boolean;
+  readonly observedMs: number;
+  readonly cleaned: boolean;
+  readonly workerLog: string | null;
 }
-const outcomes: CaseOutcome[] = [];
+const records: CaseRecord[] = [];
 
-test.afterAll(() => {
-  const sent = outcomes.filter((o) => o.sent);
-  const dropped = sent.filter((o) => !o.delivered);
+test.afterAll(async () => {
+  const sent = records.filter((r) => r.sent).length;
+  const delivered = records.filter((r) => r.delivered).length;
   writeFileSync(
     "results/p2-tw-wh-010-study.json",
-    JSON.stringify(
-      {
-        cases: outcomes.length,
-        sent: sent.length,
-        dropped: dropped.length,
-        rate: sent.length === 0 ? null : dropped.length / sent.length,
-        droppedCases: dropped,
-      },
-      null,
-      2,
-    ),
+    JSON.stringify({ cases: records.length, sent, delivered, records }, null, 2),
   );
+  // Run validity: the only assertions in this file.
+  expect(records.length, "all study cases executed").toBe(STUDY_CASES.length);
+  expect(records.filter((r) => !r.sent).map((r) => r.n), "every send accepted").toEqual([]);
+  expect(records.filter((r) => !r.cleaned).map((r) => r.n), "every cleanup succeeded").toEqual([]);
+  const leaks = await runSweep(readOnlyDb("twenty"), rulesFor("twenty"), {
+    runPrefix: currentRunPrefix(),
+    retained,
+    includeLeaks: true,
+  });
+  expect(leaks, "no leaked rows of this run").toEqual([]);
 });
 
-/** Worker lines since a time that mention the webhook queue or the outbound request (docker logs). */
-async function workerEvidence(sinceIso: string): Promise<string> {
-  const { stdout, stderr } = await exec(
-    "docker",
-    ["logs", "--since", sinceIso, "--timestamps", "qa-harness-twenty-worker-1"],
-    { maxBuffer: 50_000_000 },
-  );
+/** Worker lines since a time (the worker container is resolved from its compose labels, never by name). */
+async function workerLogSince(sinceIso: string): Promise<string> {
+  const id = await composeServiceContainer(TWENTY_COMPOSE_PROJECT, "worker");
+  if (id === "") throw new Error("ENV: no compose worker container for the Twenty project");
+  const { stdout, stderr } = await exec("docker", ["logs", "--since", sinceIso, "--timestamps", id], {
+    maxBuffer: 50_000_000,
+  });
   return (stdout + stderr).split("\n").filter((l) => /webhook-queue|Outbound HTTP/.test(l)).join("\n");
 }
 
 for (const c of STUDY_CASES) {
-  test(`P2-TW-WH-010 case ${c.n} (${c.mode}): one event is delivered`, async ({ tw, receiverHandle }, testInfo) => {
+  test(`P2-TW-WH-010 case ${c.n} (${c.mode}): send accepted, delivery recorded`, async ({ tw, receiverHandle }) => {
     const testId = `p2-study-${c.n}`;
     const key = receiverHandle.key(testId);
     const created: string[] = [];
     let hook: Awaited<ReturnType<typeof createFreshWebhook>> | undefined;
     const startedMs = Date.now();
     const sinceIso = new Date(startedMs).toISOString();
-    let sentAt = "";
     let sentId: string | undefined;
+    let sentAt = "";
+    let observedMs = 0;
     try {
       if (c.mode === "idle12") {
-        await expect.poll(() => Date.now() >= startedMs + TW_STUDY_IDLE_MS, {
-          timeout: TW_STUDY_IDLE_MS + 2_000, intervals: POLL_INTERVALS, message: "idle gap",
-        }).toBe(true);
+        // Controlled variable: the fixed gap. A time condition with an explicit deadline, not a delivery assertion.
+        await expect
+          .poll(() => Date.now() >= startedMs + TW_STUDY_IDLE_MS, {
+            timeout: TW_STUDY_IDLE_MS + 2_000,
+            intervals: POLL_INTERVALS,
+            message: "controlled idle gap",
+          })
+          .toBe(true);
       }
       if (c.mode === "prime") created.push(await primeWorkspaceCache(tw));
       hook = await createFreshWebhook({ tw, receiverHandle, testId, operations: ["person.created"] });
       sentId = await tw.people.create(runScopedName(`tw-study-${c.n}`));
       created.push(sentId);
       sentAt = new Date().toISOString();
-      await expect.poll(() => deliveriesOf(receiverHandle.receiver, key, sentId as string).length, {
-        timeout: TW_STUDY_DELIVERY_MS, intervals: POLL_INTERVALS, message: `P2-TW-WH-010 case ${c.n}: event delivered`,
-      }).toBe(1);
+      const observeFrom = Date.now();
+      // Measurement: the poll ends at the deadline with `true` whatever the count. A drop is recorded, not failed.
+      await expect
+        .poll(
+          () =>
+            Date.now() >= observeFrom + TW_STUDY_DELIVERY_MS ||
+            deliveriesOf(receiverHandle.receiver, key, sentId as string).length > 0,
+          { timeout: TW_STUDY_DELIVERY_MS + 2_000, intervals: POLL_INTERVALS, message: "observation window" },
+        )
+        .toBe(true);
+      observedMs = Date.now() - observeFrom;
     } finally {
+      const sent = sentAt !== "";
       const deliveries = sentId === undefined ? 0 : deliveriesOf(receiverHandle.receiver, key, sentId).length;
-      const delivered = deliveries === 1;
-      outcomes.push({ n: c.n, mode: c.mode, sent: sentAt !== "", delivered, deliveries, sentAt });
-      if (sentAt !== "" && !delivered) {
-        await testInfo.attach(`worker-log-case-${c.n}`, { body: await workerEvidence(sinceIso), contentType: "text/plain" });
+      const workerLog = sent && deliveries === 0 ? await workerLogSince(sinceIso) : null;
+      let cleaned = false;
+      try {
+        // No catch: a failed removal fails the case, and the record says it was not cleaned.
+        for (const id of created) await tw.people.remove(id);
+        if (hook) await hook.remove();
+        cleaned = true;
+      } finally {
+        records.push({
+          n: c.n,
+          mode: c.mode,
+          sent,
+          sentAt,
+          deliveries,
+          delivered: deliveries > 0,
+          observedMs,
+          cleaned,
+          workerLog,
+        });
       }
-      for (const id of created) await tw.people.remove(id).catch(() => undefined);
-      if (hook) await hook.remove();
     }
   });
 }
 ```
-**`tests/integration/tw/pagination.spec.ts`** (PAG-001, PAG-002): create 60 people (`runScopedName("tw-page-<i>")`; labels valid); list with `limit=20` and `startingAfter` (P-TW-10). PAG-001: fetch page 1; create 10 more; walk the rest; `expect(sorted(ids)).toEqual(sorted(created60))`; no duplicates. PAG-002 (OD-5): page size 10; fetch page 1; delete one record from page 2 with `tw.people.remove` before fetching it; walk; expected = created minus the deleted one, each once. Expected values come from creation, not from the DB. All people removed in `finally`.
-
-**`tests/integration/tw/currency.spec.ts`** (CUR-001): `POST /rest/opportunities` with `amount: {amountMicros: "9007199254740991", currencyCode: "USD"}` (body shape UNPROBED; check the OAS schema first); GET back; exact string; the `qa_ro` read of the column name comes from `information_schema` (UNPROBED). The 2^53+1 test: rejected with a validation error, or the parsed value equals the sent value (`Number.isSafeInteger` check fails on a rounded number).
-
-**`tests/contracts/tw/rest-oas.spec.ts`** (CON-001 ×3). The OAS needs the bearer (P-TW-10): the spec fetches the document with the bearer, writes it to the run's `test-results/` folder, and loads the file:
-```ts
-import { writeFileSync } from "node:fs";
-import { loadSpec } from "../../../src/contracts/oas.ts";
-import { apiBaseUrl } from "../../../src/env.ts";
-
-test("P2-TW-CON-001: GET list of people conforms to the OAS", async ({ tw, twAuth, request }) => {
-  const doc = await request.get(`${apiBaseUrl("twenty")}/rest/open-api/core`, { headers: { authorization: twAuth.headerValue.reveal() } });
-  expect(doc.status()).toBe(200);
-  const file = `test-results/tw-rest-oas-${currentRunPrefix()}.json`;
-  writeFileSync(file, await doc.text());
-  const spec = await loadSpec("tw-rest", file);
-  const res = await tw.raw("GET", "/rest/people?limit=1");
-  expect(res.status).toBe(200);
-  spec.assertValid({ method: "get", path: "/people" }, { status: 200 }, res.body);
-});
-```
-`companies` and `opportunities` tests are the same shape. `tw.raw` returns `CallResult` (`src/clients/base.ts:49-54`); `assertValid` throws on invalid bodies (`contracts/oas.ts:264`). `currentRunPrefix` is imported from `src/run/prefix.ts`.
-
-**`tests/contracts/tw/graphql-errors.spec.ts`** (CON-002):
-```ts
-test("P2-TW-CON-002: an invalid GraphQL filter returns 200 with errors[]", async ({ request, twAuth }) => {
-  const res = await request.post(`${apiBaseUrl("twenty")}/graphql`, {
-    headers: { [twAuth.headerName]: twAuth.headerValue.reveal() },
-    data: { query: "{ people(filter: { bogusField: { eq: 1 } }) { edges { node { id } } } }" },
-  });
-  expect(res.status()).toBe(200);
-  const body = (await res.json()) as { errors?: unknown[] };
-  expect(Array.isArray(body.errors) && body.errors.length > 0).toBe(true);
-});
-```
-The `/graphql` path is UNPROBED for the API-key bearer (the mint used `/metadata`); the builder confirms it first.
-
-**`tests/integration/tw/soft-delete.spec.ts`** (DEL-002): create person; `tw.people.remove(id)` (soft); the REST list (`limit`) and a search by the run-scoped name (filter syntax from the OAS, P-TW-10) do not include it; DB: schema from `information_schema.schemata WHERE schema_name LIKE 'workspace\_%'` (the same as `rules.ts:243`; P-TW-11 saw 2 workspace schemas, so the builder finds the schema that holds the run's person), then `SELECT "deletedAt" IS NOT NULL AS gone FROM ${quoteIdent(schema)}."person" WHERE "id" = $1` through `readOnlyDb("twenty").select(sql, [id])` → `gone: true`. `quoteIdent` from `src/db/roles.ts:25`.
-
-**`tests/integration/tw/billing.spec.ts`** (STR-001, blocked): 
-```ts
-const gate = liveGate("P2-TW-STR-001", stripeKeyPresent() && billingSchemaPresent, "billing tables absent on twentycrm/twenty:v2.44.0 (P-TW-7b); STRIPE_API_KEY needed too");
-test.skip(gate.skip, gate.reason);
-```
-`billingSchemaPresent` is a boolean the spec computes from `information_schema` at setup (false on this image). The body (not built until the schema exists): signed `customer.subscription.updated` (newer) before `customer.subscription.created` (older) with `signStripe`; the stored row through `qa_ro`; expect the newer state. The per-run secret comes from the job env (OD-9).
 
 ### 6.9 Unit test totals per module
 
@@ -844,8 +843,8 @@ P-TW-13 ran on one stack. A route-triggered logic function was created, but the 
            run: node scripts/harness-seed.mjs twenty
          - name: Provision roles
            run: npm run db:roles:provision -- twenty
-         - name: Run the lane (tw-api and tw-serial)
-           run: npx playwright test --project=tw-api --project=tw-serial
+         - name: Run the lane (tw-api and the serial cases except the study)
+           run: npx playwright test --project=tw-api --project=tw-serial --grep-invert "P2-TW-WH-010"
          - name: Upload report, junit, receiver logs
            if: always()
            uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -865,19 +864,110 @@ P-TW-13 ran on one stack. A route-triggered logic function was created, but the 
    Open points for the first CI run (UNPROBED on runners): the allow-list address (`172.17.0.1` is the usual docker0 address on GitHub-hosted runners); the `PRODUCTS_ROOT` path (the bootstrap's default is `../products`); `timeout 900` until the CI cold `up` is measured. The `always()` `down` is required.
 2. `tests/unit/ci/workflow.test.ts`: +2 tests (`tw-api job needs foundation and has a 30 minute timeout`; `tw-api job ends with an always() harness down step`). Read the file first; keep its style.
 3. `npm run check` exits 0; `npm run unit` = base + 21.
-4. `npm run list:api` shows `tw-api` tests: 22 (5 readiness + 17 new, including the skipped STR-001) and `tw-serial` tests: 50 study cases.
+4. `npm run list:api` shows `tw-api` tests: 22 (5 readiness + 17 new, including the skipped STR-001). The 50 study cases are listed under `tw-serial` and excluded from the lane job by `--grep-invert` (section 8.6).
 5. Push, open a PR, subscribe to its CI (section 15).
 
 ---
 
-### 8.7 L4: P2-TW-WH-010 delivery study (serial project)
+### 8.7 L4: P2-TW-WH-010 measurement study (its own workflow)
 
-1. Pre-flight. One stack: `up`, seed, roles (8.0).
-2. Write `tests/serial/tw/b1-study.serial.spec.ts` exactly as section 6.8. The constants `TW_STUDY_DELIVERY_MS` and `TW_STUDY_IDLE_MS` are in `src/lanes/tw/slo.ts` (L0, section 6.1).
-3. Run: `npx playwright test --project=tw-serial`. The project depends on `tw-api` (`playwright.config.ts`), so the normal lane runs first. Expect 50 study cases listed.
-4. Read `results/p2-tw-wh-010-study.json`. Report the case count, the number sent, the drop count, the rate, each dropped case (`n`, `mode`, `sentAt`), and the attached worker-log evidence. Zero drops is a result of 50 measured cases, not a proof that the defect is absent.
-5. Never retry a failed case, never add `test.fail()`, never raise the 60 s test timeout. A red study is intended (OD-15); the owner decides whether `tw-serial` is a required check.
-6. `down`. Confirm zero `qa-harness-*` containers.
+1. Pre-flight. One stack: `up`, seed, roles (8.0). The study is not part of the lane: run it in the study workflow (8.8), or locally with the same command.
+2. Write `tests/serial/tw/b1-study.serial.spec.ts` exactly as section 6.8. `TW_STUDY_DELIVERY_MS` and `TW_STUDY_IDLE_MS` are in `src/lanes/tw/slo.ts` (L0, section 6.1).
+3. Run locally: `mkdir -p results && npx playwright test --project=tw-serial --grep "P2-TW-WH-010"`. The project depends on `tw-api` (`playwright.config.ts`), so the normal lane runs first.
+4. Read `results/p2-tw-wh-010-study.json`. Report `cases` (must be 50), `sent`, `delivered`, the per-case records, and the attached worker log of each undelivered case. Zero delivered of 50 sent is a measurement, not an assertion failure.
+5. Never retry a case, never add `test.fail()`, never raise the 60 s test timeout (rules 5 and 12).
+6. `down` by the explicit command, then confirm zero `qa-harness-*` containers.
+
+### 8.8 Study workflow and its timeout
+
+`.github/workflows/tw-study.yml` (new file). It is a scheduled measurement, not a required check. It runs the study with `--grep "P2-TW-WH-010"`, uploads the JSON and the receiver logs, and always runs `down`.
+
+```yaml
+name: tw-study
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: tw-study-${{ github.ref }}
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+env:
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+jobs:
+  study:
+    name: tw-study
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PRODUCTS_ROOT: ${{ github.workspace }}/../products
+      OUTBOUND_HTTP_ALLOWED_INTERNAL_HOSTS: host.docker.internal,172.17.0.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Generate DB role passwords (per job, masked)
+        run: |
+          set -euo pipefail
+          ro="$(openssl rand -hex 16)"; fx="$(openssl rand -hex 16)"
+          echo "::add-mask::$ro"; echo "::add-mask::$fx"
+          echo "P2_QA_RO_PASSWORD=$ro" >> "$GITHUB_ENV"; echo "P2_QA_FIXTURE_PASSWORD=$fx" >> "$GITHUB_ENV"
+      - name: Bootstrap Twenty at the pinned ref
+        run: bash scripts/bootstrap.sh twenty
+      - name: Harness up (one stack)
+        run: timeout 900 node node_modules/qa-portfolio-harness/scripts/up.mjs twenty
+      - name: Seed Twenty
+        run: node scripts/harness-seed.mjs twenty
+      - name: Provision roles
+        run: npm run db:roles:provision -- twenty
+      - name: Run the study
+        run: |
+          mkdir -p results
+          npx playwright test --project=tw-serial --grep "P2-TW-WH-010"
+      - name: Upload study JSON and receiver logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tw-study
+          path: |
+            results/p2-tw-wh-010-study.json
+            receiver-logs/
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Harness down
+        if: always()
+        run: node node_modules/qa-portfolio-harness/scripts/down.mjs twenty
+```
+
+**Timeout sizing (measured inputs; the arithmetic is shown so it can be re-run).**
+
+| Stage | Input | Source | Seconds |
+|---|---|---|---|
+| `up`, cold (image pull inside) | 191 | probe record, stack S1 | 191 |
+| `up`, warm | 110 | probe record, stacks S2 and S4 | (not used for the worst case) |
+| seed | 85 | probe record, stack S1 | 85 |
+| `tw-api` dependency of `tw-serial` (11 tests) | 84 (1.4 min) | probe run `live-run1` | 84 |
+| **Setup, measured** | | | **360** |
+| idle12 case, typical | 12 s gap + delivery observed at 0.07–0.2 s | timed attempts A/B/C and P-TW-2 arrivals | 12.3 |
+| idle12 case, worst | 12 s gap + 15 s observation (a drop) | `TW_STUDY_DELIVERY_MS` = 5 s outbound timeout + 10 s margin | 27 |
+| warm0 and prime case, worst | 15 s observation | same | 15 |
+| **Study, worst (all 50 drop)** | 20 × 27 + 30 × 15 | | **990** |
+| **Total, worst** | 360 + 990 | | **1350 (22.5 min)** |
+| Study, typical (no drops) | 20 × 12.3 + 30 × 0.5 | | ≈ 262 (4.4 min) |
+| Total, typical | 360 + 262 | | ≈ 622 (10.4 min) |
+
+`timeout-minutes: 30` is the worst case (22.5 min) plus 7.5 min. The per-case Playwright overhead and the roles step are NOT measured; the margin covers them. The first scheduled run records the real wall clock; re-size the timeout from that number, not from this estimate.
+
 
 ## 9. Done criteria per task (machine-checkable)
 
@@ -895,7 +985,7 @@ Every task:
 Per task extras:
 - L0: the helper files exist; `tests/unit/lanes/tw` has 6 files (18 tests); the clients test has the +1 update test (19 total).
 - L1: 7 passed (section 8.2 step 4).
-- L2: 8 passed (the B1 control included). L4: 50 study cases listed; `results/p2-tw-wh-010-study.json` written; the PR states the case count, the drop count, the rate and the dropped case ids with their worker-log evidence (if any).
+- L2: 8 passed (the B1 control included). L4 (study workflow): `results/p2-tw-wh-010-study.json` has `cases` = 50 and `sent` = 50; the PR reports delivered vs sent per case; the study asserts no delivery result.
 - L3: DEL-002 passes; STR-001 skipped with its reason printed.
 - L5: the workflow test passes; `npm run check` exit 0.
 
@@ -912,8 +1002,8 @@ Per task extras:
 | WH-004 one request | a retry on 500 → count 2 → `quietState` = `changed:2` | quiet unit test 3 |
 | WH-005 timeout | a retry after the 5 s timeout → count 2 | same; **P-TW-3** (1 request) |
 | WH-006 identity | a changed `webhookId` in the body | `toMatchObject` on the created ids; **P-TW-4** |
-| B1 control | a webhook that never delivers → the control's poll fails and serial mode skips test 2 | serial mode (**P-TW-12 S2/S3**) |
-| P2-TW-WH-010 study | a receiver that never records one case (mutation: skip the delivery) → that case fails, is counted as a drop, and its worker log is attached | serial study, section 8.7 |
+| B1 control | a webhook that never delivers → the control's poll fails (the control is the only test in its file) | the poll (**P-TW-12 S2**) |
+| P2-TW-WH-010 study | a receiver that never records one case → recorded as not delivered; the run stays valid. A send the API rejects → the validity assertion fails | serial study, section 8.7 |
 | CANARY bound | a third canary | visible unit test (bound throws) |
 | `quietState` | a count that changes | quiet unit test 3 |
 | gates | a blank key treated as set | gates unit test 3 |
@@ -936,7 +1026,8 @@ Lowercase Conventional Commits, explicit paths only (`git add <path>`; never `gi
 | L2 | `test(tw): webhook signature, payload and delivery cases` | `tests/webhooks/tw/signature.spec.ts tests/webhooks/tw/payload.spec.ts tests/webhooks/tw/delivery.spec.ts` |
 | L2 | `test(tw): b1 positive control` | `tests/webhooks/tw/b1-drop.spec.ts` |
 | L3 | `test(tw): soft delete and billing gate` | `tests/integration/tw/soft-delete.spec.ts tests/integration/tw/billing.spec.ts` |
-| L4 | `test(tw): b1 delivery study in the serial project` | `tests/serial/tw/b1-study.serial.spec.ts` |
+| L4 | `test(tw): b1 delivery measurement study` | `tests/serial/tw/b1-study.serial.spec.ts` |
+| L4 | `ci(tw): add the study workflow` | `.github/workflows/tw-study.yml` |
 | L5 | `ci(tw): add the twenty lane job` | `.github/workflows/api.yml tests/unit/ci/workflow.test.ts` |
 
 ## 12. Environment changes
@@ -953,7 +1044,7 @@ Lowercase Conventional Commits, explicit paths only (`git add <path>`; never `gi
 1. Turn off Cursor's commit attribution before a Cursor build (foundation section 9 item 4).
 2. Install: already runs `scripts/cloud-install.sh` (`.cursor/environment.json` line 5). Nothing to paste.
 3. Set `PRODUCTS_ROOT` in the cloud environment's variables (or the job's `up` command). Nothing secret.
-4. Optional: `STRIPE_API_KEY` in the secrets panel. It does not unblock STR-001 (the billing schema is absent, P-TW-7b); keep it unset until the owner decides OD-10.
+4. Optional: `STRIPE_API_KEY` in the secrets panel. It does not unblock STR-001 (the billing schema is absent, P-TW-7b). OD-10 is applied: STR-001 stays a skip with its named reason.
 
 **Claude Code cloud (exact steps):**
 1. Setup script: run `npm ci` (not `npm install`); confirm `node -p "require('stripe/package.json').version"` prints `23.0.1`.
@@ -961,7 +1052,7 @@ Lowercase Conventional Commits, explicit paths only (`git add <path>`; never `gi
 3. Environment variables: add `PRODUCTS_ROOT` in the cloud environment menu (the session's title bar, then Edit), as an environment variable. Nothing secret.
 4. `STRIPE_API_KEY`: optional, as above.
 
-**GitHub Actions (CI):** the job in section 8.6 sets `PRODUCTS_ROOT` and the allow-list in the job `env`; the DB role passwords are generated per job. No repository secret is needed for the built rows.
+**GitHub Actions (CI):** the job in section 8.6 sets `PRODUCTS_ROOT` and the allow-list in the job `env`; the DB role passwords are generated per job. No repository secret is needed for the built rows. The study workflow (section 8.8) uses the same settings and is not a required check.
 
 **Automatic vs pasted:** automatic = install and hook; set by the owner = `PRODUCTS_ROOT` (not secret). Stripe key: optional, no effect until the billing schema exists.
 
@@ -972,7 +1063,7 @@ Lowercase Conventional Commits, explicit paths only (`git add <path>`; never `gi
 | **HR-4** | **DEFERRED** (owner decision; pending a later harness release) | Only one `server` replica under `up` | P-TW-8 (one server container) | P2-TW-CACHE-001 |
 | **HR-5** | **DEFERRED** (owner decision; pending a later harness release) | Second workspace needs `IS_MULTIWORKSPACE_ENABLED`; not in the pass-through list | P-TW-5, P-TW-6 (flag false; not in `twenty-passthrough.ts:9-15`) | P2-TW-WH-009, P2-TW-STR-002 |
 | HR-2 (existing) | verified at 0.3.0 for the pass-through | Billing variables and the allow-list reach the server | P-TW-5 (allow-list value set), P-TW-7b (all four billing variables set) | (the billing schema is a separate blocker, below) |
-| — | not an HR | Billing schema absent on `twentycrm/twenty:v2.44.0` | P-TW-7b (`relation "core.billingProduct" does not exist`; no billing tables) | P2-TW-STR-001 (BLOCKED; owner decides OD-10) |
+| — | not an HR | Billing schema absent on `twentycrm/twenty:v2.44.0` | P-TW-7b (`relation "core.billingProduct" does not exist`; no billing tables) | P2-TW-STR-001 (a skip with the named reason; OD-10 applied) |
 | — | not an HR | Rate-limit flag is a DB row | P-TW-5 | none (WH-008 cut) |
 | — | not an HR | Event-log rows in ClickHouse | P-TW-11 | the secondary oracle of WH-005 (not built) |
 
@@ -996,7 +1087,7 @@ No decision is BLOCKING. Each row has a default.
 
 | # | Decision | Evidence | Status |
 |---|---|---|---|
-| OD-1 | B1: one test or two serial tests | P-TW-12 (masking) | **APPLIED: two serial tests**, and **no `test.fail()`** because B1 is not reliably reproduced (rule 12) |
+| OD-1 | B1: positive control and drop measurement | P-TW-12 (masking) | **APPLIED:** the B1 control is one test in the normal lane. The drop measurement is the separate study P2-TW-WH-010 (50 cases, its own workflow). No `test.fail()` (rule 12) |
 | OD-2 | B1 oracle: receiver or also the response row | C-4: the response row is in ClickHouse | **APPLIED: receiver only** |
 | OD-3 | B1 ID | owner assigned | **P2-TW-WH-010** (the delivery study) |
 | OD-4 | TW-WH-006 wording | P-TW-4 (no event id) | **APPLIED: identity fields the body carries** (section 4.1 row) |
@@ -1010,13 +1101,13 @@ No decision is BLOCKING. Each row has a default.
 | OD-12 | People update call | `src/clients/twenty.ts` has no update | default kept: add `update` (+1 unit test) |
 | OD-13 | TW-RT-001 execution path | P-TW-9, P-TW-13 | **APPLIED: probed; RT-001 stays BLOCKED.** The route returns 404 `TRIGGER_NOT_FOUND`; the server runs the disabled driver (`LOGIC_FUNCTION_TYPE` unset in production; `config-variables.ts:732-735`). Not built |
 | OD-14 | Base unit count | P0-r2: 285 | **closed**: baseline 285; the plan's counts are deltas |
-| OD-15 | intermittent B1 drop | P-TW-2n: 1 of 6 | **APPLIED: measured delivery study** (P2-TW-WH-010, 50 cases, serial project). No `test.fail()`. The drop count, the cases and the worker log are reported; the study does not retry |
+| OD-15 | intermittent B1 drop | P-TW-2n: 1 of 6 | **APPLIED:** a measurement study, P2-TW-WH-010 (50 cases, its own scheduled workflow, section 8.8). It records delivered vs sent per case and asserts run validity only. No `test.fail()`, no retry |
 
 ### 14.3 Risks
 
 | Risk | Effect | Mitigation |
 |---|---|---|
-| Intermittent B1 drop (1 of 6; P2-TW-WH-010) | the serial study goes red when any sent case drops; that is intended. The job reports the case count, the drop count, the dropped case ids and the worker log; nothing is retried |
+| Intermittent B1 drop (1 of 6; P2-TW-WH-010) | the study is a measurement: a drop is data, not a red run. The run is invalid (red) only when a case is not executed, a send is rejected, a cleanup fails, or a leaked row remains |
 | Billing schema absent on the pinned image | STR rows cannot run | BLOCKED with a reason; OD-10 |
 | OAS needs the bearer and the loader takes a file | a CON test that fetches anonymously fails | the spec fetches with the bearer and loads the saved file (P-TW-10) |
 | Event-log rows only in ClickHouse | no DB oracle for response rows | receiver is the oracle; no row assertion |
@@ -1033,7 +1124,7 @@ No decision is BLOCKING. Each row has a default.
 | L2 | 90 min | no study in this task |
 | L3 | 45 min | one stack; the STR-001 skip is immediate |
 | L5 | 60 min | CI wall clock measured on the first run |
-| L4 study (serial) | 30 min build; ~5 min typical run, ~12.5 min worst case | 50 cases; a drop costs up to 15 s (`TW_STUDY_DELIVERY_MS`); idle gaps 13 s each |
+| L4 study workflow | build 30 min; job timeout 30 min, sized in section 8.8 from measured inputs | the sizing arithmetic is in section 8.8 |
 
 CI deadline: `timeout 900` for `up` until the CI cold start is measured; the job limit is 30 minutes (section 8.6).
 
@@ -1087,6 +1178,7 @@ Only these shared files may change, each in the task named. No other shared file
 | `src/clients/twenty.ts` | L0 (OD-12) | add `update(id: string, firstName: string): Promise<void>` to `people` in `TwentyClient` and `twentyClient` (PATCH `/rest/people/${id}`, `expect: [200]`) |
 | `tests/unit/clients/clients.test.ts` | L0 (OD-12) | +1 test: `twenty people.update sends PATCH with the first name` |
 | `.github/workflows/api.yml` | L5 | the `tw-api` job of section 8.6, after `foundation` |
+| `.github/workflows/tw-study.yml` | L4 (new file) | the study workflow of section 8.8 |
 | `tests/unit/ci/workflow.test.ts` | L5 | +2 tests |
 | `src/db/fixture-allowlist.ts`, `tests/unit/db/fixture.test.ts` | **none** (WH-008 cut; no flag write) | not touched |
 | `src/invariants/rules.ts`, `src/slo.ts`, `playwright.config.ts`, `scripts/db-roles.ts` | **none** | not touched |
@@ -1100,6 +1192,6 @@ Other lanes plan in parallel from the same base. This plan names no file or ID o
 ## Appendix: established versus open (quick reference)
 
 - **Established by a probe on the pinned harness (this pass):** the signature (P-TW-1); one request and the 5 s timeout (P-TW-3); no event id and the identity fields (P-TW-4); the flag as a DB row (P-TW-5); the OAS auth and cursor names (P-TW-10); the event-log store (P-TW-11); `test.fail()` masking (P-TW-12); billing signature checks and the missing billing schema (P-TW-7 / 7b); one server replica (P-TW-8).
-- **B1 (P2-TW-WH-010):** SUSPECTED intermittent PRODUCT BUG. One drop in six first-event attempts so far (P-TW-2n); the serial study measures the rate. No `test.fail()`.
+- **B1 (P2-TW-WH-010):** SUSPECTED intermittent PRODUCT BUG. One drop in six first-event attempts so far (P-TW-2n). The study records delivered vs sent per case in its own scheduled workflow; no `test.fail()`.
 - **Established by code only (file:line):** the cache invalidation on webhook change (R7, corrected), the billing ordering path (upsert, no ordering check), the rate-limit warn and metric.
 - **Open (UNPROBED):** the billing ordering result (schema absent); the CI runner's allow-list address and `PRODUCTS_ROOT`; the `/graphql` bearer path (CON-002); the currency column name (CUR-001); the soft-delete REST filter syntax (DEL-002). RT-001 executor: blocked by the disabled driver (P-TW-13).

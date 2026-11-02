@@ -291,13 +291,32 @@ The first `up` attempt in S1 failed in 1 s with `Cal product root does not exist
   POST /s/p2-rt-probe → 404 {"code":"TRIGGER_NOT_FOUND","messages":["No Route trigger found"]}
   qa_ro: core.logicFunction row "p2-rt-probe" created 10:46:03Z (sourceHandlerPath set; builtHandlerPath set)
   qa_ro: no table named routeTrigger in any schema
-  deleteOneLogicFunction: attempted by the probe; the row was still present on the follow-up read (delete not confirmed)
+  deleteOneLogicFunction (first run): called with `id` and no `input`; the error was swallowed by the probe, so the row was never deleted and the first run reported nothing (a probe defect, now fixed).
+
+### P-TW-13 item 7. Deletion of the probe rows, with errors reported (follow-up on stack S4)
+- Date (UTC): 2026-11-02T11:08Z to 11:12Z (S4: `up` rc 0, seed rc 0, roles rc 0). Stack brought down by hand afterwards (see below).
+- Command: fresh `create` (same input as P-TW-13) → `deleteOneLogicFunction(input: LogicFunctionIdInput)` with the id; errors not swallowed; `core.logicFunction` read for `name = p2-rt-probe`. Run file: `specs/rt3.spec.ts` (create and first delete attempt), then `specs/rt4.spec.ts` (delete both rows, read back).
+- Output (trimmed):
+  ```text
+  rt3 delete attempt #1: errors: Unknown argument "id" on field "Mutation.deleteOneLogicFunction"; argument "input" of type "LogicFunctionIdInput!" is required
+  rt3 rows named p2-rt-probe after create: 2 (the S3 row survived the down/up cycle: deletedAt null), both live
+  rt4 before: b789d4ee…, b4a1b7dd…  (deletedAt null both)
+  rt4 deleteOneLogicFunction(input: {id}) for each: errors null; data.deleteOneLogicFunction.id returned
+  rt4 after: 0 rows named p2-rt-probe (hard delete: no row remains, not even with deletedAt set)
+  rt4 live rows (deletedAt IS NULL): 0
+  ```
+- Proves: the probe rows are deleted (hard delete) with the correct input. The first run did not delete its row (wrong argument, error swallowed). The Twenty database persists across `down` and `up`: the S3 row was still present on S4 before it was deleted.
+- Status: CONFIRMED (both rows deleted; the state is recorded here).
+- Stack S4 was brought down by hand: `PRODUCTS_ROOT=/home/user/products node node_modules/qa-portfolio-harness/scripts/down.mjs twenty > /tmp/p2-lane-probes/out/down-rt3.log` → rc 0. Afterwards zero `qa-harness-*` containers; ports 3002, 4317, 5434 refused. The named volumes `qa-harness-twenty_db-data` and `qa-harness-twenty_server-local-data` remain on this VM (`docker volume ls`).
+
   ```
 - Proves: a logic function with a route setting can be created through the API, but the route is not registered (404 `TRIGGER_NOT_FOUND`). The server runs the logic-function driver `DISABLED` in production (`LOGIC_FUNCTION_TYPE` unset; default `DISABLED` when `NODE_ENV` is not `development`), so a route-triggered function cannot execute on this harness. RT-001 cannot be probed further without changing the driver (not a pass-through name).
 - Citation: `packages/twenty-server/src/engine/core-modules/twenty-config/config-variables.ts:732-735` (default), `src/engine/core-modules/logic-function/logic-function-drivers/logic-function-driver.factory.ts:50-51` (DISABLED → `DisabledDriver`); `src/engine/metadata-modules/route-trigger/route-trigger.controller.ts:25-53`; `twenty-shared/src/application/logicFunctionManifestType.ts:33-38` (`HttpRouteTriggerSettings`).
 - Status: BLOCKED. RT-001 stays blocked (OD-13).
 
 Stack S3 cleanup note: the probe runner's `down` never started. Its log path was relative to the wrong folder (the shell failed the redirection before `down` ran), so the stack stayed up for about two minutes. `down` was then run by hand with the correct path: rc 0, zero `qa-harness-*` containers, ports 3002, 4317, 5434 refused. The runner script (`/tmp/p2-lane-probes/rt-run.sh`) was not corrected; any future run must use the explicit `down` command with a log path under `/tmp/p2-lane-probes/out/`.
+
+Persistence (new finding): the Twenty database volume survives `down`. A stack started after `down` still has the rows of the earlier run, so a run does not start from an empty database. Cleanup must be done through the API and checked by a read.
 
 ## Contradictions with earlier records and the index
 
