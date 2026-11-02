@@ -106,10 +106,18 @@ jobs:
         run: |
           "$NODE22" scripts/db-roles.ts provision documenso
 
-      - name: API and serial projects
-        timeout-minutes: 90
+      - name: API project
+        timeout-minutes: 60
         run: |
-          "$NODE22" node_modules/@playwright/test/cli.js test --project=doc-api --project=doc-serial
+          "$NODE22" node_modules/@playwright/test/cli.js test --project=doc-api
+
+      # The serial project depends on doc-api in Playwright, so a red doc-api would skip it. Run it on its own
+      # after doc-api regardless of that result; the job still fails from the doc-api step if it is red.
+      - name: Serial project (runs after the API project, with or without its result)
+        if: ${{ always() }}
+        timeout-minutes: 60
+        run: |
+          "$NODE22" node_modules/@playwright/test/cli.js test --project=doc-serial --no-deps
 
       - name: Stop the stack (always)
         if: ${{ always() }}

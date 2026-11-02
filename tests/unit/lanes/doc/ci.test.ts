@@ -21,9 +21,13 @@ function laneFiles(dirs: readonly string[]): string[] {
 }
 
 describe("documenso lane workflow (.github/workflows/p2-doc.yml)", () => {
-  test("it has the doc-api job (API and serial projects) and the doc-billing-api job", () => {
+  test("it has the doc-api job (API and serial steps) and the doc-billing-api job", () => {
     assert.ok(WORKFLOW.includes("\n  doc-api:\n"));
-    assert.match(WORKFLOW, /--project=doc-api --project=doc-serial/);
+    assert.ok(WORKFLOW.includes("test --project=doc-api\n"));
+    // Serial runs on its own, with no dependency on doc-api, and always runs after the API step.
+    assert.ok(WORKFLOW.includes("test --project=doc-serial --no-deps"));
+    const serialStep = WORKFLOW.slice(WORKFLOW.indexOf("Serial project"));
+    assert.ok(serialStep.slice(0, 400).includes("if: ${{ always() }}"));
     assert.ok(WORKFLOW.includes("\n  doc-billing-api:\n"));
     assert.match(WORKFLOW, /--project=doc-billing-api/);
   });
