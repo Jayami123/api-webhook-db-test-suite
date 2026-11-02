@@ -68,7 +68,7 @@ Full records in the probe file. Status column uses the vocabulary from that file
 
 Not probed in this planning session (each has a settling probe in its task): the concurrent CAS race, the seal-sweep
 edges, UP-002/003/004/005 content and limits, CON-001 contract, I18N-001/002 settings, BULK-001/002, SM-002,
-AUD-002 certificate, EXP-001/002 timing and the other five entry points, WH-004 matrix, STR-002/003 (no key).
+AUD-002 certificate, EXP-001/002 timing and the other five entry points, WH-004 matrix, and the per-run Stripe fixture (its Stripe write calls and the organisation link are UNPROBED; the L2 step 0 probe settles them).
 
 ---
 
@@ -87,7 +87,7 @@ AUD-002 certificate, EXP-001/002 timing and the other five entry points, WH-004 
 | R9 | The Stripe bad-signature 500 is the blanket catch (`handler.ts:113-118`), not a proven bug. The lane asserts non-2xx and no row change; no `test.fail`. | P-DOC-7; OD-5 |
 | R10 | A sealed PDF is verifiable with `pdfsig`; a one-byte change is detected. | P-DOC-8 |
 | R11 | Signing mail is captured by Inbucket (SMTP 2525, REST 9003); one mail per recipient. | P-DOC-10; `documenso.compose.yml:30-32` (harness v0.3.0) |
-| R12 | STR-002/003 run live with the real test-mode key (present in this session's environment). The oracle is PARTIAL: the test account has no subscriptions. | P-DOC-7, RR-STRIPE; OD-2, OD-15 |
+| R12 | STR-002/003 use a per-run Stripe test-mode fixture (customer, subscription, product, tagged `run_id`), created in setup and deleted in teardown even when the test fails (owner decision OD-15, 2026-11-02, override). The lane refuses any key that is not `sk_test_`. | P-DOC-7, RR-STRIPE; `sync-stripe-customer-subscription.ts:25` (convergent), `:31` (never creates organisations), `:55-68` (needs an organisation with that customer id); OD-15, OD-16 |
 | R13 | `api.stripe.com` answers and accepts the test-mode key (`/v1/balance` 200; no auth 401). | P-DOC-17, RR-STRIPE (CONTRADICTS foundation U14) |
 | R14 | CAS: a correctly signed re-dispatch of a non-PENDING job returns 404 and changes nothing. | P-DOC-4b; `local.ts:277-295` |
 | R15 | The login limiter is 10 per 15-minute fixed bucket per user and IP. The lane mints one session per worker, and never sets `DANGEROUS_BYPASS_RATE_LIMITS`. | P-DOC-14; `rate-limits.ts:34-39`; `rate-limit.ts:48-53, 73, 84-93` |
@@ -140,8 +140,8 @@ CUT = cut. Test titles begin with the ID. "BUILT" = the task writes it; "DEFERRE
 | P2-DOC-STR-001 | U | L2 | `tests/billing/doc/stripe.spec.ts` (billing project) | `P2-DOC-STR-001 an unsigned Stripe event is refused with 400` | 400 `No signature found in request` | any 2xx | BUILT (billing stack) |
 | P2-DOC-STR-001 | U | L2 | same | `P2-DOC-STR-001 a bad or stale signature is refused with a non-2xx and changes no rows` | non-2xx; `Subscription` and `Organisation` row counts unchanged | a 2xx; a changed row | BUILT (OD-5) |
 | P2-DOC-STR-001 | U | L2 | same | `P2-DOC-STR-001 a correctly signed event that is not synced is accepted (200) and changes no rows` | 200 `Webhook received`; counts unchanged | non-200 | BUILT |
-| P2-DOC-STR-002 | U | L2 | same | `P2-DOC-STR-002 a validly signed event is processed once (needs STRIPE_API_KEY)` | `test.skip(!hasStripeKey, ...)` | (skipped without a key) | BUILT; live with the real key (RR-STRIPE, oracle PARTIAL); skips without a key (explicit condition) |
-| P2-DOC-STR-003 | U | L2 | same | `P2-DOC-STR-003 out-of-order subscription events end in one state (needs STRIPE_API_KEY)` | `test.skip(!hasStripeKey, ...)` | (skipped without key) | BUILT; live with the real key (RR-STRIPE, oracle PARTIAL); skips without a key |
+| P2-DOC-STR-002 | U | L2 | `tests/billing/doc/stripe.spec.ts` (billing project) | `P2-DOC-STR-002 a validly signed synced event is processed once against the run's subscription` | Subscription rows for the run customer: exactly 1 after the first delivery; identical after an identical second delivery | 0 or 2 rows; any change on the repeat | BUILT after L2 step 0b, with the per-run fixture (section 6.7b); skipped when `STRIPE_API_KEY` is absent (named condition); refused when the key is not `sk_test_` |
+| P2-DOC-STR-003 | U | L2 | same | `P2-DOC-STR-003 out-of-order subscription events end in the live Stripe state` | `updated` (t2) then `created` (t1, payload status `canceled`): the final Subscription status equals the status read live from Stripe | the final status equals the stale payload status | BUILT after L2 step 0b, with the per-run fixture; same skip and refusal rules |
 | P2-DOC-SM-001 | K | L3 | `tests/integration/doc/lifecycle.spec.ts` | `P2-DOC-SM-001 completing an envelope through the product sets completedAt (B3 oracle)` | status COMPLETED and `completedAt` not NULL | completedAt NULL after COMPLETED | BUILT |
 | P2-DOC-SM-001 | K | L3 | same | `P2-DOC-SM-001 refused transitions on a COMPLETED envelope change no rows` | distribute: non-2xx; field create: 400; row snapshot equal | a 2xx; a changed row | BUILT (OD-6) |
 | P2-DOC-SM-002 | K | L3 | same | `P2-DOC-SM-002 distributing a PENDING envelope a second time changes no rows` | status and recipient rows unchanged; non-2xx or 2xx with unchanged rows | a changed row | BUILT after probe (UNPROBED) |
@@ -181,6 +181,8 @@ P2-DOC-CONV-001, P2-DOC-I18N-003, P2-DOC-CON-002. Listed here only.
 | FC-3 cron tick budget | `tickDeadlineMs` returns the next quarter hour plus 120 s, using `CRON_PERIOD_MS` | L0 unit, used L4 | off by a period |
 | FC-4 pdfsig on the runner | `command -v pdfsig pdftotext` exits 0 in the lane job before tests | L5 | a missing binary fails the job before tests |
 | FC-5 receiver hostname | `p2-receiver.test` resolves to 127.0.0.1 (foundation check; reused) | existing | the hosts line is absent |
+| FC-6 test-mode guard | `assertTestModeKey` refuses every key that is not `sk_test_`; unit tests, and no output or log contains the key | L2 | a live key is accepted, or its value appears in a message |
+| FC-7 Stripe reaper | customers and products tagged `run_id` older than 2 h are deleted (section 7); counts only in the output | L2 (job step after the run) | residue remains after the job |
 
 ### 4.4 Upstream-coverage gate (fork `f4105e47…` test files, searched with `rg -l` and `rg -n`)
 
@@ -220,7 +222,7 @@ Each case is a chain: trigger (API call or time travel) → product (job runner,
 |---|---|---|---|---|
 | Webhook delivery (WH-001..003, 006, 007) | `doc.webhooks.create` (tRPC) then `doc.envelopes.create` (DOCUMENT_CREATED) | `execute-webhook.handler` via `local.ts` job; `execute-webhook-call.ts` | receiver `deliveries`; `WebhookCall`, `BackgroundJob` (qa_ro) | `src/webhooks/receiver.ts`, `src/webhooks/verify.ts` (`verifyDocumenso`), `src/clients/documenso.ts`, `src/db/pg.ts` (`readOnlyDb`) |
 | Trigger matrix (WH-004) | the API calls per event (create, distribute, complete, cancel, reject-with-token) | `execute-webhook` per event | receiver counts per event | as above |
-| Stripe rows (STR-001..003) | signed POST to `/api/stripe/webhook` (billing stack) | `ee/server-only/stripe/webhook/handler.ts` | HTTP status; row counts (qa_ro) | `src/webhooks/sign.ts` (`signStripe`), `src/env.ts` |
+| Stripe rows (STR-001..003) | signed POST to `/api/stripe/webhook` (billing stack); STR-002/003 also create a per-run Stripe fixture through the product and the Stripe API (section 6.7b) | `ee/server-only/stripe/webhook/handler.ts`; `sync-stripe-customer-subscription.ts` | HTTP status; Subscription rows and status (qa_ro); live Stripe status | `src/webhooks/sign.ts`, `src/env.ts`, `src/lanes/doc/stripe-fixture.ts` (new) |
 | Completion and seal (SM-001, JOB-001, SIG-001..003, AUD-001..002) | field create, distribute, `field.signFieldWithToken`, `recipient.completeDocumentWithToken` | `seal-document.handler.ts`; `download.ts` | `Envelope.completedAt`; `BackgroundJob`; `pdfsig` on the download; `DocumentAuditLog` | `src/lanes/doc/envelope.ts` (new), `src/lanes/doc/pdfsig.ts` (new) |
 | Expiry (EXP-001..003) | fixture `Recipient.expiresAt` (qa_fixture) then signing | `sign-field-with-token.ts`, `recipients.ts:297` | HTTP status; `Recipient.signingStatus` (qa_ro) | `src/db/fixture.ts` (`createFixtureWriter`), `src/lanes/doc/fixtures.ts` (new) |
 | Reminders (REM-001/002) | fixture `Recipient.nextReminderAt`, then one cron tick | `send-signing-reminders-sweep.handler.ts` | Inbucket counts; `nextReminderAt` (qa_ro) | `src/lanes/doc/mail.ts` (new), `src/lanes/doc/cron.ts` (new) |
@@ -525,6 +527,93 @@ export function signedStripeHeaders(secret: string, body: string, timestampSecon
 
 Unit tests (`stripe.test.ts`, +2): `hasStripeKey({})` is false and `hasStripeKey({STRIPE_API_KEY: " "})` is false (fails when blank counts as set); `stripeWebhookSecret` throws without the variable (fails when a default is used).
 
+### 6.7b `src/lanes/doc/stripe-fixture.ts` (L2, owner decision OD-15 override)
+
+Each run creates its own Stripe test-mode fixture. The sync reads subscriptions by customer and writes only when a Documenso organisation carries that customer id (`sync-stripe-customer-subscription.ts:31, 55-68`), so the fixture creates the organisation through the product, which creates the Stripe customer and stores its id (`packages/lib/server-only/organisation/create-organisation.ts:39`; `packages/trpc/server/organisation-router/create-organisation.ts`). The lane then tags that customer with `run_id`, and attaches one subscription to it.
+
+Rules, all enforced in code:
+- Refuse any key that does not start with `sk_test_` (`ENV`). Never print the key or any Stripe object id. Stripe error messages can contain ids, so the teardown reports only the error code.
+- Setup runs inside a Playwright fixture. Teardown runs in `finally`, after the test body, so it runs when the test fails and when setup fails part-way.
+- Teardown order: cancel the subscription, delete the customer, archive the product, then delete the organisation through the product. Every step is attempted; failures are collected and thrown together.
+- The organisation route names and the trial-subscription call are UNPROBED. L2 step 0 probes them (commands in section 8, step 0b). If a call is refused, STOP and report; do not weaken the test.
+
+```ts
+import Stripe from "stripe";
+import { test as base } from "../../fixtures/index.ts";
+import { currentRunPrefix } from "../../run/prefix.ts";
+
+export const RUN_TAG = "run_id";
+export const TEST_KEY_PREFIX = "sk_test_";
+
+/** Refuses anything that is not a secret test-mode key. The message never contains the value. */
+export function assertTestModeKey(key: string | undefined): string {
+  if (key === undefined || key.trim() === "") throw new Error("ENV: STRIPE_API_KEY is not set");
+  if (!key.startsWith(TEST_KEY_PREFIX)) {
+    throw new Error("ENV: STRIPE_API_KEY is not a secret test-mode key (sk_test_); the lane refuses to run. The value is not shown.");
+  }
+  return key;
+}
+
+export interface RunStripeFixture {
+  readonly runId: string;
+  readonly organisationId: string;   // Documenso organisation created through the product (OD-16)
+  readonly customerId: string;       // Organisation.customerId, read through qa_ro; tagged run_id
+  readonly productId: string;
+  readonly subscriptionId: string;
+}
+
+/** Setup after the organisation exists. Each object carries metadata[run_id]. */
+export async function attachRunSubscription(stripe: Stripe, runId: string, customerId: string): Promise<{ productId: string; subscriptionId: string }> {
+  const product = await stripe.products.create({ name: `p2-lane ${runId}`, metadata: { [RUN_TAG]: runId } });
+  const price = await stripe.prices.create({ product: product.id, currency: "usd", unit_amount: 100, recurring: { interval: "month" }, metadata: { [RUN_TAG]: runId } });
+  await stripe.customers.update(customerId, { metadata: { [RUN_TAG]: runId } });
+  const sub = await stripe.subscriptions.create({ customer: customerId, items: [{ price: price.id }], trial_period_days: 1, metadata: { [RUN_TAG]: runId } });
+  return { productId: product.id, subscriptionId: sub.id };
+}
+
+/** Teardown. Collects every failure and throws once, with codes only (never messages, never ids). */
+export async function teardownRunStripe(stripe: Stripe, f: Partial<RunStripeFixture>): Promise<void> {
+  const failures: string[] = [];
+  const step = async (label: string, fn: () => Promise<unknown>): Promise<void> => {
+    try { await fn(); } catch (e) { failures.push(`${label}:${(e as { code?: string }).code ?? "error"}`); }
+  };
+  if (f.subscriptionId) await step("subscription", () => stripe.subscriptions.cancel(f.subscriptionId!));
+  if (f.customerId) await step("customer", () => stripe.customers.del(f.customerId!));
+  if (f.productId) await step("product", () => stripe.products.update(f.productId!, { active: false }));
+  if (failures.length > 0) throw new Error(`Stripe teardown incomplete for run ${f.runId ?? "unknown"}: ${failures.join(", ")}`);
+}
+
+/** Playwright fixture: setup, use(), teardown in finally. Organisation calls are UNPROBED (L2 step 0). */
+export const stripeTest = base.extend<{ stripeRun: RunStripeFixture }>({
+  stripeRun: async ({ request, docAuth }, use) => {
+    const key = assertTestModeKey(process.env.STRIPE_API_KEY);
+    const stripe = new Stripe(key);
+    const runId = currentRunPrefix();
+    const partial: Partial<RunStripeFixture> = { runId };
+    try {
+      partial.organisationId = await createOrganisationThroughProduct(request, docAuth, runId);   // UNPROBED route
+      partial.customerId = await readOrganisationCustomerId(partial.organisationId);             // qa_ro, schema.prisma:822
+      const attached = await attachRunSubscription(stripe, runId, partial.customerId);
+      Object.assign(partial, attached);
+      await use(partial as RunStripeFixture);
+    } finally {
+      await teardownRunStripe(stripe, partial);                                  // always runs
+      if (partial.organisationId) await deleteOrganisationThroughProduct(request, docAuth, partial.organisationId); // UNPROBED route
+    }
+  },
+});
+
+/** A signed-event body (Stripe v1 shape) for the sync path. Ids here are fixture ids; this text is never printed. */
+export function subscriptionEvent(input: { id: string; type: string; customerId: string; subscriptionId: string; status: string; created: number }): string {
+  return JSON.stringify({ id: input.id, object: "event", type: input.type, created: input.created, data: { object: { id: input.subscriptionId, object: "subscription", customer: input.customerId, status: input.status } } });
+}
+```
+
+Helpers `createOrganisationThroughProduct`, `readOrganisationCustomerId`, `deleteOrganisationThroughProduct` live in the same file (same pattern as `src/lanes/doc/envelope.ts`). `readOrganisationCustomerId` uses `SELECT "customerId" FROM "Organisation" WHERE "id" = $1` (qa_ro). The builder writes them with unit tests against fakes.
+
+Unit tests (`tests/unit/lanes/doc/stripe-fixture.test.ts`, +5 in the L2 count): `assertTestModeKey(undefined)` throws `ENV: STRIPE_API_KEY is not set`; `assertTestModeKey("sk_live_FAKE")` throws and its message does not contain `sk_live_FAKE` (fails when the guard echoes the value); `assertTestModeKey("rk_test_FAKE")` throws (restricted keys are refused); `assertTestModeKey("sk_test_FAKE")` returns the value; `teardownRunStripe` with a fake whose `subscriptions.cancel` rejects with `{code:"resource_missing", message:"No such subscription: x"}` still calls `customers.del` and `products.update`, and the thrown message contains `resource_missing` and not `No such subscription` (fails when teardown stops at the first error or leaks a message).
+
+
 ### 6.8 Spec skeletons
 
 Every spec imports `test`, `expect` from `src/fixtures/index.ts` (worker `receiverHandle`, client `doc`, `docAuth`, the P2-X-DB-001 sweep). Waits are `expect.poll` with `SLO` (code-defined budgets) and `POLL_INTERVALS`.
@@ -610,6 +699,9 @@ Add `SLO.docWebhookTimeoutChain = { ms: 50_000, basis: "4 attempts x WEBHOOK_TIM
 import { test, expect } from "../../../src/fixtures/index.ts";
 import { apiBaseUrl } from "../../../src/env.ts";
 import { hasStripeKey, stripeWebhookSecret, signedStripeHeaders } from "../../../src/lanes/doc/stripe.ts";
+import { stripeTest, subscriptionEvent } from "../../../src/lanes/doc/stripe-fixture.ts";
+import { readOnlyDb } from "../../../src/db/pg.ts";
+import Stripe from "stripe";
 
 const body = (type: string, customer: string | null) =>
   JSON.stringify({ id: "evt_p2_probe", object: "event", type, data: { object: { id: "obj_p2", object: "subscription", customer } } });
@@ -629,9 +721,34 @@ test("P2-DOC-STR-001 a bad or stale signature is refused with a non-2xx and chan
   // + row-count snapshot before and after (qa_ro) for Subscription and Organisation: unchanged
 });
 
-test("P2-DOC-STR-002 a validly signed event is processed once (needs STRIPE_API_KEY)", async () => {
-  test.skip(!hasStripeKey(process.env), "P2-DOC-STR-002 needs STRIPE_API_KEY (test mode): none in this run");
-  // live body: send the same signed synced event twice; one subscription row; no duplicate
+const db = readOnlyDb("documenso"); // src/db/pg.ts (import with Stripe from "stripe")
+subscriptionsFor = async (customerId: string) => db.select(`SELECT "id", "status" FROM "Subscription" WHERE "customerId" = $1`, [customerId]); // column names checked at L2 step 0
+
+test.describe("STR-002/003 against the run's Stripe fixture", () => {
+  test.skip(!hasStripeKey(process.env), "P2-DOC-STR-002/003 need STRIPE_API_KEY (test mode): none in this run");
+
+  stripeTest("P2-DOC-STR-002 a validly signed synced event is processed once against the run's subscription", async ({ request, stripeRun }) => {
+    const ts = Math.floor(Date.now() / 1000);
+    const body = subscriptionEvent({ id: `evt_${stripeRun.runId}_str002`, type: "customer.subscription.updated", customerId: stripeRun.customerId, subscriptionId: stripeRun.subscriptionId, status: "trialing", created: ts });
+    const headers = signedStripeHeaders(stripeWebhookSecret(process.env), body, ts);
+    expect((await post(request, headers, body)).status()).toBe(200);
+    const afterFirst = await subscriptionsFor(stripeRun.customerId);
+    expect(afterFirst).toHaveLength(1); // STOP if the first delivery writes no row: report, do not weaken
+    expect((await post(request, headers, body)).status()).toBe(200); // the identical signed event again
+    expect(await subscriptionsFor(stripeRun.customerId)).toEqual(afterFirst);
+  });
+
+  stripeTest("P2-DOC-STR-003 out-of-order subscription events end in the live Stripe state", async ({ request, stripeRun }) => {
+    const stripe = new Stripe(assertTestModeKey(process.env.STRIPE_API_KEY));
+    const live = (await stripe.subscriptions.retrieve(stripeRun.subscriptionId)).status;
+    const t2 = Math.floor(Date.now() / 1000);
+    const t1 = t2 - 60;
+    const newer = subscriptionEvent({ id: `evt_${stripeRun.runId}_t2`, type: "customer.subscription.updated", customerId: stripeRun.customerId, subscriptionId: stripeRun.subscriptionId, status: "trialing", created: t2 });
+    const older = subscriptionEvent({ id: `evt_${stripeRun.runId}_t1`, type: "customer.subscription.created", customerId: stripeRun.customerId, subscriptionId: stripeRun.subscriptionId, status: "canceled", created: t1 });
+    expect((await post(request, signedStripeHeaders(stripeWebhookSecret(process.env), newer, t2), newer)).status()).toBe(200);
+    expect((await post(request, signedStripeHeaders(stripeWebhookSecret(process.env), older, t1), older)).status()).toBe(200);
+    expect((await subscriptionsFor(stripeRun.customerId)).map((r) => r.status)).toEqual([live]);
+  });
 });
 ```
 
@@ -666,6 +783,9 @@ Serial specs run after `doc-api` (playwright `dependencies`). They include the t
   ```
   Unit test (`tests/unit/invariants/doc-leak-recipient.test.ts`, +2): the rule's SQL text is accepted by `assertRuleShape`; a fake DB returning one row for a live envelope gives one violation, and zero rows for a soft-deleted envelope gives none (fails when the join is missing).
 - **Shared seed state.** The lane never writes seed rows. Fixture time travel changes only recipient rows of this run's envelopes, which the test created. No restore is needed; the test asserts the expiry it set (`expect(row.expiresAt)` equal to the value written) so a silent write failure is caught.
+- **Stripe objects (OD-15, OD-16).** Each run creates, through the product, one organisation (name carries the run prefix) and its Stripe customer (`create-organisation.ts:39`). The lane tags the customer, one product and one subscription with `metadata[run_id]`. Teardown (section 6.7b) cancels the subscription, deletes the customer, archives the product and deletes the organisation through the product. The product's organisation delete only schedules the Stripe subscription cancel (`delete-organisation.ts:20-50`), so the lane's own Stripe calls are the ones that remove the objects.
+- **Stripe residue (reaper, FC-7).** If a teardown fails, run-tagged objects can remain. A reaper step lists Stripe customers and products created more than 2 hours ago whose `metadata.run_id` starts with `p2-qa-`, and deletes them with the same teardown rules. Its output carries counts only.
+- **Leak rule for organisations (L2, shared file `src/invariants/rules.ts`).** New rule `doc-leak-organisation-name`: an `Organisation` whose name carries the run prefix is a leak. Its SQL adds `AND "deletedAt" IS NULL` only if the product's soft-delete column exists (checked in L2 step 0 with `information_schema`; UNPROBED).
 - **Leak check after each test.** The sweep (`src/invariants/after-test.ts`) runs for every test in `doc-api` and `doc-serial`: any leftover run-prefixed row fails the test with the SQL and rows attached.
 - **Rate-limit budget (R15).** Each project mints one session (one worker). A CI run mints at most 4 sessions for Documenso in the 15-minute bucket (`doc-api`, `doc-serial`, `doc-billing-api`, and one for the readiness spec inside `doc-api`, which shares the worker). The lane never mints more than once per worker.
 
@@ -680,6 +800,18 @@ Serial specs run after `doc-api` (playwright `dependencies`). They include the t
   export PATH="/usr/local/bin:$PATH"
   git fetch origin
   ```
+
+**Step 0b (L2 only): probe the per-run Stripe fixture before any test is written (section 6.7b).** These calls write test-mode objects. Run them only on a stack with the billing variables and a key that starts with `sk_test_`. Print counts and HTTP codes only; never print a key or an object id.
+
+1. Key check, silent: `[[ "$STRIPE_API_KEY" == sk_test_* ]] || { echo 'STOP: key is not test mode'; exit 1; }`.
+2. Organisation route: sign in as the seeded user (one login), `POST /api/trpc/organisation.create` (the route name is read from `packages/trpc/server/organisation-router/create-organisation.ts` first). Record the HTTP status. STOP if it is not 200.
+3. Read `"Organisation"."customerId"` for that organisation through `qa_ro` (`schema.prisma:822`). Record whether it is non-null. STOP if null: the product did not create a customer, and OD-16 must be re-decided.
+4. Stripe: `customers.update` (metadata `run_id`), `products.create` and `prices.create` (metadata `run_id`), `subscriptions.create` with `trial_period_days: 1` and no payment method. Record each HTTP status. STOP if the trial subscription is refused: report the code, do not switch to a different payment setup without owner approval.
+5. Sync: POST one signed `customer.subscription.updated` for that customer (`subscriptionEvent` plus `signedStripeHeaders`). Record the status and the `Subscription` rows for that customer, using the column names from `information_schema.columns` for `Subscription` (checked, not guessed). STOP if the first delivery writes no row: the STR-002 oracle would be empty.
+6. Repeat step 5 with the same body. Record whether the rows are unchanged.
+7. Teardown: cancel the subscription, delete the customer, archive the product, delete the organisation through the product. Then search Stripe for metadata `run_id` equal to this run and record the count (must be 0). Record the organisation's absence through `qa_ro`.
+
+The probe result goes into the probe file as a new entry (dated, with the command as text and the counts), not into the plan. Until it is recorded, the STR-002/003 tests are not written, and the plan's status for them stays "BUILT (pending L2 step 0b)".
 
 **Step 1: base count.** `npm run unit 2>&1 | grep -E '^# (tests|pass|fail)'` on the cut-from branch; record `BASE_UNIT`. Expected 285 on `aa10ec1`. If not, the task records the measured base and uses "base + N".
 
@@ -709,7 +841,7 @@ Serial specs run after `doc-api` (playwright `dependencies`). They include the t
 |---|---|---|---|---|
 | L0 | helpers and unit tests (no spec); FC-1 probe | 0 specs; unit +21 | 3 h | no stack needed for unit tests; one warm `up` for the FC-1 probe |
 | L1 | contracts, uploads, i18n, leak-rule scope | 9 specs (UP-001 positive + test.fail, UP-002..005, CON-001, I18N-001/002) | 4 h (cold `up` 11 min) | positive control first; UP-002/003 need the master-plan text |
-| L2 | webhooks and Stripe | 7 webhook tests (doc-api), 5 Stripe (doc-billing-api; 2 skipped without key) | 5 h (two stacks: cold + billing warm 26 s) | billing stack is a second `up` |
+| L2 | webhooks and Stripe (incl. the per-run Stripe fixture) | 7 webhook tests (doc-api), 5 Stripe (doc-billing-api; 2 skip without a key) | 6.5 h (two stacks: cold + billing warm 29 s; the fixture adds about 1 min per Stripe test) | billing stack is a second `up`; the organisation route, the trial subscription and the Subscription columns are UNPROBED until the L2 step 0 probe |
 | L3 | lifecycle, signature, expiry, mail, bulk | 14 specs | 6 h | bulk and SM-002/AUD-002 probes first |
 | L4 | serial: reminders, seal job, CAS | 4 specs, 2 with a 15-min tick wait each | 3 h + up to 2 tick waits per run (about 34 min in CI) | serial project depends on doc-api |
 | L5 | CI lane job | 0 specs | 3 h | lane job budget 45 min incl. two stacks |
@@ -733,7 +865,7 @@ Every task:
 Task-specific:
 - **L0:** unit +21 (jobs 5, pdfsig 4, mail 4, cron 3, envelope 3, fixtures 2); `src/lanes/doc/{jobs,pdfsig,mail,cron,envelope,fixtures}.ts`, `tests/fixtures/doc/pdfsig-*.txt`; FC-1 probe recorded in the L0 PR body (no spec).
 - **L1:** unit +2 (the two leak-rule tests); live: `doc-api` shows the 9 L1 titles of section 4.1 (UP-001 control, UP-001 test.fail, UP-002..005, CON-001, I18N-001, I18N-002); `npm run specs:validate` exit 0 (the committed OAS).
-- **L2:** unit +2 (`stripe.test.ts`); live `doc-billing-api` = 5 tests (3 passed, 2 skipped without a key); `doc-api` shows the 7 webhook titles of section 4.1 (WH-001, WH-002, WH-003 x2, WH-004, WH-006, WH-007).
+- **L2:** unit +10 (`tests/unit/lanes/doc/stripe.test.ts` +3: hasStripeKey 2, stripeWebhookSecret 1; `tests/unit/lanes/doc/stripe-fixture.test.ts` +5; `tests/unit/invariants/doc-leak-organisation.test.ts` +2); live `doc-billing-api` = 5 tests (3 pass; the STR-002 and STR-003 tests run when the key is present and skip when it is absent). After each billing run, a check (counts only): no Stripe customer, subscription or product tagged with this run's id remains, and no run-named organisation remains (qa_ro).
 - **L3:** unit +0 unless a helper is added (then it carries its own unit test); live: 14 tests in `doc-api` (SM-001 x2, SM-002, AUD-001, AUD-002, SIG-001..003, EXP-001..003, BULK-001, BULK-002, MAIL-001).
 - **L4:** unit +0 (the cron helper is tested in L0); live: `doc-serial` 4 tests (REM-001, REM-002, JOB-001, JOB-004).
 - **L5:** unit +6 (workflow text tests: `doc-api`, `doc-billing-api` and `doc-serial` jobs exist with the `always()` down step; `DANGEROUS_BYPASS_RATE_LIMITS` absent (FC-2); the `Available projects` check string now lists 9 project names); the CI run of the lane job is green on a PR (owner runs or the builder reports the run's conclusion).
@@ -770,6 +902,10 @@ Procedure: for each case, the builder runs the listed mutation in a scratch copy
 | JOB-001 | completed envelope with a second seal job (unit fake rows) | count 2: fails |
 | JOB-004 | replay with a wrong signature | 401, the 404 expectation fails |
 | leak rule | a fake DB row for a soft-deleted envelope | the unit test expects zero violations: a row fails it |
+| STR-002 | the second delivery changes the status (unit fake) | the unchanged-state assertion fails |
+| STR-003 | the sync trusts the payload status (fake sync) | the final-state assertion fails (final equals the stale payload status) |
+| teardown | skip the subscription cancel in teardown | the teardown check finds a run-tagged subscription: fails |
+| test-mode guard | a `sk_live_` value | refused with `ENV`; the value is not in the message (unit test) |
 
 ---
 
@@ -799,14 +935,14 @@ L5: `ci(api): add the documenso lane jobs` (`.github/workflows/api.yml`); `test(
 
 - **Automatic from the repo:** `npm ci` and `scripts/bootstrap.sh` run in `install`; `start` runs `npm run qa:passwords` and `scripts/ensure-receiver-hostname.sh` (idempotent).
 - **Repo change (L5):** `scripts/cloud-install.sh` adds `apt-get install -y poppler-utils` if `pdfsig`/`pdftotext` are missing (`command -v pdfsig || sudo apt-get install -y poppler-utils`). P-DOC-8 needs both binaries on the runner.
-- **Pasted by the owner:** the Stripe test-mode key as the secret `STRIPE_API_KEY` (optional; without it STR-002/003 skip and say so). The billing run's secret `P2_STRIPE_TEST_WH_SECRET` is generated per run (not a secret to paste).
+- **Pasted by the owner:** the Stripe test-mode key as the secret `STRIPE_API_KEY`. It must start with `sk_test_`; the lane refuses any other value (`ENV`, value not shown). Without it STR-002/003 skip with a named condition. The lane creates per-run test-mode objects (OD-15).
 - **Steps for the owner:** Cursor cloud → environment secrets panel → add `STRIPE_API_KEY` (test mode). Nothing else.
 
 ### 12.2 Claude Code cloud (`.claude/hooks/session-start.sh`, environment setup script, environment variables)
 
 - **Automatic:** the session-start hook sets `NODE24` and runs `npm run qa:passwords` and the hosts script (AGENTS.md).
 - **Verified in this session:** `pdfsig` 24.02.0 and `pdftotext` present (`/usr/bin/pdfsig`, `/usr/bin/pdftotext`); Docker present; `api.stripe.com` reachable (401).
-- **Pasted by the owner:** the same Stripe test-mode key as an environment variable `STRIPE_API_KEY` (optional).
+- **Pasted by the owner:** the same test-mode key as the environment variable `STRIPE_API_KEY` (optional; `sk_test_` only, see 12.1). The lane creates per-run test-mode objects (OD-15).
 - **Install state (resolved 2026-11-02):** the checkout's `node_modules` was stale (harness `0.2.11`, no `stripe`). The owner approved `npm ci`; `bash scripts/cloud-install.sh` ran (rc 0). The repo's `node_modules` now holds harness `0.3.0` and `stripe` 23.0.1; the unit baseline on that install is 285 pass, 0 fail.
 - **Steps for the owner:** environment settings → variables → add `STRIPE_API_KEY` if available. Then run `npm ci` in the environment setup script (the owner decides; the builder does not run it unless the sandbox allows it).
 
@@ -844,6 +980,7 @@ The owner decided on 2026-11-02 to move HR-4 and HR-5 to harness v0.3.1 and to d
 |---|---|---|
 | `src/slo.ts` | L2 | add inside `SLO`: `docWebhookTimeoutChain: { ms: 50_000, basis: "4 attempts x WEBHOOK_TIMEOUT_MS 10 000 (execute-webhook-call.ts:6) + 10 s margin" }` and `docCronTick: { ms: 17 * 60_000, basis: "*/15 cron (seal-document-sweep.ts:18) + 2 min margin" }` |
 | `src/invariants/rules.ts` | L1 | `doc-leak-recipient-email` SQL scoped to live envelopes (section 7) |
+| `src/invariants/rules.ts` | L2 | add `doc-leak-organisation-name` (section 7); unit test `tests/unit/invariants/doc-leak-organisation.test.ts` |
 | `src/db/fixture-allowlist.ts` | none | no change (OD-4 deferred) |
 | `playwright.config.ts` | L2 | add `apiProject`-style project `doc-billing-api` with `testMatch: ["billing/doc/**/*.spec.ts"]` (no `dependencies`) |
 | `.github/workflows/api.yml` | L5 | add jobs `doc-api`, `doc-serial`, `doc-billing-api` (depend on `foundation`); update the `Available projects` check string to list 9 names |
@@ -860,7 +997,7 @@ Any other shared file is out of scope. A builder who needs one raises a STOP.
 
 ### 14.1 Will not do
 
-- No test of CUT IDs (CONV-001, I18N-003, CON-002). No `test.fail` on an unproven product behaviour. No fixed sleeps except the labelled `SETTLE_MS` in MAIL-001 (justified by P-DOC-10). No use of `DANGEROUS_BYPASS_RATE_LIMITS`. No write to seed rows. No edit to the fork, its `.env`, its `node_modules`, or the harness. No stripe-mock or TLS interception (rejected in the foundation). No merge, tag or workflow dispatch. No PR review request by the builder.
+- No test of CUT IDs (CONV-001, I18N-003, CON-002). No `test.fail` on an unproven product behaviour. No fixed sleeps except the labelled `SETTLE_MS` in MAIL-001 (justified by P-DOC-10). No use of `DANGEROUS_BYPASS_RATE_LIMITS`. No write to seed rows. No Stripe object outside the per-run fixture, and never a live-mode key (OD-15). No edit to the fork, its `.env`, its `node_modules`, or the harness. No stripe-mock or TLS interception (rejected in the foundation). No merge, tag or workflow dispatch. No PR review request by the builder.
 
 ### 14.2 Open decisions (owner decision 2026-11-02: every default accepted; none is BLOCKING)
 
@@ -880,14 +1017,16 @@ Any other shared file is out of scope. A builder who needs one raises a STOP.
 | OD-12 | DOC-MAIL-002 (row text not in the repository) | the master plan lists MAIL-001 only | DEFERRED; the owner supplies the text |
 | OD-13 | Upstream duplicates: the verdicts in section 4.4 | the table | no cut proposed; KEEP for all rows that have a DB end-state, timing or artifact oracle |
 | OD-14 | Fork secret for job signing read from the fork's `.env` at run time | `readSecondaryKey` | read in memory, never printed; the CI variant reads from the cloned fork's `.env` written by bootstrap |
-| OD-15 (new, 2026-11-02) | Stripe test-mode fixtures for a meaningful STR-002/003 oracle (a test customer with a subscription, linked to a Documenso organisation) | RR-STRIPE: 0 subscriptions in the test account, so the counts cannot show "processed once" | ACCEPTED: the lane does not create Stripe objects. STR-002/003 assert the 200s and unchanged counts only, and are marked PARTIAL |
+| OD-15 (2026-11-02, OVERRIDDEN by the owner) | Stripe fixtures for STR-002/003. Owner decision: each run creates its own Stripe test-mode fixture (one customer and one subscription, tagged `run_id`), created in setup and deleted in teardown even when a test fails; STR-002/003 assert "processed once" against that subscription; refuse to run unless the key is test mode; never print the key or any object id. The original default (no Stripe objects, PARTIAL oracle) is withdrawn. | ACCEPTED as overridden. Section 6.7b implements it. The sync needs a Documenso organisation with the customer id (`sync-stripe-customer-subscription.ts:55-68`), so the fixture creates the organisation through the product (OD-16) |
+| OD-16 (new, 2026-11-02; needs owner confirmation) | How the fixture gets a customer the sync can see | `sync-stripe-customer-subscription.ts:55-68` (no organisation, no sync); `create-organisation.ts:39` (the product creates the Stripe customer); `schema.prisma:822` (`Organisation.customerId`); `qa_fixture` cannot write that column (`src/db/fixture-allowlist.ts`) | DEFAULT: create the organisation through the product, tag its customer, attach the subscription in Stripe (section 6.7b). Alternatives rejected: writing `Organisation.customerId` directly (outside the fixture policy), or a sync with no organisation (the oracle would be empty). UNPROBED: the organisation route, the trial subscription without a payment method, and the Subscription column names (L2 step 0) |
 
 ### 14.3 Risks
 
 - **Wall clock.** Reminders and the seal tick cost up to 15 min per run; the serial job is about 34 min. Mitigation: the tick waits run once per CI run for all sweep cases together (`tickDeadlineMs`).
 - **Rate limit.** 10 logins per 15 minutes per IP. A re-run within the bucket fails with 429. Mitigation: one session per worker (R15); the builder waits for the bucket reset before a live re-run (about 15 min).
 - **Install state (resolved 2026-11-02, section 12.2).** The repo's `node_modules` now matches the lockfile (harness 0.3.0, stripe 23.0.1). The `npm audit` advisories printed by the install are not addressed by this plan.
-- **Stripe reachability and oracle** (P-DOC-17, RR-STRIPE): the test-mode key is accepted from this sandbox, so the live rows run. The STR-002/003 oracle is PARTIAL (OD-15); the CI lane needs the key as a secret.
+- **Stripe reachability** (P-DOC-17): the test-mode key is accepted. The per-run fixture (OD-15) replaces the partial oracle; its organisation route, the trial subscription and the Subscription columns are UNPROBED until the L2 step 0 probe. The CI lane needs the key as a secret.
+- **Stripe residue.** A failed teardown leaves run-tagged objects. The reaper (FC-7, section 7) removes them after 2 hours.
 - **Seeded state.** Seed rows are not used by the lane; the B3 rows remain for other lanes and are excluded by the run-scoped rule (R6).
 - **Probe defects.** Two probe defects were found and corrected (P-DOC-3 early read, P-DOC-9 missing field); the builder must not reuse the probe scripts without the fixes listed in the probe file.
 
@@ -903,7 +1042,7 @@ Any other shared file is out of scope. A builder who needs one raises a STOP.
 8. Lowercase Conventional Commits with explicit paths; never `git add -A` or `git add .`.
 9. Do not use or describe the GitHub command-line client anywhere in plans, prompts or scripts. Never merge, tag or dispatch workflows.
 10. Every environment change has exact steps for Cursor cloud and Claude Code cloud (section 12).
-11. Stripe rows fall back to a named skip when no key is set.
+11. Stripe rows fall back to a named skip when no key is set; a key that is not `sk_test_` is refused (never run, never printed).
 12. `test.fail()` only for a proven product bug, placed right before the product assertion, with the positive control asserted first. The zero-byte upload (UP-001) is the only one planned; it is listed as OD-8.
 13. Waits are `expect.poll` with an explicit per-call `timeout` from a named `SLO` budget and `intervals: POLL_INTERVALS` (or the labelled cron poll interval). Budgets come from code-defined timeouts plus a margin, with `file:line`.
 14. One product stack at a time; always finish with its `down`.
@@ -919,7 +1058,9 @@ Any other shared file is out of scope. A builder who needs one raises a STOP.
 - Any secret risk: NO. The key was checked by prefix and by count only; it appears in no output, log or file.
 - Any stop hit: NO. The two earlier hits are resolved: `npm ci` was approved and run (`cloud-install.sh` rc 0), and harness 0.3.0 is in `node_modules`.
 
-Verdict: **NO ESCALATION**. The open items are owner-accepted defaults: the DEFERRED cases (CONV-002, CONV-003, WH-005, MAIL-002, JOB-002, JOB-003, JOB-005), the PARTIAL Stripe oracle (OD-15), and harness v0.3.1 (HR-4, HR-5).
+- Owner decision deviation: OD-15 is overridden as instructed. The customer and subscription alone cannot show "processed once", because the sync writes nothing without an organisation with that customer id (`sync-stripe-customer-subscription.ts:55-68`). OD-16 (the organisation is created through the product) was added with a default. Owner confirmation is requested before the L2 build.
+
+Verdict: **NO ESCALATION** (nothing blocks). Owner confirmation requested: OD-16.
 
 ---
 
