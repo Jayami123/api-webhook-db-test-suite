@@ -33,7 +33,7 @@ export const FIXTURE_ALLOWLIST: Readonly<Record<ProductId, readonly FixtureColum
       pkKind: "int",
       column: "startAfter",
       kind: "timestamp",
-      cases: ["P2-CAL-SCH-002"],
+      cases: ["P2-CAL-SCH-002", "P2-CAL-SCH-003"],
       cite: "packages/prisma/schema.prisma:1318 (startAfter); packages/features/webhooks/lib/handleWebhookScheduledTriggers.ts:16-22 (jobs with startAfter <= now run)",
     },
   ],
