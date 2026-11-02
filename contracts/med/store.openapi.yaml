@@ -2,7 +2,7 @@
 #
 # Why: the pinned product serves no OpenAPI document (probe P-MED-15, 2026-11-02, 404 on every path
 # tried), the installed packages ship none, and the upstream repository is outside this session's
-# repository scope. Decision D6 in the lane PR body: the owner confirms this subset as the contract.
+# repository scope. Decision D6 in the lane PR body: this subset is proposed as the contract for review.
 #
 # Source of every field: the response bodies observed on the pinned product
 #   product: Medusa 2.21.2 at fork f677db438f27294fc50e4c7c6612e71ff38eeff5
