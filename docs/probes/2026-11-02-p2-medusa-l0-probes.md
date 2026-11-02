@@ -217,3 +217,12 @@ The L2 webhook layer (26 tests: WH-001, WH-002, WH-003 in two sub-steps, WH-006 
 ## 5. L3 run on a fresh stack
 
 The async-chain layer (EB-002, PL-001, CSV-001, CACHE-001) passed 4 of 4 on a fresh stack (`med-api`, flag `true`, `STRIPE_API_KEY` set, 39.6 s). Measured inside the tests: the poison job is parked with `name=payment.webhook_received`, `atm=3`, `ats=3` (EB-002); the price list reaches the sale price 4.9 s after creation (PL-001, observed on the probe, within the 20 s budget); the cache key count is above zero after the warm read and the price change is visible on the next read (CACHE-001, 51 ms on the probe, within the 10 s budget); a 100-row file with an invalid price on row 50 is refused at preview with 400 `invalid_data` and no product, and the valid 100-row control imports 100 products after confirm (CSV-001).
+
+## 6. L4 facts and the full run
+
+- **Cart edits void the open payment session (observed while building L4).** An anonymous line write, or a promotion, changes the cart total; the open system session is then gone and completion answers 400 `invalid_data` "Payment sessions are required to complete cart". A new session on the cart's payment collection completes with 200. The specs renew the session after such an edit (`renewPaymentSession`). This is recorded as observed behaviour, not a defect verdict.
+- **Promotion discount.** `POST /admin/promotions` (standard, fixed 1.00 USD, target items, allocation across) and `POST /store/carts/{id}/promotions {promo_codes}` apply to the cart. The order's line adjustment is 1.00 USD (100 minor units) in `order_line_item_adjustment` for the latest version.
+- **Inventory cancel with live reservations.** `DELETE /admin/products/{id}` is refused (400 `invalid_data`, "Cannot remove … since they have reservations") while an order holds a reservation of the product's inventory item. The INV-001 cleanup cancels the remaining orders first.
+- **Price lists are not removed with the product.** The PL-001 case deletes its price list by id.
+- **Leak count after the full run, all lane-owned tables** (product title, variant sku, customer email, region name, stock location name, price list title, API key title, promotion code, inventory item sku), by the run prefix: **0 each**.
+- **Full `med-api` run on a fresh stack:** 43 of 43 passed (5 readiness, 4 L1, 26 L2, 4 L3, 4 L4), 2.7 min.
