@@ -1,0 +1,24 @@
+# P2 twenty lane workflow (stub). Owned by the twenty lane; the only workflow file the twenty lane edits
+# apart from tw-study.yml. Inert until the lane builds its job: manual trigger only, and the job is
+# skipped (if: ${{ false }}). Gate when the lane goes live: `needs` cannot cross workflow files, so
+# replace the trigger with on: workflow_run: { workflows: [api], types: [completed] } and run the job
+# only when github.event.workflow_run.conclusion == 'success' and
+# github.event.workflow_run.head_repository.full_name == github.repository, checking out
+# github.event.workflow_run.head_sha. See docs/lane-ownership.md.
+name: p2-tw
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tw-api:
+    name: tw-api
+    if: ${{ false }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Stub, replaced by the twenty lane job
+        run: echo "stub"

@@ -74,3 +74,27 @@ describe("api.yml foundation shape", () => {
     assert.match(workflow, /25 min budget/);
   });
 });
+
+/**
+ * Each lane owns one workflow file (docs/lane-ownership.md). The stubs stay inert: manual trigger
+ * only, every job skipped, no secrets. A lane replaces its own file; api.yml never gains lane jobs.
+ */
+describe("per-lane workflow stubs", () => {
+  const lanes = ["p2-cal.yml", "p2-med.yml", "p2-doc.yml", "p2-tw.yml", "tw-study.yml"];
+
+  test("each lane has exactly one inert workflow file", () => {
+    for (const file of lanes) {
+      const text = readFileSync(`.github/workflows/${file}`, "utf8");
+      assert.match(text, /^on:\n {2}workflow_dispatch:\s*$/m, file);
+      assert.match(text, /^ {4}if: \$\{\{ false \}\}\s*$/m, file);
+      assert.match(text, /^permissions:\n {2}contents: read\s*$/m, file);
+      assert.ok(!/\bsecrets\./.test(text), file);
+      assert.ok(!/pull_request_target/.test(text), file);
+    }
+  });
+
+  test("api.yml keeps only the foundation jobs; no lane job is defined there", () => {
+    assert.deepEqual([...jobs().keys()], ["check", "unit", "db-guard", "specs", "foundation"]);
+    for (const file of lanes) assert.ok(!live.includes(`/${file}`), file);
+  });
+});

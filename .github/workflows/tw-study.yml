@@ -1,0 +1,21 @@
+# P2 twenty study workflow (stub). Owned by the twenty lane (its own file, not part of the lane job in
+# p2-tw.yml). It measures P2-TW-WH-010 in a serial study and is never a required check. Inert until the
+# lane builds it: manual trigger only, and the job is skipped (if: ${{ false }}). The lane sets the
+# timeout and the steps. See docs/lane-ownership.md.
+name: tw-study
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tw-study:
+    name: tw-study
+    if: ${{ false }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Stub, replaced by the twenty study job
+        run: echo "stub"
