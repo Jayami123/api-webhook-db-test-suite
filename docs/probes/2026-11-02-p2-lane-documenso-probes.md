@@ -496,3 +496,20 @@ Title: `Upload of an invalid PDF answers 500 instead of 4xx`
 - AUD-001 (one signer): the pinned map is the observed one above, with `EMAIL_SENT: 2`. The plan's "exactly one per action type" is false for `EMAIL_SENT` (one row per email sent). Reported as a plan-statement correction.
 - I18N-001/002: oracle is the DATE field (B-7); the audit lines are not the signed date.
 - EXP-001: the recipient reaches SIGNED only after completion (B-14); the case asserts SIGNED after `completeRecipient`.
+
+### Live results of the built cases (build session, 2026-11-02)
+
+| Probe | Observation | Consequence in the lane |
+|---|---|---|
+| B-21 | `doc-serial` REM-001: a real cron tick sent the reminder after 2.2 min; REM-002: the signed recipient got no reminder and the pending one did, on the same tick | REM-001/002 green; both wait on the tick, not a sleep |
+| B-22 | JOB-001: the seal job row is found by `"payload"->>'documentId'` (payload is jsonb text `{"documentId": N, ...}` with a space after the colon, so a `LIKE` on the compact form matches nothing) | JOB-001 green |
+| B-23 | JOB-004: the seal job row can still be `PROCESSING` when the envelope is `COMPLETED` | the replay waits for the row to be terminal (real condition); three signed replays answer 404 and the row is unchanged |
+| B-24 | Billing-on stack: unsigned 400 `No signature found in request`; stale signature refused; a non-synced event type (`charge.succeeded`) answers 200 `Webhook received` and changes no rows | STR-001 x3 green |
+| B-25 | A synced type (`customer.subscription.updated`) with a customer Stripe does not know answers 500: the sync calls Stripe and the catch-all answers 500 (handler.ts:18-25 lists the synced types; the path is `syncStripeCustomerSubscription`) | the test uses a non-synced type; the synced-unknown path is recorded, not asserted |
+| B-26 | `organisation.create` on the billing stack answers `LIMIT_EXCEEDED`: "You have reached the maximum number of free organisations." (web log) | STR-002/003 cannot create their per-run organisation: HARD STOP (red) |
+| B-27 | BULK-001: `template.uploadBulkSend` returns `success: false` for a file with one bad row; no envelope is created for the file | green, pinned |
+| B-28 | BULK-002: the first submission creates one envelope per row and one signing mail per recipient; the second submission creates a second set (4 envelopes) and a second mail per recipient (count 2). The product has no de-duplication key | the plan oracle "count 1" is contradicted by design: HARD STOP (red, not weakened) |
+| B-29 | A bulk job without a SIGNATURE field on the template fails each row with `MISSING_SIGNATURE_FIELD` ("Signers must have at least one signature field"); the owner-facing completion mail says only `Task failed` (web log: `DOCUMENT_SEND_FAILED`) | template setup adds the SIGNATURE field; observation recorded (the mail hides the cause) |
+| B-30 | Completion notices are asynchronous (about 100 to 200 ms after `DOCUMENT_COMPLETED`): `EMAIL_SENT` is 1 at the first read, 3 once both notices are audited | AUD-001 waits for both notices and pins `EMAIL_SENT: 3` (signing request plus two completion notices) |
+| B-31 | Login limit: the reaper also logs in at each worker start (revocation of leftover tokens), so one worker costs two logins | the run plan is counted in logins |
+| B-32 | Leak check after the final runs: live run-prefixed envelopes, recipients, organisations, templates, webhooks and subscriptions = 0; soft-deleted run envelopes = 109 (product soft delete, excluded by the leak rule by design) | leak check recorded in the PR body |
