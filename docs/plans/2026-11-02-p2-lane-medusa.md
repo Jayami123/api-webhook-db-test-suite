@@ -12,7 +12,11 @@ Probe record for this plan: `docs/probes/2026-11-02-p2-lane-medusa-probes.md`.
 - Owner decisions now in the plan: OD-3 (merge EB-001 into EB-002), OD-4 (cut PL-002), OD-6 (suspected finding; live confirmation; `test.fail` only if proven), OD-7 (KWD gap is a finding, not a bug), OD-13 (plan default). Section 14.2 has the decided values.
 - **Open for the owner before probes can run: OD-15**, the unit anchor (285 measured vs 277 stated). Default: accept 285 with this evidence, after which L0 counts are base+N from 285.
 
-## Status: the probes did not run; the plan is provisional until L0 settles them
+## Status (session 3, 2026-11-02): the stack probes ran; section 2a is the current result
+
+Session 3 ran the probes one stack at a time (two stacks, each `down` with volumes, verified clean). Results are in section 2a and in the probe record (session 3). Four things changed the plan: the flag value is `true` (not `1`); the cache is not registered by the harness (HR-4 is now required for MED-CACHE-001); Stripe is reachable but this account refuses KWD; and the anonymous cart write (P-MED-6) is a finding for P5. The text below is the session-1 and session-2 plan; where it conflicts with section 2a, **2a wins**.
+
+## Status (session 1, historical): the probes did not run; the plan is provisional until L0 settles them
 
 The planning session stopped its probe phase (brief section 11). Two facts:
 
@@ -64,8 +68,34 @@ Full entries: `docs/probes/2026-11-02-p2-lane-medusa-probes.md`. Status legend: 
 | P-MED-15 (new) | Medusa store OpenAPI document served by the running server | UNPROBED | The installed core ships no OpenAPI route (grep, empty) |
 | P-MED-16 (new) | Admin and store API request shapes the lane uses (regions, products with prices, price lists, inventory, cart complete, import) | UNPROBED | Field names in section 6 are marked; L0 confirms each |
 
+### 2a. Session 3 results (stack probes, 2026-11-02; entries in the probe record, session 3)
+
+| ID | Status | Result |
+|---|---|---|
+| P-MED-1 | CONFIRMED | Server uses the Redis event bus (`RedisEventBusService`); job `payment.webhook_received`, `delay 5000`, `attempts 3` |
+| P-MED-2 | CONFIRMED | Receipt age 0: authorized in 5.19 s (1 payment). Receipt age 299 s and 301 s: session stays pending, valid control authorized |
+| P-MED-2b | CONFIRMED | Receipt age 290 s accepted; receipt age 300 s rejected (processing window 295 s and 305 s) |
+| P-MED-3 | CONFIRMED | Two parallel deliveries of one event: one payment, one authorized session |
+| P-MED-4 | CONFIRMED (end state, one round) | Webhook 200 and completion 200: one order, one payment. Lock mechanism and the 20-run case UNPROBED |
+| P-MED-5 | CONFIRMED (JPY Stripe and system; KWD system) | JPY intent 1500 JPY. KWD 3 × 1.234 = 3.702 (`order_summary.totals`). KWD through Stripe: UNPROBED (P-MED-18) |
+| P-MED-6 | CONFIRMED finding (F2; P5 verdict) | Anonymous `POST` to another guest's open cart: 200, quantity 1 → 4 |
+| P-MED-7 | CONFIRMED (no cache keys, flag on or off); cause CONFIRMED by code (F3) | The harness registers `cache-redis` as module `cache`; the decorator resolves module `caching`. HR-4 |
+| P-MED-8 | CONFIRMED | Table and column names (probe record). `order_summary.totals` is jsonb |
+| P-MED-9 | CONFIRMED (pure); live KWD UNPROBED | `getSmallestUnit(1.234,'KWD')=1240` |
+| P-MED-10 | CONFIRMED | Bad signature: attempted 3 times, parked in `RedisEventBusService:events-queue:failed`; the next valid event processed (F1) |
+| P-MED-11 | CONFIRMED | Price changes at `starts_at` on the database clock (4.9 s after the first poll) |
+| P-MED-12a/b | CONFIRMED (SDK pure and live) | See P-MED-2b |
+| P-MED-13 | CONFIRMED (bad row); 100-row good file UNPROBED | A bad price refuses the whole file at preview (no transaction, no product). Import needs upload → imports → confirm, and `Variant Option 1 Name/Value` columns (F7) |
+| P-MED-14 | CONFIRMED by code (not runtime) | No product-defined scheduled job in the installed packages |
+| P-MED-15 | CONFIRMED | No OpenAPI document served at the tested paths (OD-2 stands) |
+| P-MED-16 | CONFIRMED shapes | Regions, products, price lists, inventory levels, cart completion, payment sessions (probe record) |
+| P-MED-16b | CONFIRMED | Completion reserves (`reservation_item` qty 2, `reserved` 0 → 2); cancel releases (reserved → 0) |
+| P-MED-17 | CONFIRMED (contradicts U14) | `api.stripe.com` is reachable from the stack; JPY session creates an intent |
+| P-MED-18 | CONFIRMED (account) | This Stripe account refuses KWD (`Invalid currency: kwd. Stripe accounts in GB do not support kwd`) (F5) |
+
 **CONTRADICTS (code and pure probes, against the index or the master plan):**
 - Master plan MED-WH-006 "stale timestamp (>tolerance) rejected; 299 s accepted" (its BVA reading): the 299 s receipt case is rejected once the 5 s emit delay is counted (P-MED-12b). MED-WH-006 is rewritten (section 4).
+- Index U14 (`api.stripe.com` unreachable from the sandbox): **CONTRADICTED** (P-MED-17; the JPY Stripe session succeeded).
 - Index U10 "Medusa event retries need a custom provider in the fork": **CONTRADICTED by code**. A bad signature makes the subscriber throw deterministically (CR-6, `stripe-base.js:511-519`), which is enough to exercise retry and parking without a fork edit (P-MED-10 to confirm live).
 
 ---
@@ -80,7 +110,7 @@ Full entries: `docs/probes/2026-11-02-p2-lane-medusa-probes.md`. Status legend: 
 | RD-4 | The Redis event bus is wired by `MEDUSA_REDIS=1` in harness 0.2.11, not added by 0.2.18 (review fact 13 CONTRADICTED, index C1 holds) | `medusa-env.ts:237-243` (0.2.11, read in this session) |
 | RD-5 | The cart lock: the index citation `process-payment.ts 102-105` is the **upstream source** at tag `v2.21.2` (`packages/core/core-flows/src/payment/workflows/process-payment.ts:102-105`, checked this session). The shipped compiled code is `process-payment.js:85-88`. Both are cited | CR-8 |
 | RD-6 | MED-WH-006 is rewritten to the **processing-time** boundary (accepted at processing age 295 s, rejected at 305 s); the 299 s receipt case is recorded as a SUSPECTED design finding, not asserted either way until the owner decides (OD-6) | P-MED-12b; CR-6 |
-| RD-7 | MED-CACHE-001 runs only with `MEDUSA_FF_CACHING=1` (plus `MEDUSA_REDIS=1`). With the flag off the spec skips with that exact reason. The cache covers store product reads (`store/products/route.js:52-53, 85-86`), regions and promotions (CR-13), not a separate price cache | CR-12, CR-13 |
+| RD-7 | MED-CACHE-001 runs only with `MEDUSA_FF_CACHING=true` (the string; `1` loads as false, F4) plus `MEDUSA_REDIS=1`, and only after HR-4 (the harness registers the cache under the wrong module key, F3; P-MED-7). Until HR-4 it is deferred, not skipped. With the flag off the spec skips with that exact reason. The cache covers store product reads (`store/products/route.js:52-53, 85-86`), regions and promotions (CR-13), not a separate price cache | CR-12, CR-13 |
 | RD-8 | MED-EB-001 ("provider throws once, processed on attempt 2") needs a transient failure. No transient failure is reachable without a provider edit (the failing paths are deterministic: bad signature, missing session). Proposed merge into MED-EB-002 (OD-3) | CR-3, CR-6, CR-10 |
 | RD-9 | MED-PL-002 ("server TZ != DB TZ") runs the same boundary query (`pricing.js:137, 188`, `now()` on the database) as MED-PL-001. The server TZ is not read on that path. Proposed CUT as a duplicate (OD-4) | CR-11 |
 | RD-10 | Upstream coverage **verified**, not trusted: the review's `price-list.spec.ts` and `pending-authorization.spec.ts` exist at upstream tag `v2.21.2` under `integration-tests/http/__tests__/price-list/admin/` and `payment/store/` | Upstream blobless clone (metadata only), commit `0205653` |
@@ -93,6 +123,10 @@ Full entries: `docs/probes/2026-11-02-p2-lane-medusa-probes.md`. Status legend: 
 | RD-17 | The OpenAPI source for the store contract is not in the repo and the installed core serves none (P-MED-15). Default: commit a snapshot taken in L1 (OD-2) | `main` has no `contracts/` directory (`git ls-tree origin/main`); installed core: no openapi match |
 | RD-18 | Shared harness environment for Medusa: the installed harness reads `MEDUSA_REDIS` and `MEDUSA_STRIPE` and writes the Redis modules; it reads neither `MEDUSA_FF_CACHING` nor `MEDUSA_LOCK` nor `webhook_*` | `medusa-env.ts:142-149, 237-252`; `src` grep |
 | RD-19 | Medusa needs `STRIPE_API_KEY` to construct the Stripe provider (`validateOptions` throws without it); live Stripe rows are therefore key-gated, and the system-provider rows are key-gated too because verification runs in the Stripe provider | CR-3 (`stripe-base.js:12-19`); seed `medusa-seed.ts:166` |
+| RD-21 | Tolerance is evaluated at processing time (live, P-MED-2b): processing age 295 s accepted, 305 s rejected; the 299 s receipt case is rejected live (P-MED-2). MED-WH-006 asserts the processing-time values; the receipt-age case is a suspected finding (OD-6, OD-17) | P-MED-2, P-MED-2b |
+| RD-22 | Deterministic rejections (tolerance, bad signature) are attempted 3 times and parked; MED-EB-002 covers the parking and the replay (F1) | P-MED-10 |
+| RD-23 | This Stripe account refuses KWD. Any KWD row that uses Stripe is gated by an explicit account flag (OD-18) and cannot be measured here | P-MED-18 |
+| RD-24 | Order totals come from `order_summary.totals` (jsonb); line prices come from the line tables, because `order_item.unit_price` is null on the probe order (F8) | P-MED-5, P-MED-8 |
 | RD-20 | Stripe test-mode key is present in the planning environment (presence only, value never read). Live rows do not call `api.stripe.com` on the system-provider path (no PaymentIntent is created); the stripe provider's constructor makes no call (`stripe-base.js:27`) | CR-3, CR-4; index U14 (proxy 403 for `api.stripe.com` observed in planning, foundation) |
 
 ---
@@ -132,7 +166,7 @@ P2-MED-LOC-001, P2-MED-WH-004, P2-MED-WH-005, P2-MED-WH-007, P2-MED-CSV-002, P2-
 
 ### 4.3 Framework checks (no IDs)
 
-- **FC-MED-A** Cross-customer store call changes no rows. P5 owns the verdict; P2 asserts only the DB end state (section 7).
+- **FC-MED-A** Cross-customer store call changes no rows. P5 owns the verdict; P2 asserts only the DB end state (section 7). **Session 3 (P-MED-6, F2): an anonymous write changed another guest's open cart (quantity 1 → 4). What this check should expect depends on the P5 verdict (OD-16), so FC-MED-A is not built until OD-16 is decided.**
 - **FC-MED-B** Rate limiting: **not real in this harness**. Evidence: no rate-limit match in the installed `@medusajs/medusa` or `@medusajs/framework` dist (empty grep this session) and no rate setting in the harness adapter. Re-check at L0 against harness 0.3.0 (UNPROBED for 0.3.0).
 - **FC-MED-C** The Stripe signed round trip, Medusa cell of `P2-X-WH-001`: covered by `P2-MED-WH-001` and `P2-MED-WH-006`; no separate test.
 
@@ -154,7 +188,7 @@ Spec file names and test titles are final. Test titles carry the case ID and no 
 | P2-MED-EB-002 | L3 | `tests/integration/med/poison-event.spec.ts` | `P2-MED-EB-002 a poison event is parked after the configured attempts and the next valid event is still processed` |
 | P2-MED-PL-001 | L3 | `tests/integration/med/price-list-boundary.spec.ts` | `P2-MED-PL-001 a price list is active exactly at starts_at on the database clock` |
 | P2-MED-CSV-001 | L3 | `tests/integration/med/csv-bad-row.spec.ts` | `P2-MED-CSV-001 a CSV with a bad price on row 50 of 100 leaves the outcome the database records` |
-| P2-MED-CACHE-001 | L3 | `tests/integration/med/cache-visibility.spec.ts` | `P2-MED-CACHE-001 an admin price change is visible on the next store read while the cache is on` |
+| P2-MED-CACHE-001 (deferred until HR-4) | L3 | `tests/integration/med/cache-visibility.spec.ts` | `P2-MED-CACHE-001 an admin price change is visible on the next store read while the cache is on` |
 | P2-MED-MON-001 | L4 | `tests/integration/med/money-jpy-kwd.spec.ts` | `P2-MED-MON-001 JPY and KWD carts keep their minor units end to end` |
 | P2-MED-ORD-001 | L4 | `tests/integration/med/order-conservation.spec.ts` | `P2-MED-ORD-001 order total equals item totals plus shipping plus tax minus discounts, in minor units` |
 | P2-MED-INV-001 | L4 | `tests/integration/med/inventory-model.spec.ts` | `P2-MED-INV-001 a seeded operation sequence keeps reserved plus available equal to stocked after every step` |
@@ -611,7 +645,8 @@ The `now()` helper is `Math.floor(Date.now() / 1000)` read once per event, never
 **Spec skeleton: P2-MED-CACHE-001** (`tests/integration/med/cache-visibility.spec.ts`):
 
 ```ts
-test.skip(process.env["MEDUSA_FF_CACHING"] !== "1", "MEDUSA_FF_CACHING is not 1: the core cache is off (feature-flags/caching.js:3-8); this case has no meaning without it");
+// Deferred until HR-4 (the harness must register the caching module, P-MED-7). Then:
+test.skip(process.env["MEDUSA_FF_CACHING"] !== "true", "MEDUSA_FF_CACHING is not the string true: the core cache is off (feature-flags/caching.js:3-8; is-truthy.js:8-9)");
 test("P2-MED-CACHE-001 an admin price change is visible on the next store read while the cache is on", async ({ med }) => {
   const product = await med.lane.productWithPrice("usd", 1000); // lane-owned
   expect((await med.store.productPrice(product.id, "usd")).amount).toBe(1000);
@@ -728,7 +763,8 @@ test("P2-MED-EB-002 a poison event is parked after the configured attempts and t
   expect((await med.hooks.payment("stripe_stripe", goodSigned.body, goodSigned.headers)).status).toBe(200);
   await expect.poll(async () => (await paymentSession(good))?.status, { timeout: SLO.medPoisonParked.ms, intervals: POLL_INTERVALS, message: "valid event after the poison" }).toBe("authorized");
   expect((await paymentSession(bad))?.status).toBe("pending");
-  // The parked-job assertion (attempts = 3) reads the failed-job set in Redis: UNPROBED key name (P-MED-10).
+  // The parked-job assertion reads RedisEventBusService:events-queue:failed (members are job ids); each
+  // job's hash field atm equals 3 (P-MED-10, session 3). Read through lane/redis.ts (redisKeys, hget).
 });
 ```
 
@@ -834,7 +870,7 @@ export async function dbNowIso(): Promise<string> {
 }
 ```
 
-`orderCountForCart` (section 6.4) and `paymentRowCount` use the same pattern. Every helper's SQL is covered by the `assertSelectOnly` unit test (section 8.1, `oracle.test.ts`); the whitelist and the `$n` rule are covered by unit test 22.
+`orderCountForCart` (section 6.4) and `paymentRowCount` use the same pattern. **Session 3 corrections (P-MED-8, P-MED-5):** the order totals table is `order_summary` with a `totals` jsonb column (`current_order_total`, `original_order_total`, `accounting_total`, and `raw_*` strings), not `order_summary_view`; use `order_summary.totals->>'current_order_total'`. `order_item.unit_price` is null on the probe order, so line prices come from the line tables (RD-24, table not yet probed). Every helper's SQL is covered by the `assertSelectOnly` unit test (section 8.1, `oracle.test.ts`); the whitelist and the `$n` rule are covered by unit test 22.
 
 ### 6.9 Positive control for "nothing else happened"
 
@@ -919,7 +955,7 @@ One task per session. The owner is away; the builder does not ask questions.
 2. Create the task branch from the previous head (`git checkout -b feat/<date>-p2-medusa-l<n>-<topic> <prev-head>`). If it exists on origin, STOP.
 3. Install the locked dependencies: `export PATH="/usr/local/bin:$PATH"; npm ci`.
 4. Check the harness: `node -p "require('./node_modules/qa-portfolio-harness/package.json').version"` must print `0.3.0`; the fork HEAD must be `f677db438f27294fc50e4c7c6612e71ff38eeff5` (`git -C /home/user/products/medusa-dtc-starter rev-parse HEAD`, or the path under `PRODUCTS_ROOT`). Otherwise STOP.
-5. Record the base: `npm run unit 2>&1 | grep -E '^# (tests|pass|fail)'` must be `# tests 277`, `# pass 277`, `# fail 0` (the foundation count). Otherwise STOP (section 14).
+5. Record the base: `npm run unit 2>&1 | grep -E '^# (tests|pass|fail)'` must be `# tests 285`, `# pass 285`, `# fail 0` (measured on `main` in session 2; OD-15 accepted). Otherwise STOP (section 14).
 6. Do the task steps below, in order.
 7. Run the task's done criteria (section 9). If one fails, root-cause it with file:line and label it (PRODUCT BUG, TEST BUG, ENV, NOT A BUG) with evidence. Never weaken an assertion, raise a timeout, add a retry, or skip a test to get green.
 8. Commit with explicit paths (section 11). Push: `git push -u origin <branch>`; on a network error retry with 2, 4, 8, 16 s backoff, at most four retries.
@@ -943,7 +979,8 @@ Time budget: `npm ci` 5 to 10 min; cold `up medusa` UNPROBED (budget 30 min, dea
    export STRIPE_WEBHOOK_SECRET="whsec_$(openssl rand -hex 24)"
    export MEDUSA_ADMIN_EMAIL="p2-admin-$(openssl rand -hex 4)@example.test"
    export MEDUSA_ADMIN_PASSWORD="$(openssl rand -hex 16)"
-   export MEDUSA_REDIS=1 MEDUSA_STRIPE=1 MEDUSA_FF_CACHING=1
+   export PRODUCTS_ROOT=/home/user/products   # without it up and down fail (session 3, E1)
+   export MEDUSA_REDIS=1 MEDUSA_STRIPE=1 MEDUSA_FF_CACHING=true   # the string true: "1" loads as false (E4)
    ```
    `STRIPE_API_KEY` comes from the environment (set in planning; never echoed). The `P2_RUN_ID` expression must match `RUN_PREFIX_PATTERN` (`src/run/prefix.ts:4`); L0 checks it with the unit test on `makeRunPrefix`.
 4. Up with a deadline: `START=$(date +%s); timeout 1800 node node_modules/qa-portfolio-harness/scripts/up.mjs medusa; echo "up rc=$? secs=$(( $(date +%s)-START ))"` (the deadline is 30 min until the cold time is measured).
@@ -992,6 +1029,15 @@ Time budget: `npm ci` 5 to 10 min; cold `up medusa` UNPROBED (budget 30 min, dea
 10. Spec files: none in L0 (probes are scratch).
 11. Commit the probe file, the helpers and the unit tests (section 11).
 
+### 8.1a Session-3 facts that change L0 (from the probe record, session 3)
+
+- The harness needs `PRODUCTS_ROOT` in the environment of `up` and `down` (E1, E2).
+- Persist one run env per stack (mode 600), source it in every command, and `down` with volumes before a new stack (E3).
+- `MEDUSA_FF_CACHING` is the string `true` (E4). Medusa's Redis event bus, cache module and workflow engine come from `MEDUSA_REDIS=1` (P-MED-1).
+- The seed admin, roles and `harness-seed.mjs` must be run after each `up` (volumes are removed by `down` with volumes).
+- Stripe: the account refuses KWD (P-MED-18). JPY works. Test-mode PaymentIntents are created by every Stripe-provider session; cap them in the tests.
+- The probe scripts in the session are the starting point for L0's probes; they are scratch and not committed.
+
 ### 8.2 L1: contracts (`feat/2026-11-02-p2-medusa-l1-contracts`, stacked on L0)
 
 1. OAS snapshot (OD-2): if P-MED-15 shows a served document, fetch it once and commit it as `contracts/medusa/store.openapi.yaml` with a header comment giving the URL, the product version and the fetch date. Otherwise build the subset from the upstream CLI at tag `v2.21.2` (`packages/cli/oas/medusa-oas-cli`) and commit the result. If neither works within 60 minutes, STOP and file OD-2 as a blocker for L1 (the default fallback is a subset written by the lane and labelled as such, a decision for the owner).
@@ -1015,8 +1061,8 @@ Time budget: `npm ci` 5 to 10 min; cold `up medusa` UNPROBED (budget 30 min, dea
 
 ### 8.4 L3: async chains (`feat/2026-11-02-p2-medusa-l3-async-chains`, stacked on L2)
 
-1. Specs: `tests/integration/med/poison-event.spec.ts` (EB-002), `price-list-boundary.spec.ts` (PL-001), `csv-bad-row.spec.ts` (CSV-001), `cache-visibility.spec.ts` (CACHE-001, flag-gated).
-2. Run with the lane env (`MEDUSA_FF_CACHING=1`): `npx playwright test --project=med-api tests/integration/med/poison-event.spec.ts tests/integration/med/price-list-boundary.spec.ts tests/integration/med/csv-bad-row.spec.ts tests/integration/med/cache-visibility.spec.ts` → expected 4 passed with the key. Without `MEDUSA_FF_CACHING=1`: CACHE-001 skipped with its reason.
+1. Specs: `tests/integration/med/poison-event.spec.ts` (EB-002), `price-list-boundary.spec.ts` (PL-001), `csv-bad-row.spec.ts` (CSV-001). `cache-visibility.spec.ts` (CACHE-001) is **deferred until HR-4 lands**; it is not built in L3.
+2. Run with the lane env (`MEDUSA_FF_CACHING=true`; CACHE-001 is deferred): `npx playwright test --project=med-api tests/integration/med/poison-event.spec.ts tests/integration/med/price-list-boundary.spec.ts tests/integration/med/csv-bad-row.spec.ts tests/integration/med/cache-visibility.spec.ts` → expected 3 passed with the key (CACHE-001 is deferred until HR-4; drop its path until then).
 3. Unit: 300.
 
 ### 8.5 L4: database invariants and money (`feat/2026-11-02-p2-medusa-l4-db-invariants`, stacked on L3)
@@ -1106,7 +1152,7 @@ Other lanes build in parallel from the same base. Only these files may change, a
            env:
              MEDUSA_REDIS: "1"
              MEDUSA_STRIPE: "1"
-             MEDUSA_FF_CACHING: "1"
+             MEDUSA_FF_CACHING: "true"   # the string true (E4)
              STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
            run: timeout 1800 node node_modules/qa-portfolio-harness/scripts/up.mjs medusa
          - name: Provision roles
@@ -1116,7 +1162,7 @@ Other lanes build in parallel from the same base. Only these files may change, a
          - name: Run the lane
            env:
              STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
-             MEDUSA_FF_CACHING: "1"   # CACHE-001 skips without it; must match the value given to up
+             MEDUSA_FF_CACHING: "true"   # the string true (E4); CACHE-001 is deferred until HR-4
            run: npx playwright test --project=med-api
          - name: Upload report, junit, receiver and fixture logs
            if: always()
@@ -1142,7 +1188,9 @@ Other lanes build in parallel from the same base. Only these files may change, a
 6. `src/db/fixture-allowlist.ts`, `scripts/db-roles.ts`: **no change** (no fixture role for Medusa).
 7. `package.json`, `package-lock.json`: **no change** (no new dependency; Redis is read through the container).
 
-### 9.3 Expected counts (cumulative, base 277)
+### 9.3 Expected counts (cumulative; written for base 277)
+
+**Session 3 correction:** the owner accepted the measured base **285** (OD-15). Add 8 to every unit count in this section: L0 308, L1 to L3 308, L4 and L5 312. CACHE-001 is deferred until HR-4, so the L3 Playwright count is 3 built and 1 deferred, and the total new Playwright tests are 37 built now and 38 after HR-4.
 
 | Task | Unit tests | New Playwright tests (med-api) | Lane run (with key, flag on) |
 |---|---|---|---|
@@ -1213,17 +1261,19 @@ Each change lists exact steps for Cursor cloud and Claude Code cloud, and says w
 | Locked install (`npm ci`) so the harness is 0.3.0 and `stripe` is present | Cursor: automatic. `.cursor/environment.json` `install` is `bash scripts/cloud-install.sh` (verified on `main`): `npm ci` once the lockfile exists, then `scripts/bootstrap.sh` for all four products. Claude Code: `.claude/hooks/session-start.sh` does **not** install (verified: no `npm ci`, no bootstrap) | Claude Code: paste `bash scripts/cloud-install.sh` into the environment **setup script** (the entry point `cloud-install.sh` names as its Claude use). Without it the installed harness stays 0.2.11 and the probes STOP (this session's result). Without it, the installed harness stays 0.2.11 and the probes STOP (this session's result) |
 | `STRIPE_API_KEY` (test mode) | Nothing; the key is read from the environment | Cursor: Secrets panel, `STRIPE_API_KEY`. Claude Code: environment variables, `STRIPE_API_KEY`. CI: repository secret `STRIPE_API_KEY` (the job reads `${{ secrets.STRIPE_API_KEY }}`). Without it, L2 to L3 rows skip with their reason |
 | `STRIPE_WEBHOOK_SECRET` | Generated per run by the shell (section 8.1 step 3, section 9.2 CI step); never stored | Nothing |
-| `MEDUSA_FF_CACHING=1`, `MEDUSA_REDIS=1`, `MEDUSA_STRIPE=1` | Set on the `up` command line in the job (section 9.2) and in section 8.1 step 3 | Local runs: export them before `up` (Cursor: in the `start` command or a shell profile; Claude Code: in the shell where `up` runs). Not secrets |
+| `MEDUSA_FF_CACHING=true` (the string; `1` loads as false), `MEDUSA_REDIS=1`, `MEDUSA_STRIPE=1` | Set on the `up` command line in the job (section 9.2) and in section 8.1 step 3 | Local runs: export them before `up` (Cursor: in the `start` command or a shell profile; Claude Code: in the shell where `up` runs). Not secrets |
 | Per-run admin credentials for the harness seed | Generated per run (section 9.2) | Nothing |
 | `scripts/ensure-receiver-hostname.sh` and `npm run qa:passwords` | Already in the Cursor `start` and the Claude Code session hook (foundation Task 5) | Nothing new |
 | Medusa fork installed (pnpm) | Automatic in CI through `scripts/bootstrap.sh medusa`; in a cloud session, `PRODUCTS_ROOT` must point at a checkout with `node_modules` (this sandbox has it at `/home/user/products/medusa-dtc-starter`) | Cursor: automatic (`install` runs `bootstrap.sh` for all four products, verified). Claude Code: automatic once the setup script runs `cloud-install.sh` (row above) |
-| Network: `api.stripe.com` | Not needed by the system-provider rows (RD-20) | Only if a Stripe-provider cart is created (not in this lane): owner checks the environment network policy. The sandbox returned 403 for it in planning (index U14) |
+| Network: `api.stripe.com` | Reachable from the stack (P-MED-17). The JPY Stripe path works; KWD is refused by this account (P-MED-18) | Only if a Stripe-provider cart is created (not in this lane): owner checks the environment network policy. The sandbox returned 403 for it in planning (index U14) |
 
 ---
 
 ## 13. Harness requests
 
-- **HR-4 (reserved, conditional): none required by current findings.** The lane reads Redis through the container with `docker exec` (section 6.5) and needs the harness's compose project name `qa-harness-medusa` and service `redis`. If L0 shows the name differs at 0.3.0, the request is: expose the Redis URL in the harness output (not a `docker` hack). Blocks: P2-MED-CACHE-001 keys assertion and EB-002's parked-job check only. Not a KEEP-case blocker today.
+- **HR-4 (required for MED-CACHE-001, F3): register the core caching module.** Evidence: P-MED-7 (session 3). The harness (0.3.0, `src/adapters/medusa-env.ts:283-285`) registers `@medusajs/medusa/cache-redis` under the module key `cache`. The query-cache decorator resolves `Modules.CACHING`, which is `"caching"` (`@medusajs/utils dist/modules-sdk/definition.js:34`; `dist/caching/index.js:74-77` returns the uncached call when it does not resolve). The core ships `dist/modules/caching.js` and `dist/modules/caching-redis.js` (identifier `cache-redis`); the harness registers neither. **Proposed harness change:** when `MEDUSA_REDIS=1`, also register `@medusajs/medusa/caching` (key `caching`) with the `caching-redis` provider, `redisUrl: process.env.REDIS_URL`. **Acceptance:** with `MEDUSA_FF_CACHING=true`, two warm store reads write at least one key matching `*cache*` or `*caching*` (P-MED-7 rerun). **Blocks:** MED-CACHE-001 only. Not a blocker for any other KEEP case. The change is made in the harness, never in the fork.
+- **Redis container name** (confirmed in session 3, P-MED-1): `qa-harness-medusa-redis-1`, reached through `docker exec` (section 6.5 unchanged).
+- **Previous HR-4 text (superseded):** none required by current findings. The lane reads Redis through the container with `docker exec` (section 6.5) and needs the harness's compose project name `qa-harness-medusa` and service `redis`. If L0 shows the name differs at 0.3.0, the request is: expose the Redis URL in the harness output (not a `docker` hack). Blocks: P2-MED-CACHE-001 keys assertion and EB-002's parked-job check only. Not a KEEP-case blocker today.
 - No other harness change is needed. `MEDUSA_FF_CACHING`, `webhook_*` and `MEDUSA_LOCK` reach the product through the environment of `up` if the 0.3.0 adapter passes it through (L0 probe). If not, the request is an HR item with the adapter line and the cases it blocks (CACHE-001 for the flag; none for the webhook defaults, which are the product's defaults).
 
 ---
@@ -1250,19 +1300,22 @@ Each change lists exact steps for Cursor cloud and Claude Code cloud, and says w
 | OD-3 | Merge MED-EB-001 into MED-EB-002 (propose CUT of EB-001 as written) | Not built as written; EB-002 covers the deterministic failure. **Decided 2026-11-02: merged into P2-MED-EB-002** | RD-8; CR-3, CR-6, CR-10 |
 | OD-4 | Propose CUT of MED-PL-002 as a duplicate of MED-PL-001 | Not built; the boundary path does not read the server TZ. **Decided 2026-11-02: cut** | RD-9; CR-11 |
 | OD-5 | Stripe-backed rows run live only with `STRIPE_API_KEY` | Live with the key; skipped with the reason without it (brief rule 11) | RD-19, RD-20 |
-| OD-6 | MED-WH-006 at receipt age 299 s | Asserted only at processing age 295 s (accepted) and 305 s (rejected). The receipt-age 299 s case is a SUSPECTED design finding (the window is measured at processing, RD-6). **Decided 2026-11-02: keep as a suspected finding.** Confirm live (P-MED-2, P-MED-3 in the build's L0 stack); `test.fail` only if the live result proves the defect, and only after P5 agrees it is a defect. P5 owns the security verdict. | P-MED-12b; CR-6 |
-| OD-7 | Stripe charge vs order total for KWD (up to 9 fils) | Recorded as an annotation with the gap; not asserted to be zero. **Decided 2026-11-02: a finding, not a bug.** The KWD gap (charge minus order total, at most 9 fils) is recorded as an annotation with the value; the conservation rule does not treat it as a defect. | RD-13; P-MED-9; upstream test `get-smallest-unit.ts:9` |
+| OD-6 | MED-WH-006 at receipt age 299 s | Asserted only at processing age 295 s (accepted) and 305 s (rejected). The receipt-age 299 s case is a SUSPECTED design finding (the window is measured at processing, RD-6). **Decided 2026-11-02: keep as a suspected finding.** **Confirmed live in session 3 (P-MED-2, P-MED-2b): the processing-time window is real.** `test.fail` is **not** used: the live result shows the behaviour, not a proven defect. Whether it is a defect is the P5 verdict (OD-17). | P-MED-12b; CR-6 |
+| OD-7 | Stripe charge vs order total for KWD (up to 9 fils) | Recorded as an annotation with the gap; not asserted to be zero. **Decided 2026-11-02: a finding, not a bug.** Live KWD through Stripe is refused by this account (P-MED-18), so the rounding is measured on the function (pure, session 1) and the system path (3.702, P-MED-5). The KWD gap (charge minus order total, at most 9 fils) is recorded as an annotation with the value; the conservation rule does not treat it as a defect. | RD-13; P-MED-9; upstream test `get-smallest-unit.ts:9` |
 | OD-8 | Admin and store API request shapes | L0 probe P-MED-16 fixes them before any spec uses them | Section 6.8 (UNPROBED) |
 | OD-9 | No Medusa serial job | `tests/serial/med/` empty; CI runs `med-api` only. Owner changes it if a product-wide job is found (P-MED-14) | RD-16 |
 | OD-10 | Lane region countries (JP, KW, CA) unused by the seed | Chosen; L0 checks `GET /admin/regions` and changes the codes if one is used | RD-15 |
 | OD-11 | Cold `up` time and the job deadline | 30-minute job, 1.5x the measured cold `up` once measured | Foundation Task 6 skeleton; no Medusa cold time recorded |
 | OD-12 | Authorization probe (P-MED-6) | DB end state only; P5 owns the verdict | Brief section 3 ownership |
-| OD-13 | Cache flag for the whole lane | `MEDUSA_FF_CACHING=1` for the one stack. Flag-off behaviour is not covered by a second stack; CACHE-001 skips with its reason when off. **Decided 2026-11-02: plan default** (one stack, flag on; flag-off not covered by a second stack). | RD-7; CR-12 |
+| OD-13 | Cache flag for the whole lane | `MEDUSA_FF_CACHING=true` (the string, F4) for the one stack. CACHE-001 is deferred until HR-4 (F3). Flag-off behaviour is not covered by a second stack; CACHE-001 skips with its reason when off. **Decided 2026-11-02: plan default** (one stack, flag on; flag-off not covered by a second stack). | RD-7; CR-12 |
 | OD-14 | Medusa lock provider at harness 0.3.0 | Unknown; the lane assumes nothing and L0 records it. If in-memory, WH-002 and WH-008 still run in one process | CR-9; RD-18 |
 
-| OD-15 | Unit anchor for the base | **Open, BLOCKING for the probe run** (owner gate): measured 285 on `main` with locked deps and 0 failures, against the 277 stated; default: accept 285 with the evidence in the session-2 update above | Session 2 update; `tests/unit/env.test.ts` (10 tests) |
+| OD-15 | Unit anchor for the base | **Accepted by the owner 2026-11-02: 285** (`main`, locked deps, 0 failures; `tests/unit/env.test.ts` adds 10). Build counts are base + N from 285 | Session 2 update |
+| OD-16 | FC-MED-A expected outcome (P5 verdict) | **Open; blocks FC-MED-A only.** Session 3 (P-MED-6): an anonymous write changed another guest's open cart. If P5 decides a cart id is a capability, the check asserts only that customer-owned carts are unchanged (needs a customer fixture). If P5 decides it is a defect, the check is `test.fail` on the row change, placed before the product assertion, with P-MED-6 cited. Default: not built until P5 decides | P-MED-6 |
+| OD-17 | Tolerance defect verdict (P5) | Open, not blocking. The processing-time window is live-confirmed (P-MED-2, P-MED-2b). No `test.fail` (not a proven defect). Default: keep as a suspected finding | P-MED-2b |
+| OD-18 | KWD rows through Stripe on this account | Default: the KWD Stripe variant of ORD-001 runs only when `P2_STRIPE_KWD=1` is set by the owner for an account that supports KWD; otherwise it is skipped with the reason "this Stripe account refuses KWD (P-MED-18)". Not blocking | P-MED-18 |
 
-**BLOCKING decisions:** OD-15 only, and only for the probe run (the owner's gate). Every other decision has a decided or safe default above.
+**BLOCKING decisions:** none. OD-16 blocks FC-MED-A only.
 
 ### 14.3 Risks
 
@@ -1273,6 +1326,10 @@ Each change lists exact steps for Cursor cloud and Claude Code cloud, and says w
 - **R5 Lock provider.** If the lock is per process and the harness adds Redis locking at 0.3.0, WH-008 changes its behaviour. The test asserts the end state, so it stays valid, but the L0 note must record which provider ran.
 - **R6 Money shapes.** A 3-decimal USD total might not be storable (RD-14). The KWD cases use 3 decimals; the USD cases use 2.
 - **R7 Redis key names.** Pattern-based key reads depend on the caching provider's naming (UNPROBED). A failure here is the probe's finding, not a reason to loosen the assertion.
+- **R9 Cache registration (F3).** MED-CACHE-001 cannot run until HR-4 lands. It is deferred, not skipped, so nothing passes by accident.
+- **R10 Stripe account currency (F5).** KWD Stripe rows cannot be measured on this account. They are gated (OD-18) and the reason is recorded.
+- **R11 Live Stripe objects.** Every Stripe-provider session creates a test-mode PaymentIntent in the account (P-MED-17/18). The lane caps the number of such sessions per run and says so in the report.
+- **R12 Deterministic replay (F1).** Rejections are retried three times and land in the failed set. The EB-002 assertions must not depend on counts of other failed jobs.
 - **R8 Upstream drift.** The upstream evidence is at tag `v2.21.2`. A later fork pin would need the coverage gate rerun.
 
 ### 14.4 Time budget (builder estimates, cold `up` UNPROBED)
