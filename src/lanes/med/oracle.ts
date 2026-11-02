@@ -23,6 +23,7 @@ export const ORACLE_QUERIES = {
   orderTotal: `SELECT "totals"->>'current_order_total' AS total, "version" AS version FROM "order_summary" WHERE "order_id" = $1 AND "deleted_at" IS NULL ORDER BY "version" DESC LIMIT 1`,
   inventoryLevelsForItem: `SELECT "location_id" AS location, "stocked_quantity"::text AS stocked, "reserved_quantity"::text AS reserved FROM "inventory_level" WHERE "inventory_item_id" = $1 AND "deleted_at" IS NULL ORDER BY "location_id"`,
   cartCompleted: `SELECT ("completed_at" IS NOT NULL) AS done FROM "cart" WHERE "id" = $1`,
+  productsWithTitlePrefix: `SELECT COUNT(*)::text AS n FROM "product" WHERE "title" LIKE $1 ESCAPE '\\' AND "deleted_at" IS NULL`,
   reservationLiveCount: `SELECT COUNT(*)::text AS n FROM "reservation_item" WHERE "inventory_item_id" = $1 AND "deleted_at" IS NULL`,
   orderLineSum: `SELECT COALESCE(SUM(oi."quantity" * li."unit_price"), 0)::text AS items FROM "order_item" oi JOIN "order_line_item" li ON li."id" = oi."item_id" JOIN LATERAL (SELECT MAX("version") AS v FROM "order_summary" os WHERE os."order_id" = oi."order_id" AND os."deleted_at" IS NULL) latest ON oi."version" = latest.v WHERE oi."order_id" = $1 AND oi."deleted_at" IS NULL`,
 } as const;

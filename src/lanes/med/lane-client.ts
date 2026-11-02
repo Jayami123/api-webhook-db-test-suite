@@ -48,7 +48,12 @@ export interface LaneClient {
     amountMajor: number,
     options?: { readonly managedInventory?: boolean },
   ): Promise<LaneProduct>;
-  setVariantPrice(variantId: string, currency: LaneCurrency, amountMajor: number): Promise<void>;
+  setVariantPrice(
+    productId: string,
+    variantId: string,
+    currency: LaneCurrency,
+    amountMajor: number,
+  ): Promise<void>;
   /** Store price of a product in a region (calculated amount, major units). undefined if absent. */
   productPrice(productId: string, regionId: string): Promise<number | undefined>;
   createPriceList(input: {
@@ -185,18 +190,10 @@ export function laneClient(input: {
       }
       return { id: res.body.product.id, variantId, inventoryItemId };
     },
-    async setVariantPrice(variantId, currency, amountMajor) {
-      const found = await admin<{ variant: { product_id: string } }>(
-        "GET",
-        `/admin/product-variants/${variantId}?fields=id,product_id`,
-      );
-      await admin(
-        "POST",
-        `/admin/products/${found.body.variant.product_id}/variants/${variantId}`,
-        {
-          body: { prices: [{ currency_code: currency, amount: amountMajor }] },
-        },
-      );
+    async setVariantPrice(productId, variantId, currency, amountMajor) {
+      await admin("POST", `/admin/products/${productId}/variants/${variantId}`, {
+        body: { prices: [{ currency_code: currency, amount: amountMajor }] },
+      });
     },
     async productPrice(productId, regionId) {
       const res = await storeCall<{
@@ -269,15 +266,20 @@ export function laneClient(input: {
       return res.status;
     },
     async removeProductsByPrefix(prefix) {
-      const found = await admin<{ products: { id: string; title: string }[] }>(
-        "GET",
-        `/admin/products?q=${encodeURIComponent(prefix)}&fields=id,title&limit=100`,
-      );
-      const mine = found.body.products.filter((p) => p.title.startsWith(prefix));
-      for (const product of mine) {
-        await admin("DELETE", `/admin/products/${product.id}`, { expect: [200, 404] });
+      // Every page: a prefix can match more rows than one page (100).
+      let removed = 0;
+      for (let offset = 0; ; offset += 100) {
+        const page = await admin<{ products: { id: string; title: string }[] }>(
+          "GET",
+          `/admin/products?q=${encodeURIComponent(prefix)}&fields=id,title&limit=100&offset=${String(offset)}`,
+        );
+        const mine = page.body.products.filter((p) => p.title.startsWith(prefix));
+        for (const product of mine) {
+          await admin("DELETE", `/admin/products/${product.id}`, { expect: [200, 404] });
+          removed += 1;
+        }
+        if (page.body.products.length < 100) return removed;
       }
-      return mine.length;
     },
     async removeProduct(productId) {
       await admin("DELETE", `/admin/products/${productId}`, { expect: [200, 404] });
