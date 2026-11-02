@@ -359,9 +359,9 @@ Index: P-DOC-1 webhook send | P-DOC-2 receiver 500 | P-DOC-3 slow 9/11 s and red
 
 ---
 
-## Re-run on 2026-11-02 (owner-requested): repo harness 0.3.0, real key, consolidated
+## Re-run on 2026-11-02 (requested by the project): repo harness 0.3.0, real key, consolidated
 
-Why: the first entries used a scratch harness and a scratch copy of the foundation code. The owner ran `bash scripts/cloud-install.sh` (`npm ci` approved), and asked for the probes that depended on the scratch build and the Stripe rows to be re-run with the real key.
+Why: the first entries used a scratch harness and a scratch copy of the foundation code. The project team ran `bash scripts/cloud-install.sh` (`npm ci` approved), and asked for the probes that depended on the scratch build and the Stripe rows to be re-run with the real key.
 
 - Install: `bash scripts/cloud-install.sh` rc 0 (72 s; `npm ci` added 138 packages; bootstrap of the four products ran; Twenty comes from Docker images). Harness in the repo's own `node_modules`: `0.3.0` (`node -p "require('./node_modules/qa-portfolio-harness/package.json').version"`). `stripe` 23.0.1 present. Unit: `npm run unit` → `# tests 285`, `# pass 285`, `# fail 0`, exit 0. `npm audit` printed advisories; they were not changed (out of scope).
 - Probe code: the probes now import the repo checkout `src/` (content identical to `aa10ec1`); the scratch copy is no longer used. The scratch harness is no longer used.

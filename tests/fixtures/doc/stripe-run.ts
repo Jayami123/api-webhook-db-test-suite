@@ -33,7 +33,7 @@ async function createOrganisationThroughProduct(
   const body = (await res.json()) as { result: { data: { json: { paymentRequired: boolean } } } };
   if (body.result.data.json.paymentRequired) {
     throw new Error(
-      "ENV: organisation.create answered paymentRequired; the lane stops (no payment setup without owner approval)",
+      "ENV: organisation.create answered paymentRequired; the lane stops (no payment setup without approval recorded in the plan)",
     );
   }
 }
