@@ -118,3 +118,35 @@ warm `up cal` 28 s, `down cal` 2 s (plan section 2 timings reproduced).
 - The harness's default `PRODUCTS_ROOT` resolves inside `node_modules` (`node_modules/products`) when unset: the lane sets
   `PRODUCTS_ROOT=/home/user/products` in the environment (plan F-ENV-2, an environment note, not a harness change).
 - Seed message P10 reproduced: `Error adding google credentials to DB: Unexpected end of JSON input` (not a failure of the seed).
+
+## Upstream drafts (product bugs found by this lane)
+
+Placed here (the lane's own probe record) because `docs/upstream/` is a shared path in `docs/lane-ownership.md`. Each draft is for
+the Cal maintainers and quotes only the evidence above. Labels follow the lane rules.
+
+### PB-CAL-OAS-1: committed OpenAPI does not describe the live 200 and 201 bodies (PRODUCT DOCUMENTATION BUG, proven)
+
+- `GET /v2/slots` (200): the schema is the `data` map itself, while the response is `{status, data}` and the document's own example
+  shows `{status, data}`. Validation of the live body fails at `/status` and `/data`.
+- `POST /v2/bookings` (201): the schema requires `rescheduledByEmail` as a string and `rating` as a number; the live body returns
+  `null` for both. Attendees require `seatUid` and `bookingFieldsResponses`, which the live body omits.
+- CON-005 crawl: six more 200 bodies fail validation (`/v2/bookings`, `/v2/bookings/{bookingUid}`, `/calendar-links`, `/references`,
+  `/v2/calendars`, `/v2/webhooks`).
+- Evidence: `contracts/cal/openapi-v2.json` at `c2b7ac4` (sha256 in `contracts/cal/SOURCE.md`); the failing assertions are marked
+  `test.fail` in `tests/contracts/cal/cal-con.spec.ts` and `cal-con-005.spec.ts`.
+
+### B2: a receiver 500 is acknowledged as success and never retried (PRODUCT BUG, proven)
+
+- Tasker mode. A `500` from the subscriber: the Task is marked succeeded with `attempts` 1 and `lastError` null. The next tasker run
+  makes no attempt. The in-repo agent reference (`agents/skills/calcom-api/references/webhooks.md:320-328`) promises exponential retries.
+- Code path: `packages/features/webhooks/lib/sendPayload.ts:324-327` (a 5xx is not thrown), `sendWebook.ts:21-27`,
+  `task-processor.ts:23-25`.
+- Evidence: L5 (B2 rows), `tests/webhooks/cal/cal-wh.spec.ts` (control passes; finding `test.fail`).
+
+### B4: two concurrent tasker runs deliver each task twice (PRODUCT BUG, proven, three rounds)
+
+- `getNextBatch` has no lock or claim (`packages/features/tasker/repository.ts:65-75`). Two runs started together deliver every task
+  twice: 10 deliveries for 5 tasks, attempts `[1,1,2,2,2,2,2,1]`.
+- Evidence: L5 (TASK-003 finding, three rounds, 10 deliveries each); `tests/serial/cal/cal-task.spec.ts` (control passes).
+- Not committed as a finding: the scheduled-trigger race (SCH-002) was not reproducible (2, 2, 1 deliveries across three rounds), so
+  it is a hard stop and has no `test.fail` marker.
