@@ -5,6 +5,11 @@ import { productsRoot, randomSecret } from "../../../src/readiness/checks.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 import { verifyDocumenso } from "../../../src/webhooks/verify.ts";
+import { readOnlyDb } from "../../../src/db/pg.ts";
+import { trpcPost, v2Post } from "../../../src/lanes/doc/envelope.ts";
+import { completedEnvelope } from "../../fixtures/doc/completed-envelope.ts";
+import { distributedEnvelope } from "../../fixtures/doc/distributed-envelope.ts";
+import { currentRunPrefix } from "../../../src/run/prefix.ts";
 
 const examplePdf = (): Buffer =>
   readFileSync(path.join(productsRoot(), "documenso", "assets", "example.pdf"));
@@ -236,6 +241,116 @@ test("P2-DOC-WH-007 a 302 receiver is not followed (no delivery on /redirected)"
     expect(ds.every((d) => !d.path.endsWith("/redirected"))).toBe(true);
   } finally {
     if (envelopeId) await doc.envelopes.remove(envelopeId);
+    await doc.webhooks.remove(id);
+  }
+});
+
+test("P2-DOC-WH-004 each event of the trigger matrix is delivered exactly once per action", async ({
+  doc,
+  receiverHandle,
+  request,
+  docAuth,
+}) => {
+  const key = receiverHandle.key("p2-wh-004");
+  const secret = randomSecret();
+  const triggers = [
+    "DOCUMENT_CREATED",
+    "DOCUMENT_SENT",
+    "DOCUMENT_COMPLETED",
+    "DOCUMENT_CANCELLED",
+    "DOCUMENT_REJECTED",
+  ];
+  const id = await doc.webhooks.create({
+    webhookUrl: receiverHandle.urlFor("p2-wh-004"),
+    eventTriggers: triggers,
+    secret,
+  });
+  const db = readOnlyDb("documenso");
+  const runPrefix = currentRunPrefix();
+  const authorization = () => docAuth.headerValue.reveal();
+  const cleanup: string[] = [];
+  try {
+    // Action 1 (CREATED, SENT): a distributed envelope (one SENT, one CREATED).
+    const sent = await distributedEnvelope({
+      label: "wh-004-sent",
+      signers: 1,
+      doc,
+      request,
+      authorization,
+      db,
+      runPrefix,
+    });
+    cleanup.push(sent.envelopeId);
+    // Action 2 (CREATED, SENT, COMPLETED): an envelope signed and completed through the product.
+    const completed = await completedEnvelope({
+      label: "wh-004-done",
+      signers: 1,
+      doc,
+      request,
+      authorization,
+      db,
+      runPrefix,
+    });
+    cleanup.push(completed.envelopeId);
+    // Action 3 (CREATED, SENT, CANCELLED): distributed, then cancelled through the API.
+    const cancelled = await distributedEnvelope({
+      label: "wh-004-cancel",
+      signers: 1,
+      doc,
+      request,
+      authorization,
+      db,
+      runPrefix,
+    });
+    cleanup.push(cancelled.envelopeId);
+    const cancelStatus = await v2Post(cancelled.http, "/api/v2/envelope/cancel", {
+      envelopeId: cancelled.envelopeId,
+      reason: "p2 matrix",
+    });
+    expect(cancelStatus.status).toBe(200);
+    // Action 4 (CREATED, SENT, REJECTED): distributed, then rejected by the recipient with its token.
+    const rejected = await distributedEnvelope({
+      label: "wh-004-reject",
+      signers: 1,
+      doc,
+      request,
+      authorization,
+      db,
+      runPrefix,
+    });
+    cleanup.push(rejected.envelopeId);
+    const rejector = rejected.prepared.signers[0];
+    if (rejector === undefined) throw new Error("TEST BUG: no recipient to reject");
+    const rejectStatus = await trpcPost(rejected.http, "recipient.rejectDocumentWithToken", {
+      token: rejector.token,
+      documentId: rejected.prepared.documentId,
+      reason: "p2 matrix",
+    });
+    expect(rejectStatus.status).toBe(200);
+    // Expected per action: CREATED x4 (four envelopes), SENT x4, COMPLETED x1, CANCELLED x1, REJECTED x1.
+    const expected = {
+      DOCUMENT_CREATED: 4,
+      DOCUMENT_SENT: 4,
+      DOCUMENT_COMPLETED: 1,
+      DOCUMENT_CANCELLED: 1,
+      DOCUMENT_REJECTED: 1,
+    };
+    const total = Object.values(expected).reduce((a, b) => a + b, 0);
+    await expect
+      .poll(() => receiverHandle.receiver.deliveries(key).length, {
+        timeout: SLO.docWebhookDelivery.ms,
+        intervals: POLL_INTERVALS,
+        message: "all matrix events delivered",
+      })
+      .toBe(total);
+    const counts: Record<string, number> = {};
+    for (const d of receiverHandle.receiver.deliveries(key)) {
+      const event = (JSON.parse(d.rawBody.toString("utf8")) as { event: string }).event;
+      counts[event] = (counts[event] ?? 0) + 1;
+    }
+    expect(counts).toEqual(expected);
+  } finally {
+    for (const envelopeId of cleanup) await doc.envelopes.remove(envelopeId);
     await doc.webhooks.remove(id);
   }
 });
