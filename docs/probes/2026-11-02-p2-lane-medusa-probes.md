@@ -414,3 +414,13 @@ No probe ran in session 2. This section records the gate that stopped the run; i
 - **F6** Index U14 is contradicted: `api.stripe.com` is reachable (P-MED-17).
 - **F7** The CSV import needs its own columns and the whole file is refused at preview on one bad price (P-MED-13).
 - **F8** `order_item.unit_price` is null on the probe order; line prices are elsewhere (P-MED-5; UNPROBED table).
+
+
+---
+
+## Decisions after session 3 (owner reply, recorded in the plan)
+
+- **OD-16 (F2):** the cart id is treated as a bearer capability (Medusa's documented guest-cart design; not re-checked in this session). F2 is recorded here as a **FINDING for P5**: an anonymous write to an open guest cart by id is accepted (P-MED-6: 200, quantity 1 to 4). FC-MED-A asserts this observed behaviour; it is not a bug and not a `test.fail`.
+- **OD-17 (tolerance):** kept as a design finding with the live results of P-MED-2 and P-MED-2b. No `test.fail`.
+- **OD-18 (KWD via Stripe):** the KWD Stripe variant of ORD-001 is a `test.skip` with the reason "this Stripe account refuses KWD (Invalid currency: kwd; P-MED-18)".
+- **HR-4:** the caching-module registration goes into **harness v0.3.1**. CACHE-001 stays **DEFERRED** until v0.3.1 is in use and P-MED-7 passes on it.

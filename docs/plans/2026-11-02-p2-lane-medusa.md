@@ -125,7 +125,7 @@ Full entries: `docs/probes/2026-11-02-p2-lane-medusa-probes.md`. Status legend: 
 | RD-19 | Medusa needs `STRIPE_API_KEY` to construct the Stripe provider (`validateOptions` throws without it); live Stripe rows are therefore key-gated, and the system-provider rows are key-gated too because verification runs in the Stripe provider | CR-3 (`stripe-base.js:12-19`); seed `medusa-seed.ts:166` |
 | RD-21 | Tolerance is evaluated at processing time (live, P-MED-2b): processing age 295 s accepted, 305 s rejected; the 299 s receipt case is rejected live (P-MED-2). MED-WH-006 asserts the processing-time values; the receipt-age case is a suspected finding (OD-6, OD-17) | P-MED-2, P-MED-2b |
 | RD-22 | Deterministic rejections (tolerance, bad signature) are attempted 3 times and parked; MED-EB-002 covers the parking and the replay (F1) | P-MED-10 |
-| RD-23 | This Stripe account refuses KWD. Any KWD row that uses Stripe is gated by an explicit account flag (OD-18) and cannot be measured here | P-MED-18 |
+| RD-23 | This Stripe account refuses KWD (`Invalid currency: kwd`, GB account). The KWD Stripe variant of ORD-001 is an unconditional skip with that named reason (OD-18). KWD is measured on the system path (3.702) and by the pure function | P-MED-18 |
 | RD-24 | Order totals come from `order_summary.totals` (jsonb); line prices come from the line tables, because `order_item.unit_price` is null on the probe order (F8) | P-MED-5, P-MED-8 |
 | RD-20 | Stripe test-mode key is present in the planning environment (presence only, value never read). Live rows do not call `api.stripe.com` on the system-provider path (no PaymentIntent is created); the stripe provider's constructor makes no call (`stripe-base.js:27`) | CR-3, CR-4; index U14 (proxy 403 for `api.stripe.com` observed in planning, foundation) |
 
@@ -166,7 +166,7 @@ P2-MED-LOC-001, P2-MED-WH-004, P2-MED-WH-005, P2-MED-WH-007, P2-MED-CSV-002, P2-
 
 ### 4.3 Framework checks (no IDs)
 
-- **FC-MED-A** Cross-customer store call changes no rows. P5 owns the verdict; P2 asserts only the DB end state (section 7). **Session 3 (P-MED-6, F2): an anonymous write changed another guest's open cart (quantity 1 → 4). What this check should expect depends on the P5 verdict (OD-16), so FC-MED-A is not built until OD-16 is decided.**
+- **FC-MED-A** A guest cart id is a bearer capability (owner decision OD-16, following Medusa's guest-cart design). The check asserts the **observed** behaviour, not a bug: an anonymous write to a guest cart is accepted and changes that cart's rows only, and a completed cart refuses the write. This is recorded as finding F2 for P5 (P-MED-6); it is not a `test.fail`.
 - **FC-MED-B** Rate limiting: **not real in this harness**. Evidence: no rate-limit match in the installed `@medusajs/medusa` or `@medusajs/framework` dist (empty grep this session) and no rate setting in the harness adapter. Re-check at L0 against harness 0.3.0 (UNPROBED for 0.3.0).
 - **FC-MED-C** The Stripe signed round trip, Medusa cell of `P2-X-WH-001`: covered by `P2-MED-WH-001` and `P2-MED-WH-006`; no separate test.
 
@@ -192,7 +192,7 @@ Spec file names and test titles are final. Test titles carry the case ID and no 
 | P2-MED-MON-001 | L4 | `tests/integration/med/money-jpy-kwd.spec.ts` | `P2-MED-MON-001 JPY and KWD carts keep their minor units end to end` |
 | P2-MED-ORD-001 | L4 | `tests/integration/med/order-conservation.spec.ts` | `P2-MED-ORD-001 order total equals item totals plus shipping plus tax minus discounts, in minor units` |
 | P2-MED-INV-001 | L4 | `tests/integration/med/inventory-model.spec.ts` | `P2-MED-INV-001 a seeded operation sequence keeps reserved plus available equal to stocked after every step` |
-| FC-MED-A | L4 | `tests/integration/med/framework-cross-customer.spec.ts` | `Framework check: a cross-customer cart call changes no rows (P5 owns the verdict)` |
+| FC-MED-A | L4 | `tests/integration/med/framework-cross-customer.spec.ts` | `Framework check: a guest cart id is a bearer capability; an anonymous write changes only that cart's rows, and a completed cart refuses it (F2, observed)` |
 
 Counts: 4 (L1) + 26 (L2: 1+1+1+3+20) + 4 (L3) + 4 (L4) = **38 new Playwright tests**. Live or skipped: every L2 row is key-gated, so without `STRIPE_API_KEY` L2 shows 26 skipped. P2-MED-CACHE-001 is flag-gated (1 skipped without the flag).
 
@@ -239,7 +239,7 @@ Baseline med-api listed tests: **5**, the readiness spec (`tests/readiness/med.r
 | MON-001 | JPY and KWD carts (system provider) | cart totals, completion, payment | minor-unit columns (DB) | `db/pg.ts`, `lanes/med/money.ts` |
 | ORD-001 | completed orders in JPY, KWD, USD | totals | conservation identity in minor units (DB) | `db/pg.ts`, `lanes/med/money.ts` |
 | INV-001 | seeded operation sequence | restock (admin), reserve (cart completion), release (order cancel) | `inventory_level` and `reservation_item` (DB) against the model | `lanes/med/inventory-model.ts`, `db/pg.ts` |
-| FC-MED-A | cross-customer cart id | store route | row counts before and after (DB) | `db/pg.ts` |
+| FC-MED-A | guest cart id (bearer capability) | store route | cart quantity before and after (DB) | `db/pg.ts` |
 
 ### 5.3 Budgets
 
@@ -682,7 +682,7 @@ expect(minor.total).toBe(orderTotalMinor({ items, shippingMinor, taxMinor, disco
 expect(minor.total).toBe(toMinor(expectedMajor, currency));
 ```
 
-KWD: a total with 4 or more decimal places is refused by `toMinor`, so the spec only uses 3-decimal amounts (1.234 KWD, 0.500 KWD). The conservation case with a Stripe charge is the key-gated variant: `expect(stripeChargeMinor(total, "KWD") - toMinor(total, "KWD")).toBeLessThan(10)`; the gap is printed as an annotation, not asserted to be zero (RD-13).
+KWD: a total with 4 or more decimal places is refused by `toMinor`, so the spec only uses 3-decimal amounts (1.234 KWD, 0.500 KWD). The conservation case with a Stripe charge is skipped for this account with a named reason (OD-18: the account refuses KWD, P-MED-18): `expect(stripeChargeMinor(total, "KWD") - toMinor(total, "KWD")).toBeLessThan(10)`; the gap is printed as an annotation, not asserted to be zero (RD-13).
 
 **Spec skeleton: P2-MED-INV-001** (`inventory-model.spec.ts`):
 
@@ -704,18 +704,31 @@ test("P2-MED-INV-001 a seeded operation sequence keeps reserved plus available e
 });
 ```
 
-**Spec skeleton: FC-MED-A** (`framework-cross-customer.spec.ts`):
+**Spec skeleton: FC-MED-A** (`framework-cross-customer.spec.ts`). Basis: P-MED-6 (session 3). Owner decision OD-16: the cart id is a bearer capability, so the check asserts the **observed** behaviour. It is not a bug and it is not `test.fail`.
 
 ```ts
-test("Framework check: a cross-customer cart call changes no rows (P5 owns the verdict)", async ({ med }) => {
-  const before = await rowCountsFor(["cart", "payment_session", "order_cart"]); // oracle.ts, UNPROBED names
-  const attempt = await med.store.raw("GET", `/store/carts/${foreignCartId}`);  // a cart of another run's buyer
-  expect([200, 401, 403, 404]).toContain(attempt.status); // whatever the verdict, no row changes
-  expect(await rowCountsFor(["cart", "payment_session", "order_cart"])).toEqual(before);
+test("Framework check: a guest cart id is a bearer capability; an anonymous write changes only that cart's rows, and a completed cart refuses it", async ({ med }) => {
+  const victim = await openPaidSession(med, { regionId, variantId, label: "fca-victim" });     // one line, quantity 1
+  const bystander = await openPaidSession(med, { regionId, variantId, label: "fca-bystander" });
+  const victimBefore = await cartQuantity(victim.cartId);       // oracle.ts: SUM(cart_line_item.quantity), confirmed P-MED-6
+  const bystanderBefore = await cartQuantity(bystander.cartId);
+  await test.step("an anonymous write to an open guest cart is accepted (observed)", async () => {
+    const write = await med.store.rawPost(`/store/carts/${victim.cartId}/line-items`, { variant_id: variantId, quantity: 3 });
+    expect(write.status).toBe(200);                              // P-MED-6: 200 with no customer token
+    expect(await cartQuantity(victim.cartId)).toBe(victimBefore + 3);
+    expect(await cartQuantity(bystander.cartId)).toBe(bystanderBefore); // only that cart changed
+  });
+  await test.step("a completed guest cart refuses the same write (observed)", async () => {
+    await med.store.completeCart(victim.cartId);                 // completes the victim cart with its paid session
+    const after = await cartQuantity(victim.cartId);
+    const write = await med.store.rawPost(`/store/carts/${victim.cartId}/line-items`, { variant_id: variantId, quantity: 1 });
+    expect(write.status).toBe(400);                              // P-MED-6: "Cart ... is already completed."
+    expect(await cartQuantity(victim.cartId)).toBe(after);
+  });
 });
 ```
 
-Note: `foreignCartId` is a cart created by a different buyer in the same run; P5 decides the status; P2 asserts only the rows.
+Helpers: `cartQuantity` (oracle.ts, whitelisted SQL) and `rawPost` (lane-client.ts, next to `rawGet`) are added in L4. The finding F2 is written to the P5 queue by the probe record, not by a test.
 
 **Spec skeleton: P2-MED-CON-001** (`cart-contract.spec.ts`):
 
@@ -793,7 +806,7 @@ export interface LaneClient {
 
 `dbNowIso()`: `SELECT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS now` via `readOnlyDb("medusa")`. The spec uses the database clock because the product compares to `now()` (CR-11).
 
-Specs obtain the lane client as `const lane = laneClient(med);` (exported by `lane-client.ts`); the skeletons write `med.lane` for brevity. Two store helpers are added to the same file: `productPrice(productId, currency)` (store product read with a region and the calculated price; UNPROBED request shape) and `rawGet(path)` (store GET with the publishable key, returns status and text for the contract checks).
+Specs obtain the lane client as `const lane = laneClient(med);` (exported by `lane-client.ts`); the skeletons write `med.lane` for brevity. Two store helpers are added to the same file: `productPrice(productId, currency)` (store product read with a region and the calculated price; UNPROBED request shape) and `rawGet(path)` / `rawPost(path, body)` (store GET or POST with the publishable key, returns status and text for the contract checks).
 
 ### 6.8a Remaining helper skeletons (L1 and L4)
 
@@ -1228,7 +1241,7 @@ For each case, the builder runs the mutation or bad input in a **scratch copy** 
 | MON-001 | `toMinor` expected +1 for JPY | the exact-minor-units assertion fails |
 | ORD-001 | `tax` +1 minor unit in the oracle | the identity fails |
 | INV-001 | `nextOp` producing an illegal reserve (unit mutation) | `apply` throws; the unit test 20 proves the model refuses |
-| FC-MED-A | a foreign cart touched by the test body | the row count assertion fails |
+| FC-MED-A | the expected quantity change removed (+3 becomes +0) | the quantity assertion fails; a completed-cart write that is accepted fails the second step |
 | rules | a clean row replaced with a bad one in the fake | the violation unit test fails |
 
 ---
@@ -1271,7 +1284,7 @@ Each change lists exact steps for Cursor cloud and Claude Code cloud, and says w
 
 ## 13. Harness requests
 
-- **HR-4 (required for MED-CACHE-001, F3): register the core caching module.** Evidence: P-MED-7 (session 3). The harness (0.3.0, `src/adapters/medusa-env.ts:283-285`) registers `@medusajs/medusa/cache-redis` under the module key `cache`. The query-cache decorator resolves `Modules.CACHING`, which is `"caching"` (`@medusajs/utils dist/modules-sdk/definition.js:34`; `dist/caching/index.js:74-77` returns the uncached call when it does not resolve). The core ships `dist/modules/caching.js` and `dist/modules/caching-redis.js` (identifier `cache-redis`); the harness registers neither. **Proposed harness change:** when `MEDUSA_REDIS=1`, also register `@medusajs/medusa/caching` (key `caching`) with the `caching-redis` provider, `redisUrl: process.env.REDIS_URL`. **Acceptance:** with `MEDUSA_FF_CACHING=true`, two warm store reads write at least one key matching `*cache*` or `*caching*` (P-MED-7 rerun). **Blocks:** MED-CACHE-001 only. Not a blocker for any other KEEP case. The change is made in the harness, never in the fork.
+- **HR-4 (scheduled for harness v0.3.1; MED-CACHE-001 stays DEFERRED, F3): register the core caching module.**
 - **Redis container name** (confirmed in session 3, P-MED-1): `qa-harness-medusa-redis-1`, reached through `docker exec` (section 6.5 unchanged).
 - **Previous HR-4 text (superseded):** none required by current findings. The lane reads Redis through the container with `docker exec` (section 6.5) and needs the harness's compose project name `qa-harness-medusa` and service `redis`. If L0 shows the name differs at 0.3.0, the request is: expose the Redis URL in the harness output (not a `docker` hack). Blocks: P2-MED-CACHE-001 keys assertion and EB-002's parked-job check only. Not a KEEP-case blocker today.
 - No other harness change is needed. `MEDUSA_FF_CACHING`, `webhook_*` and `MEDUSA_LOCK` reach the product through the environment of `up` if the 0.3.0 adapter passes it through (L0 probe). If not, the request is an HR item with the adapter line and the cases it blocks (CACHE-001 for the flag; none for the webhook defaults, which are the product's defaults).
@@ -1311,11 +1324,11 @@ Each change lists exact steps for Cursor cloud and Claude Code cloud, and says w
 | OD-14 | Medusa lock provider at harness 0.3.0 | Unknown; the lane assumes nothing and L0 records it. If in-memory, WH-002 and WH-008 still run in one process | CR-9; RD-18 |
 
 | OD-15 | Unit anchor for the base | **Accepted by the owner 2026-11-02: 285** (`main`, locked deps, 0 failures; `tests/unit/env.test.ts` adds 10). Build counts are base + N from 285 | Session 2 update |
-| OD-16 | FC-MED-A expected outcome (P5 verdict) | **Open; blocks FC-MED-A only.** Session 3 (P-MED-6): an anonymous write changed another guest's open cart. If P5 decides a cart id is a capability, the check asserts only that customer-owned carts are unchanged (needs a customer fixture). If P5 decides it is a defect, the check is `test.fail` on the row change, placed before the product assertion, with P-MED-6 cited. Default: not built until P5 decides | P-MED-6 |
-| OD-17 | Tolerance defect verdict (P5) | Open, not blocking. The processing-time window is live-confirmed (P-MED-2, P-MED-2b). No `test.fail` (not a proven defect). Default: keep as a suspected finding | P-MED-2b |
-| OD-18 | KWD rows through Stripe on this account | Default: the KWD Stripe variant of ORD-001 runs only when `P2_STRIPE_KWD=1` is set by the owner for an account that supports KWD; otherwise it is skipped with the reason "this Stripe account refuses KWD (P-MED-18)". Not blocking | P-MED-18 |
+| OD-16 | FC-MED-A expected outcome | **Decided 2026-11-02 (owner): the cart id is a bearer capability** (Medusa's documented guest-cart design; the citation was not re-checked in session 3). FC-MED-A asserts the observed behaviour (anonymous write accepted, that cart's rows change, completed cart refused). F2 is recorded as a FINDING for P5. Not a `test.fail` | P-MED-6 |
+| OD-17 | Tolerance defect verdict | **Decided 2026-11-02 (owner): keep as a design finding; no `test.fail`.** The processing-time window is live-confirmed (P-MED-2, P-MED-2b). MED-WH-006 asserts the processing-time values | P-MED-2b |
+| OD-18 | KWD rows through Stripe on this account | **Decided 2026-11-02 (owner): skip with the named reason.** The KWD Stripe variant of ORD-001 is `test.skip` with the reason "this Stripe account refuses KWD (Invalid currency: kwd; P-MED-18)". It is not gated by a flag, because the account refuses KWD regardless of configuration | P-MED-18 |
 
-**BLOCKING decisions:** none. OD-16 blocks FC-MED-A only.
+**BLOCKING decisions:** none. OD-16, OD-17 and OD-18 are decided (session 3 owner reply).
 
 ### 14.3 Risks
 
@@ -1327,7 +1340,7 @@ Each change lists exact steps for Cursor cloud and Claude Code cloud, and says w
 - **R6 Money shapes.** A 3-decimal USD total might not be storable (RD-14). The KWD cases use 3 decimals; the USD cases use 2.
 - **R7 Redis key names.** Pattern-based key reads depend on the caching provider's naming (UNPROBED). A failure here is the probe's finding, not a reason to loosen the assertion.
 - **R9 Cache registration (F3).** MED-CACHE-001 cannot run until HR-4 lands. It is deferred, not skipped, so nothing passes by accident.
-- **R10 Stripe account currency (F5).** KWD Stripe rows cannot be measured on this account. They are gated (OD-18) and the reason is recorded.
+- **R10 Stripe account currency (F5).** KWD Stripe rows cannot be measured on this account. They are skipped with the named reason (OD-18) and the reason is printed in the report.
 - **R11 Live Stripe objects.** Every Stripe-provider session creates a test-mode PaymentIntent in the account (P-MED-17/18). The lane caps the number of such sessions per run and says so in the report.
 - **R12 Deterministic replay (F1).** Rejections are retried three times and land in the failed set. The EB-002 assertions must not depend on counts of other failed jobs.
 - **R8 Upstream drift.** The upstream evidence is at tag `v2.21.2`. A later fork pin would need the coverage gate rerun.
