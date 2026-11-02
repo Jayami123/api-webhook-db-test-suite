@@ -98,8 +98,8 @@ export async function createSignableEnvelope(input: {
   );
   const first = env[0];
   if (first === undefined) throw new Error("TEST BUG: envelope row not found after create");
-  const fields = await input.db.select<{ id: number; recipientId: number }>(
-    `SELECT f."id" AS id, f."recipientId" AS "recipientId" FROM "Field" f JOIN "Recipient" r ON r."id" = f."recipientId" JOIN "Envelope" e ON e."id" = r."envelopeId" WHERE e."id" = $1`,
+  const fields = await input.db.select<{ id: number; recipientId: number; type: string }>(
+    `SELECT f."id" AS id, f."recipientId" AS "recipientId", f."type" AS type FROM "Field" f JOIN "Recipient" r ON r."id" = f."recipientId" JOIN "Envelope" e ON e."id" = r."envelopeId" WHERE e."id" = $1`,
     [input.envelopeId],
   );
   return {
@@ -109,7 +109,7 @@ export async function createSignableEnvelope(input: {
       recipientId: r.id,
       email: r.email,
       token: r.token,
-      fieldId: fields.find((f) => f.recipientId === r.id)?.id,
+      fieldId: fields.find((f) => f.recipientId === r.id && f.type === "SIGNATURE")?.id,
     })),
   };
 }

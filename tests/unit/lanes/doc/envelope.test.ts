@@ -33,7 +33,10 @@ function fakeDb(): ReadOnlyDb {
   const answers: unknown[][] = [
     [{ id: 7, email: "a@x.test", token: "t1" }],
     [{ secondaryId: "document_1025" }],
-    [{ id: 3, recipientId: 7 }],
+    [
+      { id: 3, recipientId: 7, type: "DATE" },
+      { id: 4, recipientId: 7, type: "SIGNATURE" },
+    ],
   ];
   return {
     product: "documenso",
