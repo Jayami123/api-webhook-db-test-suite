@@ -73,10 +73,20 @@ jobs:
         timeout-minutes: 10
         run: npm ci
 
+      - name: Node 24 for the harness (up and down)
+        timeout-minutes: 5
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Pin the Node 24 path
+        timeout-minutes: 5
+        run: echo "NODE24=$(command -v node)" >> "$GITHUB_ENV"
+
       - name: Clone the pinned Documenso fork and install its dependencies
         timeout-minutes: 30
         env:
           P2_BOOTSTRAP_PRODUCTS: documenso
+          NODE24: ${{ env.NODE24 }}
         run: bash scripts/bootstrap.sh documenso
 
       - name: Receiver hostname in the hosts file
@@ -86,15 +96,6 @@ jobs:
       - name: Read-only and fixture database passwords (generated for this job)
         timeout-minutes: 2
         run: bash scripts/qa-passwords.sh
-
-      - name: Node 24 for the harness (up and down)
-        timeout-minutes: 5
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24
-      - name: Pin the Node 24 path
-        timeout-minutes: 5
-        run: echo "NODE24=$(command -v node)" >> "$GITHUB_ENV"
 
       - name: Start the Documenso stack (harness v0.3.1)
         timeout-minutes: 30
@@ -164,10 +165,20 @@ jobs:
         timeout-minutes: 10
         run: npm ci
 
+      - name: Node 24 for the harness (up and down)
+        timeout-minutes: 5
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Pin the Node 24 path
+        timeout-minutes: 5
+        run: echo "NODE24=$(command -v node)" >> "$GITHUB_ENV"
+
       - name: Clone the pinned Documenso fork and install its dependencies
         timeout-minutes: 30
         env:
           P2_BOOTSTRAP_PRODUCTS: documenso
+          NODE24: ${{ env.NODE24 }}
         run: bash scripts/bootstrap.sh documenso
 
       - name: Receiver hostname in the hosts file
@@ -181,15 +192,6 @@ jobs:
       - name: Per-run webhook secret for the billing stack (never printed)
         timeout-minutes: 2
         run: echo "P2_STRIPE_TEST_WH_SECRET=$(openssl rand -hex 24)" >> "$GITHUB_ENV"
-
-      - name: Node 24 for the harness (up and down)
-        timeout-minutes: 5
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24
-      - name: Pin the Node 24 path
-        timeout-minutes: 5
-        run: echo "NODE24=$(command -v node)" >> "$GITHUB_ENV"
 
       - name: Start the Documenso stack with billing on (harness v0.3.1)
         timeout-minutes: 30
