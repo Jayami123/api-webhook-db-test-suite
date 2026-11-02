@@ -213,3 +213,7 @@ Each row is one session with a valid control in a second session, on the 0.3.1 s
 Neither order produces `captured` (no payment data on this path; C8, RD-3). The end state of both orders is `authorized` with one payment.
 
 The L2 webhook layer (26 tests: WH-001, WH-002, WH-003 in two sub-steps, WH-006 three titles, WH-008 twenty runs) passed 26 of 26 on a fresh stack (2026-11-02 build, `med-api` project, `STRIPE_API_KEY` set, 1.7 min).
+
+## 5. L3 run on a fresh stack
+
+The async-chain layer (EB-002, PL-001, CSV-001, CACHE-001) passed 4 of 4 on a fresh stack (`med-api`, flag `true`, `STRIPE_API_KEY` set, 39.6 s). Measured inside the tests: the poison job is parked with `name=payment.webhook_received`, `atm=3`, `ats=3` (EB-002); the price list reaches the sale price 4.9 s after creation (PL-001, observed on the probe, within the 20 s budget); the cache key count is above zero after the warm read and the price change is visible on the next read (CACHE-001, 51 ms on the probe, within the 10 s budget); a 100-row file with an invalid price on row 50 is refused at preview with 400 `invalid_data` and no product, and the valid 100-row control imports 100 products after confirm (CSV-001).
