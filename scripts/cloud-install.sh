@@ -6,6 +6,8 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 export PATH="/usr/local/bin:$PATH"
+# Documenso lane: pdfsig and pdftotext (poppler-utils) are needed by the PDF checks. No-op when both exist.
+command -v pdfsig >/dev/null && command -v pdftotext >/dev/null || sudo apt-get install -y poppler-utils
 if [ -f package-lock.json ]; then
   npm ci
 else
