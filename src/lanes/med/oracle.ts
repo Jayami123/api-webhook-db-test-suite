@@ -24,6 +24,8 @@ export const ORACLE_QUERIES = {
   inventoryLevelsForItem: `SELECT "location_id" AS location, "stocked_quantity"::text AS stocked, "reserved_quantity"::text AS reserved FROM "inventory_level" WHERE "inventory_item_id" = $1 AND "deleted_at" IS NULL ORDER BY "location_id"`,
   cartCompleted: `SELECT ("completed_at" IS NOT NULL) AS done FROM "cart" WHERE "id" = $1`,
   productsWithTitlePrefix: `SELECT COUNT(*)::text AS n FROM "product" WHERE "title" LIKE $1 ESCAPE '\\' AND "deleted_at" IS NULL`,
+  paymentSessionAmount: `SELECT "amount"::text AS amount FROM "payment_session" WHERE "id" = $1`,
+  orderDiscountText: `SELECT COALESCE(SUM(a."amount"), 0)::text AS amt FROM "order_line_item_adjustment" a JOIN "order_item" oi ON oi."item_id" = a."item_id" JOIN (SELECT DISTINCT ON ("order_id") "order_id", "version" AS v FROM "order_summary" WHERE "deleted_at" IS NULL ORDER BY "order_id", "version" DESC) latest ON latest."order_id" = oi."order_id" AND oi."version" = latest.v AND a."version" = latest.v WHERE oi."order_id" = $1 AND a."deleted_at" IS NULL`,
   reservationLiveCount: `SELECT COUNT(*)::text AS n FROM "reservation_item" WHERE "inventory_item_id" = $1 AND "deleted_at" IS NULL`,
   orderLineSum: `SELECT COALESCE(SUM(oi."quantity" * li."unit_price"), 0)::text AS items FROM "order_item" oi JOIN "order_line_item" li ON li."id" = oi."item_id" JOIN LATERAL (SELECT MAX("version") AS v FROM "order_summary" os WHERE os."order_id" = oi."order_id" AND os."deleted_at" IS NULL) latest ON oi."version" = latest.v WHERE oi."order_id" = $1 AND oi."deleted_at" IS NULL`,
 } as const;
@@ -147,4 +149,18 @@ export async function inventoryLevelsForItem(inventoryItemId: string): Promise<L
 export async function cartCompleted(cartId: string): Promise<boolean> {
   const rows = await db().select<{ done: boolean }>(ORACLE_QUERIES.cartCompleted, [cartId]);
   return rows[0]?.done === true;
+}
+
+/** The amount stored on a payment session, in major units as text (NUMERIC, no rounding). */
+export async function paymentSessionAmountText(sessionId: string): Promise<string | undefined> {
+  const rows = await db().select<{ amount: string | null }>(ORACLE_QUERIES.paymentSessionAmount, [
+    sessionId,
+  ]);
+  return rows[0]?.amount ?? undefined;
+}
+
+/** Line-item discounts of the latest order version, major units as text (NUMERIC, no rounding). */
+export async function orderItemDiscountText(orderId: string): Promise<string> {
+  const rows = await db().select<{ amt: string }>(ORACLE_QUERIES.orderDiscountText, [orderId]);
+  return rows[0]?.amt ?? "0";
 }

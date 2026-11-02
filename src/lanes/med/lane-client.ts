@@ -66,6 +66,8 @@ export interface LaneClient {
   removeProduct(productId: string): Promise<void>;
   /** Removes every product whose title starts with the prefix (a failed test may not have kept the id). */
   removeProductsByPrefix(prefix: string): Promise<number>;
+  /** Deletes a price list by id (price lists are not removed with the product). */
+  removePriceList(priceListId: string): Promise<void>;
   /** Id of the seed's default sales channel (stock locations are linked to it). */
   salesChannelId(): Promise<string>;
   /** Adds a stock location with run-scoped name, linked to the default sales channel. */
@@ -264,6 +266,9 @@ export function laneClient(input: {
         expect: anyStatus as unknown as number[],
       });
       return res.status;
+    },
+    async removePriceList(priceListId) {
+      await admin("DELETE", `/admin/price-lists/${priceListId}`, { expect: [200, 404] });
     },
     async removeProductsByPrefix(prefix) {
       // Every page: a prefix can match more rows than one page (100).

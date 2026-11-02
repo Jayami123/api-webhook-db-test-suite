@@ -35,3 +35,36 @@ export async function openPaidSession(
   if (sessionId === undefined) throw new Error("TEST BUG: no system payment session returned");
   return { cartId, sessionId };
 }
+
+/**
+ * A cart edit voids the open payment session (observed 2026-11-02: an anonymous line write made the
+ * completion fail with "Payment sessions are required to complete cart" until a new session existed).
+ * This creates the session again on the cart's payment collection and returns its id.
+ */
+export async function renewPaymentSession(store: Caller, cartId: string): Promise<string> {
+  const cart = await store<{ cart: { payment_collection?: { id: string } } }>(
+    "GET",
+    `/store/carts/${cartId}?fields=id,payment_collection.id`,
+  );
+  let collectionId = cart.body.cart.payment_collection?.id;
+  if (collectionId === undefined) {
+    const created = await store<{ payment_collection: { id: string } }>(
+      "POST",
+      "/store/payment-collections",
+      {
+        body: { cart_id: cartId },
+      },
+    );
+    collectionId = created.body.payment_collection.id;
+  }
+  const session = await store<{
+    payment_collection: { payment_sessions: { id: string; provider_id: string }[] };
+  }>("POST", `/store/payment-collections/${collectionId}/payment-sessions`, {
+    body: { provider_id: "pp_system_default" },
+  });
+  const sessionId = session.body.payment_collection.payment_sessions.find(
+    (s) => s.provider_id === "pp_system_default",
+  )?.id;
+  if (sessionId === undefined) throw new Error("TEST BUG: no system payment session after renewal");
+  return sessionId;
+}
