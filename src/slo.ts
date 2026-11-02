@@ -3,6 +3,9 @@
  * is a policy bound derived from a CODE-DEFINED timeout plus a stated margin, never from an
  * observed latency (observed values go in test annotations only).
  */
+import { documensoSlo } from "./slo/documenso.ts";
+import { medusaSlo } from "./slo/medusa.ts";
+
 export interface Slo {
   readonly ms: number;
   readonly basis: string;
@@ -54,12 +57,6 @@ export const SLO = {
     basis:
       "hooks/payment/[provider]/route.js emits with delay webhook_delay || 5000 ms; 20 s margin for the subscriber and workflow",
   },
-  docWebhookTimeoutChain: {
-    ms: 50_000,
-    basis: "4 attempts x WEBHOOK_TIMEOUT_MS 10 000 (execute-webhook-call.ts:6) + 10 s margin",
-  },
-  docCronTick: {
-    ms: 17 * 60_000,
-    basis: "*/15 cron (seal-document-sweep.ts:18) + 2 min margin",
-  },
+  ...documensoSlo,
+  ...medusaSlo,
 } as const satisfies Record<string, Slo>;
