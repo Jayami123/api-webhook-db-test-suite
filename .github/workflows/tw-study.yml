@@ -1,21 +1,87 @@
-# P2 twenty study workflow (stub). Owned by the twenty lane (its own file, not part of the lane job in
-# p2-tw.yml). It measures P2-TW-WH-010 in a serial study and is never a required check. Inert until the
-# lane builds it: manual trigger only, and the job is skipped (if: ${{ false }}). The lane sets the
-# timeout and the steps. See docs/lane-ownership.md.
+# P2 Twenty study workflow (owned by the twenty lane). It measures P2-TW-WH-010 (the B1 delivery drop) as a
+# scheduled measurement. It is NOT a required check, never runs on pull_request, and has no delivery gate: the
+# study asserts run validity only (every case executed, every send accepted, every cleanup done, no leaked rows).
 name: tw-study
 
 on:
+  schedule:
+    - cron: "17 5 * * 1"
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: tw-study-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
 jobs:
   tw-study:
     name: tw-study
-    if: ${{ false }}
     runs-on: ubuntu-24.04
+    # Worst case 22.5 min (plan section 8.8: 360 s setup + 990 s study) plus margin for the roles step and the bootstrap.
     timeout-minutes: 30
+    env:
+      PRODUCTS_ROOT: ${{ github.workspace }}/../products
+      OUTBOUND_HTTP_ALLOWED_INTERNAL_HOSTS: host.docker.internal,172.17.0.1
     steps:
-      - name: Stub, replaced by the twenty study job
-        run: echo "stub"
+      - name: Checkout
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        timeout-minutes: 5
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install
+        timeout-minutes: 10
+        run: npm ci
+      - name: Generate DB role passwords (per job, masked)
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          ro="$(openssl rand -hex 16)"; fx="$(openssl rand -hex 16)"
+          echo "::add-mask::$ro"; echo "::add-mask::$fx"
+          echo "P2_QA_RO_PASSWORD=$ro" >> "$GITHUB_ENV"; echo "P2_QA_FIXTURE_PASSWORD=$fx" >> "$GITHUB_ENV"
+      - name: Bootstrap Twenty at the pinned ref
+        timeout-minutes: 12
+        run: bash scripts/bootstrap.sh twenty
+      - name: Harness up (one stack)
+        timeout-minutes: 16
+        run: timeout 900 node node_modules/qa-portfolio-harness/scripts/up.mjs twenty
+      - name: Seed Twenty
+        timeout-minutes: 5
+        run: node scripts/harness-seed.mjs twenty
+      - name: Provision roles
+        timeout-minutes: 3
+        run: npm run db:roles:provision -- twenty
+      - name: Run the study (B1 measurement only)
+        timeout-minutes: 25
+        run: |
+          mkdir -p results
+          npx playwright test --project=tw-serial --grep "P2-TW-WH-010"
+      - name: Upload study JSON and receiver logs
+        if: always()
+        timeout-minutes: 5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tw-study
+          path: |
+            results/p2-tw-wh-010-study.json
+            receiver-logs/
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Harness down
+        if: always()
+        timeout-minutes: 5
+        run: node node_modules/qa-portfolio-harness/scripts/down.mjs twenty
