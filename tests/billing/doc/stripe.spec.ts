@@ -67,7 +67,9 @@ test("P2-DOC-STR-001 a correctly signed event that is not synced is accepted (20
   request,
 }) => {
   const before = await rowCounts();
-  const body = eventBody("customer.subscription.updated", `cus_p2_unsynced_${currentRunPrefix()}`);
+  // A type outside the product's SYNCED_EVENT_TYPES (handler.ts:18-25) is accepted without any sync. A synced type
+  // with a customer Stripe does not know answers 500 (the sync calls Stripe), so it is not used here.
+  const body = eventBody("charge.succeeded", `cus_p2_unsynced_${currentRunPrefix()}`);
   const now = Math.floor(Date.now() / 1000);
   const res = await post(
     request,
