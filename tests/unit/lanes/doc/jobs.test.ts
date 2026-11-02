@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import path from "node:path";
 import { after, before, describe, test } from "node:test";
 import {
   forkDecrypt,
   forkEncrypt,
+  readSecondaryKey,
   replayDispatch,
   signJobOptions,
   verifyJobOptions,
@@ -72,5 +74,33 @@ describe("replayDispatch (local.ts:228-230 headers)", () => {
       signature: "not-checked-by-this-fake",
     });
     assert.deepEqual(out, { status: 404, text: "Job not found" });
+  });
+});
+
+describe("readSecondaryKey (fork .env location)", () => {
+  test("the fork .env is read from PRODUCTS_ROOT when DOCUMENSO_PRODUCT_DIR is unset", () => {
+    const previous = process.env.NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY;
+    process.env.NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY = "p2-unit-key-from-env-file";
+    const read: string[] = [];
+    try {
+      const key = readSecondaryKey({ PRODUCTS_ROOT: "/srv/products" }, (p) => {
+        read.push(p);
+      });
+      assert.equal(key, "p2-unit-key-from-env-file");
+      assert.deepEqual(read, [path.join("/srv/products", "documenso", ".env")]);
+    } finally {
+      if (previous === undefined) delete process.env.NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY;
+      else process.env.NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY = previous;
+    }
+  });
+
+  test("an unreadable fork .env is an ENV error that names the path", () => {
+    assert.throws(
+      () =>
+        readSecondaryKey({ PRODUCTS_ROOT: "/srv/products" }, () => {
+          throw new Error("ENOENT");
+        }),
+      /ENV: cannot read the fork \.env at \/srv\/products\/documenso\/\.env/,
+    );
   });
 });

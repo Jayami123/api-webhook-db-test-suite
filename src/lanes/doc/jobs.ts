@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
+import path from "node:path";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { managedNonce } from "@noble/ciphers/webcrypto";
 import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/ciphers/utils";
 import { sha256 } from "@noble/hashes/sha2";
+import { productsRoot } from "../../readiness/checks.ts";
 
 /**
  * Mirrors the Documenso fork's job-signing scheme (fork f4105e4). Random nonce per call: compare
@@ -84,7 +86,15 @@ export function readSecondaryKey(
   env: NodeJS.ProcessEnv,
   readEnvFile: (path: string) => void,
 ): string {
-  readEnvFile(`${env.DOCUMENSO_PRODUCT_DIR ?? "/home/user/products/documenso"}/.env`);
+  const envFile = env.DOCUMENSO_PRODUCT_DIR
+    ? path.join(env.DOCUMENSO_PRODUCT_DIR, ".env")
+    : path.join(productsRoot(env), "documenso", ".env");
+  try {
+    readEnvFile(envFile);
+  } catch {
+    // The path is not a secret; the file contents never appear in the message.
+    throw new Error(`ENV: cannot read the fork .env at ${envFile}`);
+  }
   const key = process.env.NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY;
   if (!key) throw new Error("ENV: NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY not in the fork .env");
   return key;
