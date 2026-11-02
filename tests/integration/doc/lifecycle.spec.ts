@@ -6,6 +6,7 @@ import { test, expect } from "../../../src/fixtures/index.ts";
 import { readOnlyDb } from "../../../src/db/pg.ts";
 import { apiBaseUrl } from "../../../src/env.ts";
 import { v2Post, distribute, type LaneHttp } from "../../../src/lanes/doc/envelope.ts";
+import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
 import { completedEnvelope } from "../../fixtures/doc/completed-envelope.ts";
 import { distributedEnvelope } from "../../fixtures/doc/distributed-envelope.ts";
@@ -22,6 +23,18 @@ async function auditCounts(
     [envelopeId],
   );
   return Object.fromEntries(rows.map((r) => [r.type, r.n]));
+}
+
+/** EMAIL_SENT audit rows by emailType (the product records one row per email). */
+async function emailTypeCounts(
+  db: ReturnType<typeof readOnlyDb>,
+  envelopeId: string,
+): Promise<Record<string, number>> {
+  const rows = await db.select<{ t: string; n: number }>(
+    `SELECT a."data"->>'emailType' AS t, COUNT(*)::int AS n FROM "DocumentAuditLog" a WHERE a."envelopeId" = $1 AND a."type" = 'EMAIL_SENT' GROUP BY 1 ORDER BY 1`,
+    [envelopeId],
+  );
+  return Object.fromEntries(rows.map((r) => [r.t, r.n]));
 }
 
 test("P2-DOC-SM-001 completing an envelope through the product sets completedAt (B3 oracle)", async ({
@@ -161,14 +174,27 @@ test("P2-DOC-AUD-001 a full lifecycle writes exactly one audit row per action ty
     runPrefix,
   });
   try {
-    const counts = await auditCounts(db, done.envelopeId);
-    expect(counts).toEqual(EXPECTED_AUDIT_ONE_SIGNER);
+    // Wait for the real condition: both completion notices are audited (an asynchronous job, not a sleep).
+    await expect
+      .poll(async () => (await emailTypeCounts(db, done.envelopeId)).DOCUMENT_COMPLETED ?? 0, {
+        timeout: SLO.docWebhookDelivery.ms,
+        intervals: POLL_INTERVALS,
+        message: "completion notices audited",
+      })
+      .toBe(2);
+    expect(await auditCounts(db, done.envelopeId)).toEqual(EXPECTED_AUDIT_ONE_SIGNER);
+    expect(await emailTypeCounts(db, done.envelopeId)).toEqual(EXPECTED_EMAIL_TYPES_ONE_SIGNER);
   } finally {
     await doc.envelopes.remove(done.envelopeId);
   }
 });
 
-/** Pinned after measurement (see the AUD-001 note in the PR body). */
+/**
+ * One row per lifecycle action, and one EMAIL_SENT row per email sent. Measured 2026-11-02 on a one-signer
+ * envelope: the signing request (at distribute) and two completion notices (owner and signer, written by an
+ * asynchronous job after DOCUMENT_COMPLETED). The plan's "exactly one per type" holds for every type except
+ * EMAIL_SENT, which is one row per email (plan statement corrected; see the PR body).
+ */
 const EXPECTED_AUDIT_ONE_SIGNER: Record<string, number> = {
   DOCUMENT_COMPLETED: 1,
   DOCUMENT_CREATED: 1,
@@ -176,9 +202,12 @@ const EXPECTED_AUDIT_ONE_SIGNER: Record<string, number> = {
   DOCUMENT_FIELD_INSERTED: 1,
   DOCUMENT_RECIPIENT_COMPLETED: 1,
   DOCUMENT_SENT: 1,
-  // One row per email sent (the signing request and the completion notice): 2, not 1 (plan statement corrected).
-  EMAIL_SENT: 2,
+  EMAIL_SENT: 3,
   FIELD_CREATED: 1,
+};
+const EXPECTED_EMAIL_TYPES_ONE_SIGNER: Record<string, number> = {
+  DOCUMENT_COMPLETED: 2,
+  SIGNING_REQUEST: 1,
 };
 
 test("P2-DOC-AUD-002 the certificate PDF names each signer", async ({ doc, request, docAuth }) => {
