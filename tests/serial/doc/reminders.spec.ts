@@ -1,6 +1,6 @@
 import { test, expect } from "../../../src/fixtures/index.ts";
 import { readOnlyDb } from "../../../src/db/pg.ts";
-import { completeRecipient } from "../../../src/lanes/doc/envelope.ts";
+import { completeRecipient, signField } from "../../../src/lanes/doc/envelope.ts";
 import { bodyOf, listMail, mailboxOf } from "../../../src/lanes/doc/mail.ts";
 import {
   documensoFixtureWriter,
@@ -86,6 +86,9 @@ test("P2-DOC-REM-002 a recipient who signed gets no reminder (one cron tick)", a
     if (signed === undefined || pending === undefined)
       throw new Error("TEST BUG: need two signers");
     // The first recipient completes (signed); the second stays pending and is due for a reminder.
+    // Sign the field first: completing a recipient without a signed field is refused (400).
+    if (signed.fieldId === undefined) throw new Error("TEST BUG: recipient has no signature field");
+    expect(await signField(env.http, signed)).toBe(200);
     expect(await completeRecipient(env.http, env.prepared, signed)).toBe(200);
     const signedMailbox = mailboxOf(signed.email);
     const pendingMailbox = mailboxOf(pending.email);

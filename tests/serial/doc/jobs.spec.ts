@@ -23,8 +23,8 @@ test("P2-DOC-JOB-001 a completed envelope has exactly one seal job", async ({
   });
   try {
     const rows = await db.select<{ n: number }>(
-      `SELECT COUNT(*)::int AS n FROM "BackgroundJob" WHERE "jobId" = 'internal.seal-document' AND "payload"::text LIKE $1`,
-      [`%"documentId":${String(done.prepared.documentId)}%`],
+      `SELECT COUNT(*)::int AS n FROM "BackgroundJob" WHERE "jobId" = 'internal.seal-document' AND "payload"->>'documentId' = $1`,
+      [String(done.prepared.documentId)],
     );
     expect(rows[0]?.n).toBe(1);
   } finally {
@@ -58,8 +58,8 @@ test("P2-DOC-JOB-004 three signed re-dispatches of a terminal job are refused by
       payload: unknown;
       status: string;
     }>(
-      `SELECT "id" AS id, "jobId" AS "jobId", "payload" AS payload, "status" AS status FROM "BackgroundJob" WHERE "jobId" = 'internal.seal-document' AND "payload"::text LIKE $1`,
-      [`%"documentId":${String(done.prepared.documentId)}%`],
+      `SELECT "id" AS id, "jobId" AS "jobId", "payload" AS payload, "status" AS status FROM "BackgroundJob" WHERE "jobId" = 'internal.seal-document' AND "payload"->>'documentId' = $1`,
+      [String(done.prepared.documentId)],
     );
     const job = jobRows[0];
     if (job === undefined) throw new Error("TEST BUG: no seal job row for the envelope");
