@@ -1,5 +1,9 @@
 import type { ProductId } from "../env.ts";
 import type { Rule } from "./engine.ts";
+import { ESC, LEAK_LIKE_CONTAINS, LEAK_LIKE_PREFIX, RUN_START } from "./lane-kit.ts";
+import { calLaneRules } from "./lanes/cal.ts";
+import { documensoLaneRules } from "./lanes/documenso.ts";
+import { medusaLaneRules } from "./lanes/medusa.ts";
 
 /**
  * One rule list per product. Every rule cites the schema line it relies on at the pinned ref
@@ -7,12 +11,7 @@ import type { Rule } from "./engine.ts";
  * `basis: "live"` rules are checked against the running product by the Task 5 readiness spec,
  * which fails on an unknown table or column (SQLSTATE 42P01/42703).
  */
-const LEAK_LIKE_PREFIX = "prefix-like" as const;
-const LEAK_LIKE_CONTAINS = "contains-like" as const;
-const RUN_START = "run-start" as const;
-const ESC = String.raw`ESCAPE '\'`;
-
-export const RULES: Readonly<Record<ProductId, readonly Rule[]>> = {
+const FOUNDATION_RULES: Readonly<Record<ProductId, readonly Rule[]>> = {
   cal: [
     {
       id: "cal-task-succeeded-has-attempt",
@@ -84,28 +83,6 @@ export const RULES: Readonly<Record<ProductId, readonly Rule[]>> = {
       verified: "2026-11-01",
       param: LEAK_LIKE_PREFIX,
       sql: `SELECT "id"::text AS id, "email" AS value FROM "users" WHERE "email" LIKE $1 ${ESC}`,
-    },
-    {
-      id: "cal-leak-scheduled-trigger",
-      kind: "leak",
-      description:
-        "No scheduled trigger of this run is left (its subscriber URL carries the run prefix)",
-      cite: "packages/prisma/schema.prisma:1313-1327 (WebhookScheduledTriggers.subscriberUrl)",
-      basis: "live",
-      verified: "2026-11-02",
-      param: LEAK_LIKE_CONTAINS,
-      sql: `SELECT s."id"::text AS id, s."subscriberUrl" AS value FROM "WebhookScheduledTriggers" s WHERE s."subscriberUrl" LIKE $1 ${ESC}`,
-    },
-    {
-      id: "cal-leak-booking-active",
-      kind: "leak",
-      description:
-        "No ACCEPTED or PENDING booking of this run is left (attendee email carries the run prefix)",
-      cite: "packages/prisma/schema.prisma:851-900 (Booking.status); Attendee.email",
-      basis: "live",
-      verified: "2026-11-02",
-      param: LEAK_LIKE_PREFIX,
-      sql: `SELECT b."uid" AS id, b."status"::text AS value FROM "Booking" b JOIN "Attendee" a ON a."bookingId" = b."id" WHERE a."email" LIKE $1 ${ESC} AND b."status"::text IN ('ACCEPTED', 'PENDING')`,
     },
   ],
   documenso: [
@@ -266,6 +243,17 @@ export const RULES: Readonly<Record<ProductId, readonly Rule[]>> = {
       sql: `SELECT "id"::text AS id, "nameFirstName" AS value FROM {schema}."person" WHERE "nameFirstName" LIKE $1 ${ESC} AND "deletedAt" IS NULL`,
     },
   ],
+};
+
+/**
+ * The shared index. Foundation rules stay in FOUNDATION_RULES above; each lane's rules come from its
+ * own file under ./lanes/ and are appended here. A lane never edits this file.
+ */
+export const RULES: Readonly<Record<ProductId, readonly Rule[]>> = {
+  cal: [...FOUNDATION_RULES.cal, ...calLaneRules],
+  documenso: [...FOUNDATION_RULES.documenso, ...documensoLaneRules],
+  medusa: [...FOUNDATION_RULES.medusa, ...medusaLaneRules],
+  twenty: FOUNDATION_RULES.twenty,
 };
 
 export function rulesFor(product: ProductId): readonly Rule[] {
