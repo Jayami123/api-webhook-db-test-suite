@@ -199,3 +199,17 @@ Top-level keys of each route's 200 body on the same stack (values and ids not re
 | `POST /store/carts/{id}/line-items` (invalid variant) | 400 | `type` (`invalid_data`), `message` |
 
 The CON-002 error type is `invalid_data`, not the plan's UNPROBED `not_found` (corrected in the spec).
+
+## 4. Webhook probes for L2 (the cases the plan marked UNPROBED)
+
+Each row is one session with a valid control in a second session, on the 0.3.1 stack, signed with the run secret.
+
+| Probe | Sequence | Observed |
+|---|---|---|
+| WH-003 A | `amount_capturable_updated`, then `succeeded` (one session) | both answers 200; authorized after 5204 ms (the capturable update); still authorized after `succeeded`; payments **1** |
+| WH-003 B | `succeeded`, then `amount_capturable_updated` | 200; authorized after 5168 ms; still authorized after the capturable update; payments **1** |
+| WH-006 tampered | header signed for the original bytes, body changed (`"amount":1000` → `"amount":1001`) | route answers 200; the valid control is authorized (5215 ms); the tampered target stays **pending** |
+
+Neither order produces `captured` (no payment data on this path; C8, RD-3). The end state of both orders is `authorized` with one payment.
+
+The L2 webhook layer (26 tests: WH-001, WH-002, WH-003 in two sub-steps, WH-006 three titles, WH-008 twenty runs) passed 26 of 26 on a fresh stack (2026-11-02 build, `med-api` project, `STRIPE_API_KEY` set, 1.7 min).
