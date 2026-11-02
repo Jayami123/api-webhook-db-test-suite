@@ -171,3 +171,31 @@ Confirmed names used by the lane (columns not listed here are not read):
 - **F10** Order totals JSON has no item, shipping, tax or discount keys (P-MED-8). The conservation rule computes them from line, shipping and adjustment tables (latest version).
 
 No product bug is suspected in L0. Any red case later is root-caused and recorded here or in the PR body.
+
+## 3. Store response shapes behind the contract subset (L1)
+
+Top-level keys of each route's 200 body on the same stack (values and ids not recorded). The contract subset (`contracts/med/store.openapi.yaml`) requires only the keys below and allows the rest.
+
+| Route | Status | Top-level keys (required in the subset, with types) |
+|---|---|---|
+| `POST /store/carts` | 200 | `cart`: `id`, `region_id`, `currency_code`, `email`, `item_total`, `subtotal`, `total`, `items` (array; empty before a line) |
+| `POST /store/carts/{id}/line-items` | 200 | `cart` (same; `items` non-empty) |
+| `GET /store/carts/{id}` | 200 | `cart` (same) |
+| `POST /store/payment-collections` | 200 | `payment_collection`: `id`, `currency_code`, `amount`, `payment_sessions` |
+| `POST /store/payment-collections/{id}/payment-sessions` | 200 | `payment_collection` (same; the session has `provider_id`) |
+| `POST /store/carts/{id}/complete` | 200 | `type` (`order`), `order`: `id`, `currency_code` |
+| `GET /store/regions` | 200 | `count`, `limit`, `offset`, `regions` |
+| `GET /store/products` | 200 | `count`, `limit`, `offset`, `products` |
+| `GET /store/product-categories` | 200 | `count`, `limit`, `offset`, `product_categories` |
+| `GET /store/collections` | 200 | `count`, `limit`, `offset`, `collections` |
+| `GET /store/product-tags` | 200 | `count`, `limit`, `offset`, `product_tags` |
+| `GET /store/product-types` | 200 | `count`, `limit`, `offset`, `product_types` |
+| `GET /store/currencies` | 200 | `count`, `limit`, `offset`, `currencies` |
+| `GET /store/return-reasons` | 200 | `count`, `limit`, `offset`, `return_reasons` |
+| `GET /store/payment-providers?region_id` | 200 | `count`, `limit`, `offset`, `payment_providers` |
+| `GET /store/shipping-options?cart_id` | 200 | `shipping_options` |
+| `GET /store/customers/me` | 401 | `message` |
+| `GET /store/orders` | 401 | `message` |
+| `POST /store/carts/{id}/line-items` (invalid variant) | 400 | `type` (`invalid_data`), `message` |
+
+The CON-002 error type is `invalid_data`, not the plan's UNPROBED `not_found` (corrected in the spec).
