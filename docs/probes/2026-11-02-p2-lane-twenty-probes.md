@@ -276,6 +276,29 @@ The first `up` attempt in S1 failed in 1 s with `Cal product root does not exist
 
 ---
 
+### P-TW-13. Route-triggered logic function: driver, create, route call (RT-001). (BLOCKED)
+- Date (UTC): 2026-11-02T10:43Z to 10:47Z (S3)
+- Product commit: `7cbdfec6f346b43715bc2056932f4fad5886f733`; Harness: `0.3.0`
+- Stack S3: `up` exit 0 (`PRODUCTS_ROOT=/home/user/products`, allow-list set, no billing); seed ok; roles ok.
+- Command: `specs/rt.spec.ts` (one attempt): server `NODE_ENV`, `LOGIC_FUNCTION_TYPE`; introspection of `Mutation.createOneLogicFunction` and its input; one `createOneLogicFunction` with `name`, `description`, `timeoutSeconds`, `httpRouteTriggerSettings: {path, httpMethod: POST, isAuthRequired: false}`; one `POST /s/p2-rt-probe`; `deleteOneLogicFunction` attempted. Read-only follow-up on the same running stack: `specs/rt2.spec.ts` (`qa_ro`, tables `routeTrigger`, `logicFunction`).
+- Output (trimmed):
+  ```text
+  NODE_ENV=production
+  LOGIC_FUNCTION_TYPE=UNSET   (printenv on the server; the probe's first print of this value was a quoting error and was re-read)
+  createArgs: input: CreateLogicFunctionFromSourceInput
+  createInputFields: id, universalIdentifier, name, description, timeoutSeconds:Float, source:JSON, cronTriggerSettings, databaseEventTriggerSettings, httpRouteTriggerSettings:JSON, serverRouteTriggerSettings, toolTriggerSettings, workflowActionTriggerSettings
+  createAttempt: no errors; data.createOneLogicFunction = { id: b789d4ee-…, name: p2-rt-probe }
+  POST /s/p2-rt-probe → 404 {"code":"TRIGGER_NOT_FOUND","messages":["No Route trigger found"]}
+  qa_ro: core.logicFunction row "p2-rt-probe" created 10:46:03Z (sourceHandlerPath set; builtHandlerPath set)
+  qa_ro: no table named routeTrigger in any schema
+  deleteOneLogicFunction: attempted by the probe; the row was still present on the follow-up read (delete not confirmed)
+  ```
+- Proves: a logic function with a route setting can be created through the API, but the route is not registered (404 `TRIGGER_NOT_FOUND`). The server runs the logic-function driver `DISABLED` in production (`LOGIC_FUNCTION_TYPE` unset; default `DISABLED` when `NODE_ENV` is not `development`), so a route-triggered function cannot execute on this harness. RT-001 cannot be probed further without changing the driver (not a pass-through name).
+- Citation: `packages/twenty-server/src/engine/core-modules/twenty-config/config-variables.ts:732-735` (default), `src/engine/core-modules/logic-function/logic-function-drivers/logic-function-driver.factory.ts:50-51` (DISABLED → `DisabledDriver`); `src/engine/metadata-modules/route-trigger/route-trigger.controller.ts:25-53`; `twenty-shared/src/application/logicFunctionManifestType.ts:33-38` (`HttpRouteTriggerSettings`).
+- Status: BLOCKED. RT-001 stays blocked (OD-13).
+
+Stack S3 cleanup note: the probe runner's `down` never started. Its log path was relative to the wrong folder (the shell failed the redirection before `down` ran), so the stack stayed up for about two minutes. `down` was then run by hand with the correct path: rc 0, zero `qa-harness-*` containers, ports 3002, 4317, 5434 refused. The runner script (`/tmp/p2-lane-probes/rt-run.sh`) was not corrected; any future run must use the explicit `down` command with a log path under `/tmp/p2-lane-probes/out/`.
+
 ## Contradictions with earlier records and the index
 
 | # | Earlier statement | This pass | Entry |

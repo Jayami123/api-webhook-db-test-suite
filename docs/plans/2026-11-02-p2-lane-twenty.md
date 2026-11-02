@@ -7,8 +7,8 @@ pinned fork). Nothing is built; no product, fork, harness or `.env` was changed.
 > **STATUS (second pass).** The harness gate passed after `npm ci` (harness `0.3.0`, stripe `23.0.1`, unit baseline **285**,
 > 0 failures). Probes P-TW-1 to P-TW-12 ran on the pinned harness, one stack at a time (two stacks; both ended with `down`).
 > Results that changed the plan:
-> 1. **B1 is not reproduced as a test-grade bug.** One drop in six attempts (P-TW-2n); five of six delivered; three timed attempts
->    after idle gaps all delivered. The B1 test is a **regression check** with no `test.fail()` (rule 12).
+> 1. **B1 is a SUSPECTED intermittent PRODUCT BUG, now P2-TW-WH-010.** One drop in six first-event attempts so far (P-TW-2n). The regression check is replaced by a 50-case delivery study in the serial project (sections 6.8 and 8.7).
+>    after idle gaps all delivered. No `test.fail()`: the drop is not reliable enough for a known-bug marker (rule 12). OD-15 is applied: a measured study replaces the check.
 > 2. **The payload has no event id.** TW-WH-006 is rewritten to the identity fields the body really carries.
 > 3. **Webhook response rows are in ClickHouse** (not started by the harness). The response-row oracle is unavailable; the receiver is the oracle.
 > 4. **The OAS needs the bearer** (403 without); the contract cases save the authenticated document and load the file.
@@ -32,7 +32,7 @@ Naming: the brief's short forms (`TW-WH-001`) are written as the index writes th
 | Harness | `qa-portfolio-harness` `0.3.0` (`be86e0e`), installed by `npm ci` (P0-r2) |
 | Build branches | `feat/<builder date>-p2-twenty-l<n>-<topic>`, `<builder date>` = `date -u +%F` at task start. L0 is cut from `origin/main`. Each later task is cut from the **previous task's branch head** while that PR is open, and its PR targets that branch. After the previous PR merges, re-cut from `origin/main`; the PR targets `main`. |
 | Unit baseline | **285** on `aa10ec1` (P0-r2; per-file record P0-r2b). Measured again at each task start (`npm run unit 2>&1 \| grep -E '^# (tests\|pass\|fail)'`). The plan's counts are **deltas**: "base + N". (The 277 in the index is out of date: the foundation build added tests.) |
-| Lane deltas | Unit **+21** (L0 +19; L5 +2). Specs: **18** new `tw` tests built, plus **1** BLOCKED row (RT-001) not built. `tw-api` listing = 5 existing readiness tests + 18 = **23**. Deferred and cut rows are not listed. |
+| Lane deltas | Unit **+21** (L0 +19; L5 +2), unchanged. Normal lane: **17** new `tw` tests (L1 7, L2 8, L3 2). Serial: **50** study cases for P2-TW-WH-010 in `tw-serial`. BLOCKED, not built: RT-001. Deferred: CACHE-001, WH-009, STR-002. `tw-api` listing = 5 readiness + 17 = **22**. |
 | Ownership | P5 owns the security verdict (TW-WH-009, deferred); P6 owns user-action races; P2 keeps worker, cron and queue concurrency (TW-STR-001). |
 
 ---
@@ -54,6 +54,7 @@ Naming: the brief's short forms (`TW-WH-001`) are written as the index writes th
 | P-TW-9 (+9b) | Route trigger creation path | PARTIAL | route triggers are fields on logic functions (`httpRouteTriggerSettings`); `createOneLogicFunction` exists; workflow executor UNPROBED |
 | P-TW-10 (+10b, 10c) | REST OAS | CONFIRMED | 403 without the bearer, 200 with it (OAS 3.1.1, 362 paths); cursor params `startingAfter` / `endingBefore`; loader accepts the saved authenticated file, rejects the URL |
 | P-TW-11 | Where `webhook.response` rows live | CONFIRMED: not in Postgres | ClickHouse (`event-logs.service.ts:37, 52`); the harness does not start it |
+| P-TW-13 | Route-triggered logic function (RT-001): driver, create, route call | BLOCKED | created in `core.logicFunction`; route `POST /s/…` → 404 `TRIGGER_NOT_FOUND`; server `LOGIC_FUNCTION_TYPE` unset in production → `DisabledDriver` |
 | P-TW-12 | `test.fail()` masking; serial behaviour | CONFIRMED | a broken control inside `test.fail()` is reported as passed; unexpected pass fails; a serial failure skips the rest |
 
 Every runtime claim below is either in this table as CONFIRMED / PARTIAL, or marked UNPROBED with the probe that would settle it.
@@ -101,12 +102,13 @@ Every runtime claim below is either in this table as CONFIRMED / PARTIAL, or mar
 | P2-TW-WH-004 | U ("1 request") | L2 | `tests/webhooks/tw/delivery.spec.ts` | `P2-TW-WH-004: a receiver 500 gets exactly one request for the event (no retry)` | count + quiet window | built |
 | P2-TW-WH-005 | U ("4 s / 6 s against the 5000 ms timeout") | L2 | same | `P2-TW-WH-005: a 4 s receiver delay is delivered once` and `P2-TW-WH-005: a 6 s delay is one request; the 5000 ms timeout closes the call and nothing retries` (2 tests) | receiver count (the response row is in ClickHouse: unavailable) | built |
 | P2-TW-WH-006 | U (**wording changed, OD-4**) | L2 | same | `P2-TW-WH-006: the delivered body carries the created webhook id, the event name and the created person id, and one request is sent per event` | body fields vs created ids; count | built |
-| B1 regression check | working title; owner assigns the ID (OD-3) | L2 | `tests/webhooks/tw/b1-drop.spec.ts` | `B1 control: a fresh webhook delivers an event sent after one memo window` (test 1, must pass) and `B1 webhook drop (ID pending): an event sent inside the memo window is delivered` (test 2, regression check, **no test.fail()**) | receiver | built (2 tests) |
+| B1 control | working title; positive control for the B1 study | L2 | `tests/webhooks/tw/b1-drop.spec.ts` | `B1 control: a fresh webhook delivers an event sent after one memo window` (1 test, must pass) | receiver | built (1 test) |
+| P2-TW-WH-010 | B1 delivery study (ID assigned by the owner; SUSPECTED intermittent PRODUCT BUG) | L4 (serial) | `tests/serial/tw/b1-study.serial.spec.ts` | `P2-TW-WH-010 case <n> (<mode>): one event is delivered`, for 50 fixed cases; summary in `results/p2-tw-wh-010-study.json` | receiver count per case; worker log on failure | built (50 serial tests) |
 | P2-TW-STR-001 | U ("last-arrival-wins") | L3 | `tests/integration/tw/billing.spec.ts` | `P2-TW-STR-001: two subscription events sent out of order leave the newest one stored` | `qa_ro` billing row | **BLOCKED**: billing schema absent (P-TW-7b). Built as a gated skip with the reason (1 test) |
 | P2-TW-DEL-002 | U | L3 | `tests/integration/tw/soft-delete.spec.ts` | `P2-TW-DEL-002: a soft-deleted person is absent from the REST list and from search` | `qa_ro` `deletedAt IS NOT NULL` | built |
-| P2-TW-RT-001 | K | L3 | `tests/integration/tw/route-trigger.spec.ts` | `P2-TW-RT-001: POST to a route trigger runs its workflow and creates one record` | `qa_ro` count | **BLOCKED** (not built): the route path is probed (P-TW-9), the workflow executor is not (new probe required, section 14.2 OD-13) |
+| P2-TW-RT-001 | K | L3 | `tests/integration/tw/route-trigger.spec.ts` (not created) | `P2-TW-RT-001: POST to a route trigger runs its workflow and creates one record` | `qa_ro` count | **BLOCKED** (not built): P-TW-13 shows the route is not registered (404 `TRIGGER_NOT_FOUND`) and the driver is disabled in production (OD-13) |
 
-**Built new `tw` tests: L1 = 7, L2 = 9, L3 = 2 (STR-001 gated skip, DEL-002). Total 18.** The `tw-api` listing is 5 readiness + 18 = **23**.
+**Built new normal-lane `tw` tests: L1 = 7, L2 = 8 (WH-001 ×1, WH-007 ×1, WH-003 ×1, WH-004 ×1, WH-005 ×2, WH-006 ×1, B1 control ×1), L3 = 2 (STR-001 gated skip, DEL-002). Total 17.** The `tw-api` listing is 5 readiness + 17 = **22**. **Serial study (L4): 50 cases** in `tw-serial`.
 
 **DEFERRED (not built, no workaround planned; section 13):**
 - **P2-TW-CACHE-001**: HR-4 (two server replicas; P-TW-8).
@@ -167,7 +169,7 @@ TW-RACE-004, OBS-TW-001, P6-OBS-DOC-003. Not built here.
 | Case | Trigger | Product path | Receiver or DB | Oracle | Foundation modules |
 |---|---|---|---|---|---|
 | WH-001/007/003/004/005/006 | `tw.people.create` / `update` / `delete` | `call-webhook-jobs` → `call-webhook` → axios (5 000 ms) | receiver `deliveries(key)` | `verifyTwenty` / body fields / count | `fixtures/index.ts`, `webhooks/receiver.ts`, `webhooks/sign.ts`, `webhooks/verify.ts`, `readiness/canary.ts`, `readiness/checks.ts`, `slo.ts` |
-| B1 control and regression | create webhook; prime (one call); one event; wait memo + margin; canary | workspace map memo (10 s) | receiver | delivery count | as above + `src/lanes/tw/*` |
+| B1 control and study | create webhook; prime (one call, study mode `prime`); one event; study modes `idle12` and `warm0`; wait memo + margin (control) | workspace map memo (10 s) | receiver | delivery count per case | as above + `src/lanes/tw/*` |
 | CON-001 / CON-002 | authenticated `GET` (saved OAS file) / `POST /graphql` | REST / GraphQL | HTTP | `ContractSpec.assertValid` (`contracts/oas.ts:257-264`) | `auth/twenty.ts`, `contracts/oas.ts` |
 | PAG-001/002, CUR-001 | REST create and list (`startingAfter`) | REST | HTTP + `qa_ro` (`db/pg.ts`) | id sets; exact value | `db/pg.ts` |
 | DEL-002 | REST soft delete | REST | `qa_ro` `deletedAt` | `IS NOT NULL` | `db/pg.ts`, `db/roles.ts` (`quoteIdent`) |
@@ -194,6 +196,10 @@ export const TW_QUIET_WINDOW_MS = TW_OUTBOUND_TIMEOUT_MS + 1_000;
 export const TW_QUIET_TIMEOUT_MS = TW_QUIET_WINDOW_MS + 1_000;
 /** Canary wait: one memo window (workspace-cache.service.ts:56) plus CANARY_MARGIN_MS (src/slo.ts). */
 export const TW_VISIBLE_TIMEOUT_MS = TWENTY_WEBHOOK_MEMO_MS + CANARY_MARGIN_MS;
+/** Study delivery budget (P2-TW-WH-010): the 5 s outbound timeout plus a 10 s margin. Measured arrivals were within 0.2 s (P-TW-2a/b/c). */
+export const TW_STUDY_DELIVERY_MS = TW_OUTBOUND_TIMEOUT_MS + 10_000;
+/** Idle gap before an `idle12` study case: one memo window (10 s, workspace-cache.service.ts:56) plus 2 s. */
+export const TW_STUDY_IDLE_MS = TWENTY_WEBHOOK_MEMO_MS + 2_000;
 /** P2 receiver policy for |timestamp - receipt| (TW-WH-001). The product documents no tolerance. */
 export const TW_RECEIPT_TOLERANCE_MS = 5_000;
 
@@ -382,7 +388,7 @@ export async function createFreshWebhook(input: {
 
 /**
  * B1 precondition (one call, no retry): one unrelated event before the webhook is created. P-TW-2r CONFIRMED that this
- * alone did not drop the first event; the regression test keeps it so the sequence matches the probe. Returns the id for cleanup.
+ * alone did not drop the first event in P-TW-2r; the study keeps it so the sequence matches the probe. Returns the id for cleanup.
  */
 export async function primeWorkspaceCache(tw: TwentyClient): Promise<string> {
   return tw.people.create(runScopedName("tw-prime"));
@@ -531,57 +537,135 @@ WH-005 (two tests): the same shape with `setMode(key, {kind:"slow", delayMs: 400
 
 WH-006 (identity wording, OD-4): `const body = JSON.parse(delivery.rawBody.toString("utf8")) as { webhookId: string; eventName: string; record: { id: string } }`; `expect(body).toMatchObject({ webhookId: hook.id, eventName: "person.created", record: { id: realId } })`; `expect(Object.keys(body)).toEqual(expect.arrayContaining(["targetUrl","eventName","objectMetadata","workspaceId","webhookId","eventDate","record"]))`; `count === 1`.
 
-**`tests/webhooks/tw/b1-drop.spec.ts`** (B1 regression check, two serial tests):
-```ts
-/**
- * B1 (index section 5). Not reproduced as a test-grade bug: 5 of 6 first events delivered; the one drop (P-TW-2n) was
- * intermittent and not reliable enough for test.fail() (rule 12; P-TW-12 shows test.fail() masks a broken control).
- * Two serial tests: test 1 is the positive control (must pass; serial mode skips test 2 if it fails). Test 2 is a plain
- * regression check: the first event is delivered. If it ever fails, that is a finding to report, not a reason to retry.
- */
-test.describe.serial("B1 webhook drop (ID pending)", () => {
-  test("B1 control: a fresh webhook delivers an event sent after one memo window", async ({ tw, receiverHandle }) => {
-    const testId = "tw-b1-control";
-    const key = receiverHandle.key(testId);
-    const hook = await createFreshWebhook({ tw, receiverHandle, testId, operations: ["person.created"] });
-    const created: string[] = [];
-    try {
-      const visible = await awaitVisible({ tw, receiver: receiverHandle.receiver, key, createdAtMs: Date.now(), nowMs: Date.now, deliveryMs: SLO.twWebhookDelivery.ms,
-        waitUntil: (predicate, timeoutMs, message) => expect.poll(predicate, { timeout: timeoutMs, intervals: POLL_INTERVALS, message }).toBe(true) });
-      created.push(...visible.personIds);
-      const afterWindow = await tw.people.create(runScopedName("tw-b1-after"));
-      created.push(afterWindow);
-      await expect.poll(() => deliveriesOf(receiverHandle.receiver, key, afterWindow).length, {
-        timeout: SLO.twWebhookDelivery.ms, intervals: POLL_INTERVALS, message: "B1 control delivered",
-      }).toBe(1);
-    } finally {
-      for (const id of created) await tw.people.remove(id);
-      await hook.remove();
-    }
-  });
+**`tests/webhooks/tw/b1-drop.spec.ts`** (B1 positive control; normal lane; one test). It shows the webhook path works after one memo window (P-TW-2a/b/c). It makes no drop claim: the drop rate is measured by the serial study below.
 
-  test("B1 webhook drop (ID pending): an event sent inside the memo window is delivered", async ({ tw, receiverHandle }) => {
-    const testId = "tw-b1-drop";
+```ts
+test("B1 control: a fresh webhook delivers an event sent after one memo window", async ({ tw, receiverHandle }) => {
+  const testId = "tw-b1-control";
+  const key = receiverHandle.key(testId);
+  const hook = await createFreshWebhook({ tw, receiverHandle, testId, operations: ["person.created"] });
+  const created: string[] = [];
+  try {
+    const visible = await awaitVisible({
+      tw, receiver: receiverHandle.receiver, key, createdAtMs: Date.now(), nowMs: Date.now,
+      deliveryMs: SLO.twWebhookDelivery.ms,
+      waitUntil: (predicate, timeoutMs, message) =>
+        expect.poll(predicate, { timeout: timeoutMs, intervals: POLL_INTERVALS, message }).toBe(true),
+    });
+    created.push(...visible.personIds);
+    const afterWindow = await tw.people.create(runScopedName("tw-b1-after"));
+    created.push(afterWindow);
+    await expect.poll(() => deliveriesOf(receiverHandle.receiver, key, afterWindow).length, {
+      timeout: SLO.twWebhookDelivery.ms, intervals: POLL_INTERVALS, message: "B1 control delivered",
+    }).toBe(1);
+  } finally {
+    for (const id of created) await tw.people.remove(id);
+    await hook.remove();
+  }
+});
+```
+
+**`tests/serial/tw/b1-study.serial.spec.ts`** (P2-TW-WH-010; `tw-serial` project only; not in the normal lane). A fixed batch of 50 cases, one Playwright test per case, so each case stays inside the 60 s test timeout (`playwright.config.ts`). Every case asserts that its event is delivered within `TW_STUDY_DELIVERY_MS`. A case that fails before the send is reported as a setup failure, not a drop. On a drop, the case attaches the worker log (the CallWebhookJob and Outbound lines since the case started). The summary (count, rate, dropped case ids) is written in `afterAll`. Nothing is retried, nothing is marked `test.fail()`, and the timeout is not raised (rules 5 and 12).
+
+```ts
+import { execFile } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { promisify } from "node:util";
+import { test, expect } from "../../../src/fixtures/index.ts";
+import { deliveriesOf } from "../../../src/lanes/tw/visible.ts";
+import { createFreshWebhook, primeWorkspaceCache } from "../../../src/lanes/tw/webhook-factory.ts";
+import { POLL_INTERVALS, TW_STUDY_DELIVERY_MS, TW_STUDY_IDLE_MS } from "../../../src/lanes/tw/slo.ts";
+import { runScopedName } from "../../../src/run/prefix.ts";
+
+const exec = promisify(execFile);
+
+/** idle12: an idle gap before the webhook; warm0: no gap after the previous case; prime: one priming event first. */
+export type StudyMode = "idle12" | "warm0" | "prime";
+
+/** The fixed batch: 20 idle12, 20 warm0, 10 prime, in this order on every run. */
+export const STUDY_CASES: readonly { readonly n: number; readonly mode: StudyMode }[] = [
+  ...Array.from({ length: 20 }, (_, i) => ({ n: i + 1, mode: "idle12" as const })),
+  ...Array.from({ length: 20 }, (_, i) => ({ n: 21 + i, mode: "warm0" as const })),
+  ...Array.from({ length: 10 }, (_, i) => ({ n: 41 + i, mode: "prime" as const })),
+];
+
+interface CaseOutcome {
+  readonly n: number;
+  readonly mode: StudyMode;
+  /** True when the event was sent (a case that fails before the send is a setup failure, not a drop). */
+  readonly sent: boolean;
+  readonly delivered: boolean;
+  readonly deliveries: number;
+  readonly sentAt: string;
+}
+const outcomes: CaseOutcome[] = [];
+
+test.afterAll(() => {
+  const sent = outcomes.filter((o) => o.sent);
+  const dropped = sent.filter((o) => !o.delivered);
+  writeFileSync(
+    "results/p2-tw-wh-010-study.json",
+    JSON.stringify(
+      {
+        cases: outcomes.length,
+        sent: sent.length,
+        dropped: dropped.length,
+        rate: sent.length === 0 ? null : dropped.length / sent.length,
+        droppedCases: dropped,
+      },
+      null,
+      2,
+    ),
+  );
+});
+
+/** Worker lines since a time that mention the webhook queue or the outbound request (docker logs). */
+async function workerEvidence(sinceIso: string): Promise<string> {
+  const { stdout, stderr } = await exec(
+    "docker",
+    ["logs", "--since", sinceIso, "--timestamps", "qa-harness-twenty-worker-1"],
+    { maxBuffer: 50_000_000 },
+  );
+  return (stdout + stderr).split("\n").filter((l) => /webhook-queue|Outbound HTTP/.test(l)).join("\n");
+}
+
+for (const c of STUDY_CASES) {
+  test(`P2-TW-WH-010 case ${c.n} (${c.mode}): one event is delivered`, async ({ tw, receiverHandle }, testInfo) => {
+    const testId = `p2-study-${c.n}`;
     const key = receiverHandle.key(testId);
     const created: string[] = [];
     let hook: Awaited<ReturnType<typeof createFreshWebhook>> | undefined;
+    const startedMs = Date.now();
+    const sinceIso = new Date(startedMs).toISOString();
+    let sentAt = "";
+    let sentId: string | undefined;
     try {
-      created.push(await primeWorkspaceCache(tw));
+      if (c.mode === "idle12") {
+        await expect.poll(() => Date.now() >= startedMs + TW_STUDY_IDLE_MS, {
+          timeout: TW_STUDY_IDLE_MS + 2_000, intervals: POLL_INTERVALS, message: "idle gap",
+        }).toBe(true);
+      }
+      if (c.mode === "prime") created.push(await primeWorkspaceCache(tw));
       hook = await createFreshWebhook({ tw, receiverHandle, testId, operations: ["person.created"] });
-      const firstId = await tw.people.create(runScopedName("tw-b1-first"));   // inside the memo window
-      created.push(firstId);
-      await expect.poll(() => deliveriesOf(receiverHandle.receiver, key, firstId).length, {
-        timeout: SLO.twWebhookDelivery.ms, intervals: POLL_INTERVALS, message: "B1: first event delivered",
+      sentId = await tw.people.create(runScopedName(`tw-study-${c.n}`));
+      created.push(sentId);
+      sentAt = new Date().toISOString();
+      await expect.poll(() => deliveriesOf(receiverHandle.receiver, key, sentId as string).length, {
+        timeout: TW_STUDY_DELIVERY_MS, intervals: POLL_INTERVALS, message: `P2-TW-WH-010 case ${c.n}: event delivered`,
       }).toBe(1);
     } finally {
-      for (const id of created) await tw.people.remove(id);
+      const deliveries = sentId === undefined ? 0 : deliveriesOf(receiverHandle.receiver, key, sentId).length;
+      const delivered = deliveries === 1;
+      outcomes.push({ n: c.n, mode: c.mode, sent: sentAt !== "", delivered, deliveries, sentAt });
+      if (sentAt !== "" && !delivered) {
+        await testInfo.attach(`worker-log-case-${c.n}`, { body: await workerEvidence(sinceIso), contentType: "text/plain" });
+      }
+      for (const id of created) await tw.people.remove(id).catch(() => undefined);
       if (hook) await hook.remove();
     }
   });
-});
+}
 ```
-If test 2 ever fails in a later run: label PRODUCT BUG (SUSPECTED, intermittent) with the timeline (P-TW-2n is the reference), and do not add `test.fail()` without a reproduction the owner accepts.
-
 **`tests/integration/tw/pagination.spec.ts`** (PAG-001, PAG-002): create 60 people (`runScopedName("tw-page-<i>")`; labels valid); list with `limit=20` and `startingAfter` (P-TW-10). PAG-001: fetch page 1; create 10 more; walk the rest; `expect(sorted(ids)).toEqual(sorted(created60))`; no duplicates. PAG-002 (OD-5): page size 10; fetch page 1; delete one record from page 2 with `tw.people.remove` before fetching it; walk; expected = created minus the deleted one, each once. Expected values come from creation, not from the DB. All people removed in `finally`.
 
 **`tests/integration/tw/currency.spec.ts`** (CUR-001): `POST /rest/opportunities` with `amount: {amountMicros: "9007199254740991", currencyCode: "USD"}` (body shape UNPROBED; check the OAS schema first); GET back; exact string; the `qa_ro` read of the column name comes from `information_schema` (UNPROBED). The 2^53+1 test: rejected with a validation error, or the parsed value equals the sent value (`Number.isSafeInteger` check fails on a rounded number).
@@ -709,7 +793,7 @@ Measured on the planning VM: cold `up` 191 s (image pull inside), warm-ish `up` 
 
 1. Pre-flight. One stack, `up`, seed, roles.
 2. Write `tests/webhooks/tw/signature.spec.ts`, `payload.spec.ts`, `delivery.spec.ts`, `b1-drop.spec.ts` (section 6.8).
-3. `npx playwright test --project=tw-api tests/webhooks/tw` → 9 passed (the B1 regression check passes; the B1 control passes).
+3. `npx playwright test --project=tw-api tests/webhooks/tw` → 8 passed (the B1 control included). The study is not in this run (section 8.7).
 4. `down`.
 
 ### 8.4 L3: integration (soft delete, billing gate)
@@ -721,7 +805,7 @@ Measured on the planning VM: cold `up` 191 s (image pull inside), warm-ish `up` 
 
 ### 8.5 RT-001 (BLOCKED, not built)
 
-Before RT-001 is built, one new probe must run on a stack: create a logic function with `httpRouteTriggerSettings` through `createOneLogicFunction` (input shape from the introspection in P-TW-9b), call its route, and check whether a workflow or logic run creates a record (`qa_ro` count). If the executor does not run in the harness, RT-001 stays blocked and the owner decides (OD-13).
+P-TW-13 ran on one stack. A route-triggered logic function was created, but the route returned 404 `TRIGGER_NOT_FOUND`, and the server runs the disabled logic-function driver (`LOGIC_FUNCTION_TYPE` unset in production). RT-001 stays BLOCKED (OD-13). It can be reopened only if the owner changes the driver setting (the harness does not pass that variable through; no request is filed now) or a route registration path works with the disabled driver. Neither is planned.
 
 ### 8.6 L5: CI lane job
 
@@ -781,10 +865,19 @@ Before RT-001 is built, one new probe must run on a stack: create a logic functi
    Open points for the first CI run (UNPROBED on runners): the allow-list address (`172.17.0.1` is the usual docker0 address on GitHub-hosted runners); the `PRODUCTS_ROOT` path (the bootstrap's default is `../products`); `timeout 900` until the CI cold `up` is measured. The `always()` `down` is required.
 2. `tests/unit/ci/workflow.test.ts`: +2 tests (`tw-api job needs foundation and has a 30 minute timeout`; `tw-api job ends with an always() harness down step`). Read the file first; keep its style.
 3. `npm run check` exits 0; `npm run unit` = base + 21.
-4. `npm run list:api` shows `tw-api` tests: 23 (5 readiness + 18 new, including the skipped STR-001).
+4. `npm run list:api` shows `tw-api` tests: 22 (5 readiness + 17 new, including the skipped STR-001) and `tw-serial` tests: 50 study cases.
 5. Push, open a PR, subscribe to its CI (section 15).
 
 ---
+
+### 8.7 L4: P2-TW-WH-010 delivery study (serial project)
+
+1. Pre-flight. One stack: `up`, seed, roles (8.0).
+2. Write `tests/serial/tw/b1-study.serial.spec.ts` exactly as section 6.8. The constants `TW_STUDY_DELIVERY_MS` and `TW_STUDY_IDLE_MS` are in `src/lanes/tw/slo.ts` (L0, section 6.1).
+3. Run: `npx playwright test --project=tw-serial`. The project depends on `tw-api` (`playwright.config.ts`), so the normal lane runs first. Expect 50 study cases listed.
+4. Read `results/p2-tw-wh-010-study.json`. Report the case count, the number sent, the drop count, the rate, each dropped case (`n`, `mode`, `sentAt`), and the attached worker-log evidence. Zero drops is a result of 50 measured cases, not a proof that the defect is absent.
+5. Never retry a failed case, never add `test.fail()`, never raise the 60 s test timeout. A red study is intended (OD-15); the owner decides whether `tw-serial` is a required check.
+6. `down`. Confirm zero `qa-harness-*` containers.
 
 ## 9. Done criteria per task (machine-checkable)
 
@@ -802,7 +895,7 @@ Every task:
 Per task extras:
 - L0: the helper files exist; `tests/unit/lanes/tw` has 6 files (18 tests); the clients test has the +1 update test (19 total).
 - L1: 7 passed (section 8.2 step 4).
-- L2: 9 passed; the B1 regression check and control are in the list; the PR states the B1 result as in the probe record (NOT REPRODUCED; intermittent drop P-TW-2n).
+- L2: 8 passed (the B1 control included). L4: 50 study cases listed; `results/p2-tw-wh-010-study.json` written; the PR states the case count, the drop count, the rate and the dropped case ids with their worker-log evidence (if any).
 - L3: DEL-002 passes; STR-001 skipped with its reason printed.
 - L5: the workflow test passes; `npm run check` exit 0.
 
@@ -820,6 +913,7 @@ Per task extras:
 | WH-005 timeout | a retry after the 5 s timeout → count 2 | same; **P-TW-3** (1 request) |
 | WH-006 identity | a changed `webhookId` in the body | `toMatchObject` on the created ids; **P-TW-4** |
 | B1 control | a webhook that never delivers → the control's poll fails and serial mode skips test 2 | serial mode (**P-TW-12 S2/S3**) |
+| P2-TW-WH-010 study | a receiver that never records one case (mutation: skip the delivery) → that case fails, is counted as a drop, and its worker log is attached | serial study, section 8.7 |
 | CANARY bound | a third canary | visible unit test (bound throws) |
 | `quietState` | a count that changes | quiet unit test 3 |
 | gates | a blank key treated as set | gates unit test 3 |
@@ -840,8 +934,9 @@ Lowercase Conventional Commits, explicit paths only (`git add <path>`; never `gi
 | L0 | `docs(probes): record twenty build probes` | the build's dated probe file (if the builder adds one) |
 | L1 | `test(tw): contract, pagination and currency cases` | `tests/contracts/tw/ tests/integration/tw/pagination.spec.ts tests/integration/tw/currency.spec.ts` |
 | L2 | `test(tw): webhook signature, payload and delivery cases` | `tests/webhooks/tw/signature.spec.ts tests/webhooks/tw/payload.spec.ts tests/webhooks/tw/delivery.spec.ts` |
-| L2 | `test(tw): b1 webhook regression check with a positive control` | `tests/webhooks/tw/b1-drop.spec.ts` |
+| L2 | `test(tw): b1 positive control` | `tests/webhooks/tw/b1-drop.spec.ts` |
 | L3 | `test(tw): soft delete and billing gate` | `tests/integration/tw/soft-delete.spec.ts tests/integration/tw/billing.spec.ts` |
+| L4 | `test(tw): b1 delivery study in the serial project` | `tests/serial/tw/b1-study.serial.spec.ts` |
 | L5 | `ci(tw): add the twenty lane job` | `.github/workflows/api.yml tests/unit/ci/workflow.test.ts` |
 
 ## 12. Environment changes
@@ -883,6 +978,9 @@ Lowercase Conventional Commits, explicit paths only (`git add <path>`; never `gi
 
 No new HR item is requested now. HR-4 and HR-5 are deferred as the owner asked; the builder does not plan workarounds for them.
 
+**Harness v0.3.1 candidate list (notes only; not requests):**
+- ClickHouse: start it under `up` so `webhook.response` rows are queryable. P-TW-11 shows the event-log store is ClickHouse (`event-logs.service.ts:37, 52`) and the harness does not start it. Note only; no request is filed.
+
 ## 14. Will not do; Open decisions; Risks; budgets
 
 ### 14.1 Will not do
@@ -900,25 +998,25 @@ No decision is BLOCKING. Each row has a default.
 |---|---|---|---|
 | OD-1 | B1: one test or two serial tests | P-TW-12 (masking) | **APPLIED: two serial tests**, and **no `test.fail()`** because B1 is not reliably reproduced (rule 12) |
 | OD-2 | B1 oracle: receiver or also the response row | C-4: the response row is in ClickHouse | **APPLIED: receiver only** |
-| OD-3 | B1 ID | index section 9 item 7 | open (owner assigns); working title used |
+| OD-3 | B1 ID | owner assigned | **P2-TW-WH-010** (the delivery study) |
 | OD-4 | TW-WH-006 wording | P-TW-4 (no event id) | **APPLIED: identity fields the body carries** (section 4.1 row) |
 | OD-5 | TW-PAG-002 wording (derived) | TW-PAG-001 text | default kept: "a record deleted between two page fetches neither duplicates nor skips another record" |
 | OD-6 | TW-WH-008 rate-limit drops | upstream `webhook-rate-limit.integration-spec.ts:172`; R8 | **APPLIED: CUT** |
 | OD-7 | TW-WH-009 and TW-STR-002 (multi-workspace) | P-TW-6 | **APPLIED: DEFERRED (HR-5)** |
 | OD-8 | TW-CACHE-001 (two replicas) | P-TW-8 | **APPLIED: DEFERRED (HR-4)** |
 | OD-9 | Billing webhook secret source | P-TW-7b (the per-run value reached the server through `up`) | default kept: per run, through the `up` environment |
-| OD-10 | Stripe-backed rows (STR-001) | P-TW-7b: billing tables absent on the image | **open, BLOCKED.** Options: (a) keep STR-001 as a skip with its reason until a billing-capable image is pinned (default); (b) cut P2-TW-STR-001 from the lane. The owner decides. Not BLOCKING: the skip is honest |
+| OD-10 | Stripe-backed rows (STR-001) | P-TW-7b: billing tables absent on the image | **APPLIED: stays a skip with the named reason** (`liveGate`: billing tables absent on `twentycrm/twenty:v2.44.0`). Not BLOCKING |
 | OD-11 | Rate-limit flag write | P-TW-5 | **closed by OD-6** (no write) |
 | OD-12 | People update call | `src/clients/twenty.ts` has no update | default kept: add `update` (+1 unit test) |
-| OD-13 | TW-RT-001 execution path | P-TW-9 (route is a logic-function field); executor UNPROBED | **open**: RT-001 is BLOCKED until one more probe runs a route-triggered logic function that creates a record. Default: not built |
+| OD-13 | TW-RT-001 execution path | P-TW-9, P-TW-13 | **APPLIED: probed; RT-001 stays BLOCKED.** The route returns 404 `TRIGGER_NOT_FOUND`; the server runs the disabled driver (`LOGIC_FUNCTION_TYPE` unset in production; `config-variables.ts:732-735`). Not built |
 | OD-14 | Base unit count | P0-r2: 285 | **closed**: baseline 285; the plan's counts are deltas |
-| OD-15 | `test.fail()` for the intermittent drop | P-TW-2n: one of six | **open, for the owner:** keep as a regression check (default) or accept a `test.fail()` after a longer reproduction study. The plan does not add it now |
+| OD-15 | intermittent B1 drop | P-TW-2n: 1 of 6 | **APPLIED: measured delivery study** (P2-TW-WH-010, 50 cases, serial project). No `test.fail()`. The drop count, the cases and the worker log are reported; the study does not retry |
 
 ### 14.3 Risks
 
 | Risk | Effect | Mitigation |
 |---|---|---|
-| Intermittent B1 drop (1 of 6) | A flaky regression check | the test is a plain check with a positive control; a failure is reported with the P-TW-2n timeline, never retried |
+| Intermittent B1 drop (1 of 6; P2-TW-WH-010) | the serial study goes red when any sent case drops; that is intended. The job reports the case count, the drop count, the dropped case ids and the worker log; nothing is retried |
 | Billing schema absent on the pinned image | STR rows cannot run | BLOCKED with a reason; OD-10 |
 | OAS needs the bearer and the loader takes a file | a CON test that fetches anonymously fails | the spec fetches with the bearer and loads the saved file (P-TW-10) |
 | Event-log rows only in ClickHouse | no DB oracle for response rows | receiver is the oracle; no row assertion |
@@ -932,10 +1030,10 @@ No decision is BLOCKING. Each row has a default.
 |---|---|---|
 | L0 helpers and unit tests | 90 min | no stack |
 | L1 | 60 min | one stack (`up` 110–191 s, seed 85 s) |
-| L2 | 90 min | B1 needs about 35 s per run plus the control |
+| L2 | 90 min | no study in this task |
 | L3 | 45 min | one stack; the STR-001 skip is immediate |
 | L5 | 60 min | CI wall clock measured on the first run |
-| RT-001 probe (new, before RT-001) | 45 min | one stack |
+| L4 study (serial) | 30 min build; ~5 min typical run, ~12.5 min worst case | 50 cases; a drop costs up to 15 s (`TW_STUDY_DELIVERY_MS`); idle gaps 13 s each |
 
 CI deadline: `timeout 900` for `up` until the CI cold start is measured; the job limit is 30 minutes (section 8.6).
 
@@ -1002,6 +1100,6 @@ Other lanes plan in parallel from the same base. This plan names no file or ID o
 ## Appendix: established versus open (quick reference)
 
 - **Established by a probe on the pinned harness (this pass):** the signature (P-TW-1); one request and the 5 s timeout (P-TW-3); no event id and the identity fields (P-TW-4); the flag as a DB row (P-TW-5); the OAS auth and cursor names (P-TW-10); the event-log store (P-TW-11); `test.fail()` masking (P-TW-12); billing signature checks and the missing billing schema (P-TW-7 / 7b); one server replica (P-TW-8).
-- **B1:** not reproduced under the designed sequence (P-TW-2, 2r, a/b/c: 5 of 6 delivered overall); one intermittent drop (P-TW-2n), no fan-out job logged for the first event. The regression check stays; no `test.fail()`.
+- **B1 (P2-TW-WH-010):** SUSPECTED intermittent PRODUCT BUG. One drop in six first-event attempts so far (P-TW-2n); the serial study measures the rate. No `test.fail()`.
 - **Established by code only (file:line):** the cache invalidation on webhook change (R7, corrected), the billing ordering path (upsert, no ordering check), the rate-limit warn and metric.
-- **Open (UNPROBED):** the billing ordering result (schema absent); the route-trigger executor (RT-001); the CI runner's allow-list address and `PRODUCTS_ROOT`; the `/graphql` bearer path (CON-002); the currency column name (CUR-001); the soft-delete REST filter syntax (DEL-002).
+- **Open (UNPROBED):** the billing ordering result (schema absent); the CI runner's allow-list address and `PRODUCTS_ROOT`; the `/graphql` bearer path (CON-002); the currency column name (CUR-001); the soft-delete REST filter syntax (DEL-002). RT-001 executor: blocked by the disabled driver (P-TW-13).
