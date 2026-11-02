@@ -23,7 +23,7 @@
     "specs:validate": "node scripts/validate-specs.ts"
   },
   "dependencies": {
-    "qa-portfolio-harness": "github:Jayami123/qa-portfolio-harness#v0.3.0"
+    "qa-portfolio-harness": "github:Jayami123/qa-portfolio-harness#v0.3.1"
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "13.1.0",
