@@ -1372,3 +1372,39 @@ STOP and report (do not work around) if any of these hold:
 - The branch already exists on `origin`.
 - A sibling lane's plan file appears in the diff.
 - An assertion would have to be weakened to pass (use the root-cause path in section 8.0 step 7).
+
+---
+
+## Build measurements (2026-11-02, build branch `feat/2026-11-03-p2-lane-med`)
+
+This section writes back the values the plan marked UNPROBED. The measured record, with commands and outputs, is `docs/probes/2026-11-02-p2-medusa-l0-probes.md` (sections 1 to 7). The plan text above is unchanged.
+
+| Plan ID | Measured on harness 0.3.1, fork f677db4, Medusa 2.21.2 |
+|---|---|
+| P-MED-1 | Redis event bus; job `payment.webhook_received`, `delay 5000`, `attempts 3`; the failed set is a sorted set |
+| P-MED-2 | receipt age 0 authorized (5.4 s); 299 and 301 pending (controls authorized) |
+| P-MED-2b | receipt age 290 accepted (processing 295 s); 300 rejected (processing 305 s) |
+| P-MED-3 | two parallel deliveries: one payment, authorized |
+| P-MED-4 | one order and one payment per race round; lock is in-process (`MEDUSA_LOCK` unset = memory, medusa-env.ts:177); 20-run end state: one order each (WH-008) |
+| P-MED-5 | JPY 3 x 1500 = 4500; KWD 3 x 1.234 = 3.702 (system path) |
+| P-MED-6 | anonymous write to an open guest cart accepted: quantity 1 to 4; other carts unchanged (F2, P5) |
+| P-MED-7 | cache on: `mc:*` keys 16 → 25 after the first warm read, flat after; price change visible in 51 ms |
+| P-MED-8 | names in section 2 of the probe record (order_summary.totals has no item, shipping, tax or discount keys) |
+| P-MED-9 | pure, unchanged: KWD 1.234 charges 1240 minor |
+| P-MED-10 | bad signature: 3 attempts, parked in the failed sorted set, `atm 3` `ats 3`; the next valid event authorized in 5.1 s |
+| P-MED-11 | price change at starts_at on the database clock, 4902 ms after creation |
+| P-MED-13 | bad row (row 50) refused at preview: 400 invalid_data, no product; 100-row valid file: 100 products after confirm, 255 ms |
+| P-MED-14 | no product-defined scheduled job in the installed packages (code) |
+| P-MED-15 | no OpenAPI document served (404 / 400 on the probed paths) |
+| P-MED-16, 16b | request shapes and reserve/release: completion reserves 2 (0 to 2), cancel releases (2 to 0) |
+| P-MED-17 | Stripe reachable from the stack (session 3, unchanged this session) |
+| P-MED-18 | KWD through Stripe refused by the account (500 unknown_error; Invalid currency: kwd, session 3) |
+| LOC-002 | two channel-linked 1-unit locations, quantity 2: 400 not_allowed "Not enough stock available"; no split, no reservation, no live order |
+| FC-MED-B | rate limiting not present: 60 of 60 reads answered 200 |
+| CON-002 | invalid variant: 400 `invalid_data` with the message "do not exist or belong to a product that is not published" |
+| CON-003 | 13 GET routes: 11 answer 200, two answer 401 (customer routes), none 5xx |
+| WH-003 | both orders end authorized with one payment (no captured status) |
+| WH-006 tampered | route 200, control authorized, tampered target pending |
+| CACHE-001 | built (HR-4 is in 0.3.1; `medusa-env.ts:282-300`); the warm read writes keys, the price change is visible |
+| Unit anchor | B0 = 288 on `fcc4654` (plan: 285 on `aa10ec1`; PR #10 added 3) |
+| Cold up | 146 s on the first stack, 60 to 62 s later (cached image build) |

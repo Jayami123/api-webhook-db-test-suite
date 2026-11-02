@@ -226,3 +226,26 @@ The async-chain layer (EB-002, PL-001, CSV-001, CACHE-001) passed 4 of 4 on a fr
 - **Price lists are not removed with the product.** The PL-001 case deletes its price list by id.
 - **Leak count after the full run, all lane-owned tables** (product title, variant sku, customer email, region name, stock location name, price list title, API key title, promotion code, inventory item sku), by the run prefix: **0 each**.
 - **Full `med-api` run on a fresh stack:** 43 of 43 passed (5 readiness, 4 L1, 26 L2, 4 L3, 4 L4), 2.7 min.
+
+## 7. Self-verification (plan section 10): each mutation was run in the working tree, its case was run alone, and the file was restored from git. Nothing below is committed.
+
+| Case | Mutation | Result | Reason given |
+|---|---|---|---|
+| WH-002 | expected payment count 2 | red (1 failed) | five parallel deliveries: one payment |
+| WH-003 | expected `captured` (wrong by C8) | red | `succeeded authorizes the session`: Expected captured, Received authorized |
+| WH-006 (305 s) | receipt age moved to 290 s (accepted) | red | `stale event rejected`: Expected pending, Received authorized |
+| WH-008 | expected order count 2 (run 01 of 20) | red | live orders for the cart: Expected 2, Received 1 |
+| CON-001 | response body without the cart currency | red | the contract names the missing `currency_code` (and `id`, `region_id`) |
+| CON-002 | expects 201 for an invalid variant | red | status mismatch (the product answers 400) |
+| EB-002 | the bad signature replaced by a valid one | red | the parked-event assertions fail (no job parked for the marker) |
+| PL-001 | `starts_at` on the server clock, one hour ahead | red | the price never changes within the budget |
+| MON-001 | JPY expected one minor unit more | red | order total in minor units |
+| FC-MED-A | expected quantity change +0 (was +3) | red | quantity assertion |
+| LOC-002 | expects the split branch (200) | red | `split: completion status`: Expected 200, Received 400 |
+| CSV-001 | row 50 price valid | red | the bad-file refusal assertion |
+| ORD-001 | tax +1 minor unit in the identity | red | total equals the identity |
+| rules | a clean row replaced by a bad one | red (unit) | `med-inv-level-reserved-matches-reservations` and `med-order-total-conservation` each report the bad row |
+| INV-001 | `nextOp` makes an illegal reserve | red (unit) | `apply` refuses a reserve above available (unit test 20) |
+| CACHE-001 | cache-keys positive control removed | **not red** | expected: a never-filling cache would pass without the control, which is why the control stays |
+
+Not run as live mutations: WH-001 (second delivery signed by another secret; the count assertion is the proof, covered by WH-002's count mutation), WH-006 tampered body (covered by the product's answer, which is asserted green), and CACHE-001 with the control removed (shown above as green, the reason the control exists).
