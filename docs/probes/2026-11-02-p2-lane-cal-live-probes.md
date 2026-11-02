@@ -105,8 +105,8 @@ warm `up cal` 28 s, `down cal` 2 s (plan section 2 timings reproduced).
   `{status, data}`. Schema validation fails (PB-CAL-OAS-1).
 - `POST /v2/bookings`: the 201 schema requires strings and numbers where the live body has `null` (`rescheduledByEmail`, `rating`) and
   requires attendee `seatUid`, `bookingFieldsResponses` that the live body omits (PB-CAL-OAS-1).
-- CON-005 crawl (55 GET operations, own key): 29 crawled, 12 answered 200, 26 UNCRAWLED with reasons (no value for a path parameter,
-  or an undocumented status). Six 200 bodies fail validation: `/v2/bookings`, `/v2/bookings/{bookingUid}`,
+- CON-005 crawl (55 GET operations, own key): 29 crawled, 12 answered 200, 43 UNCRAWLED with reasons: 26 with no value for a path
+  parameter, 17 with a status the document does not list. Six 200 bodies fail validation: `/v2/bookings`, `/v2/bookings/{bookingUid}`,
   `/v2/bookings/{bookingUid}/calendar-links`, `/v2/bookings/{bookingUid}/references`, `/v2/calendars`, `/v2/webhooks` (PB-CAL-OAS-1).
   Two 404 answers (`/v2/slots` without a query, `/v2/schedules`) are caused by the crawl's version header and missing query parameters,
   not by the product.

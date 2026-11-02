@@ -109,10 +109,11 @@ test("P2-CAL-CON-005 every GET operation in the committed OAS answers a document
   // Setup: every operation was accounted for, and the crawl produced 200 responses to validate.
   expect(crawled.length + results.filter((r) => r.status === undefined).length).toBe(55);
   expect(crawled.filter((r) => r.status === 200).length).toBeGreaterThan(0);
-  // Measured coverage (probe L5, 2026-11-02): 29 crawled, 12 answered 200, 26 UNCRAWLED with a reason.
+  // Measured coverage (docs/probes/2026-11-02-p2-lane-cal-live-probes.md L12): 29 crawled, 12 answered 200, 43 UNCRAWLED (26 with no value for a path parameter, 17 with an undocumented status).
   expect(crawled).toHaveLength(29);
   expect(crawled.filter((r) => r.status === 200)).toHaveLength(12);
-  expect(uncrawled).toHaveLength(26);
+  expect(uncrawled).toHaveLength(43);
+  expect(uncrawled.filter((u) => u.status === undefined)).toHaveLength(26);
   // Every non-200 status must be documented, else the operation is UNCRAWLED with its reason (listed above).
   for (const r of crawled) {
     if (r.status !== 200)
