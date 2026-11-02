@@ -156,3 +156,18 @@ These are read from the pinned fork's installed packages or from the upstream mo
 - Every runtime claim of the lane plan (plan section 2) that is not a CR row above.
 - Harness 0.3.0 contents (not installed; the lane must read its `medusa-env.ts` at the pinned tag before relying on `MEDUSA_LOCK`, `MEDUSA_FF_CACHING` pass-through, or any change to the Redis switch).
 - Whether `npm ci` can install `0.3.0` from `git+ssh` in this sandbox (not tested; it was refused as a local-destruction command).
+
+---
+
+## Session 2 (2026-11-02, owner-approved install): gate record
+
+No probe ran in session 2. This section records the gate that stopped the run; it does not replace session 1.
+
+- Date (UTC): 2026-11-02 (session 2, after `date -u +%FT%TZ`).
+- Command: `bash scripts/cloud-install.sh` (owner approved). Output (trimmed): `added 138 packages`; `bootstrap` ran `pnpm install --frozen-lockfile` in the fork (`Done`), skipped the Twenty image (Docker), exit 0.
+- Installed evidence: `qa-portfolio-harness` **0.3.0** (`node -p require(.../package.json).version`); `stripe` **23.0.1**; fork HEAD `f677db438f27294fc50e4c7c6612e71ff38eeff5` (equals `MEDUSA_REF`).
+- Unit baseline on `main` `aa10ec1` (`npm run unit`): `# tests 285`, `# pass 285`, `# fail 0`, exit 0. `npm run check:static`: exit 0.
+- Gate: the owner required 277 with 0 failures. Measured 285 with 0 failures. **STOP**, per the owner's rule. Reason for the difference: per-file runs of `tests/unit/**` sum to 275; `tests/unit/env.test.ts` (top level, 10 tests) makes 285. The index's 277 is revision-2 and was not rebuilt (index section 2).
+- Stack state at the gate: no `up` run; no `qa-harness-*` container started by this session. The stack prechecks were not needed.
+- Probe status: every stack-dependent probe remains UNPROBED. P-MED-9 and P-MED-12a/b remain CONFIRMED (session 1).
+- Decision pending: OD-15 (unit anchor) per the plan. Default: accept 285.

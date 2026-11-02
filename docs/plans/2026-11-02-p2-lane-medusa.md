@@ -3,6 +3,15 @@
 Date 2026-11-02 (UTC). Plan branch `plan/2026-11-02-p2-lane-medusa` from `origin/main`. Never merged, no PR, no tag.
 Probe record for this plan: `docs/probes/2026-11-02-p2-lane-medusa-probes.md`.
 
+## Session 2 update (2026-11-02, owner approved the install): gate STOP, no stack started
+
+- The owner approved `bash scripts/cloud-install.sh`. It ran to completion (rc 0): `npm ci` added 138 packages; `bootstrap.sh` ran `pnpm install --frozen-lockfile` in the fork (done) and skipped the Twenty image, which runs from Docker.
+- Installed: `qa-portfolio-harness` **0.3.0**; `stripe` **23.0.1**; fork HEAD `f677db438f27294fc50e4c7c6612e71ff38eeff5` (the pin).
+- **Unit baseline on `main` (`aa10ec1`), measured: 285 tests, 285 pass, 0 fail.** Not 277. The owner's gate requires 277, so the run **stopped here**. Evidence: per-file runs sum to 275 and the top-level `tests/unit/env.test.ts` adds 10 (`npm run unit` matches it; my first glob missed it). The foundation index's 277 is its revision-2 count, which the index itself says was never rebuilt (index section 2). `npm run check:static` exits 0 on this install.
+- No probe, no `up`, no stack. The probe record's section "Session 2" records this gate.
+- Owner decisions now in the plan: OD-3 (merge EB-001 into EB-002), OD-4 (cut PL-002), OD-6 (suspected finding; live confirmation; `test.fail` only if proven), OD-7 (KWD gap is a finding, not a bug), OD-13 (plan default). Section 14.2 has the decided values.
+- **Open for the owner before probes can run: OD-15**, the unit anchor (285 measured vs 277 stated). Default: accept 285 with this evidence, after which L0 counts are base+N from 285.
+
 ## Status: the probes did not run; the plan is provisional until L0 settles them
 
 The planning session stopped its probe phase (brief section 11). Two facts:
@@ -119,7 +128,7 @@ The review's claim about the two named upstream specs is **true by name**. Its i
 
 ### 4.2 CUT list (not built; in no task, no spec title, no file name, no commit)
 
-P2-MED-LOC-001, P2-MED-WH-004, P2-MED-WH-005, P2-MED-WH-007, P2-MED-CSV-002, P2-MED-LOC18N-001. The security side of the signature rows (invalid and missing signatures) and the captured case move to P5 (index section 9 item 5).
+P2-MED-LOC-001, P2-MED-WH-004, P2-MED-WH-005, P2-MED-WH-007, P2-MED-CSV-002, P2-MED-LOC18N-001, **P2-MED-PL-002** (cut by the owner, 2026-11-02, OD-4: duplicate of P2-MED-PL-001 on the database clock, RD-9). P2-MED-EB-001 is **merged into P2-MED-EB-002** (owner decision OD-3, 2026-11-02, RD-8): no separate EB-001 test; EB-002 covers the deterministic failure path. The security side of the signature rows (invalid and missing signatures) and the captured case move to P5 (index section 9 item 5).
 
 ### 4.3 Framework checks (no IDs)
 
@@ -1238,20 +1247,22 @@ Each change lists exact steps for Cursor cloud and Claude Code cloud, and says w
 |---|---|---|---|
 | OD-1 | Install the locked harness (0.3.0) and `stripe` before any probe | Build L0 starts with `npm ci`; an environment STOP stops the build, it is not a decision | Section 0 of this plan; `package-lock.json:1608-1610`; `npm ci` refused in planning |
 | OD-2 | Source of the store OpenAPI snapshot | Snapshot from a served document if P-MED-15 finds one; else build from upstream at `v2.21.2`; else a labelled subset written by the lane (owner to confirm) | RD-17; P-MED-15 (no OpenAPI route in installed core) |
-| OD-3 | Merge MED-EB-001 into MED-EB-002 (propose CUT of EB-001 as written) | Not built as written; EB-002 covers the deterministic failure. **Owner decides** | RD-8; CR-3, CR-6, CR-10 |
-| OD-4 | Propose CUT of MED-PL-002 as a duplicate of MED-PL-001 | Not built; the boundary path does not read the server TZ. **Owner decides** | RD-9; CR-11 |
+| OD-3 | Merge MED-EB-001 into MED-EB-002 (propose CUT of EB-001 as written) | Not built as written; EB-002 covers the deterministic failure. **Decided 2026-11-02: merged into P2-MED-EB-002** | RD-8; CR-3, CR-6, CR-10 |
+| OD-4 | Propose CUT of MED-PL-002 as a duplicate of MED-PL-001 | Not built; the boundary path does not read the server TZ. **Decided 2026-11-02: cut** | RD-9; CR-11 |
 | OD-5 | Stripe-backed rows run live only with `STRIPE_API_KEY` | Live with the key; skipped with the reason without it (brief rule 11) | RD-19, RD-20 |
-| OD-6 | MED-WH-006 at receipt age 299 s | Asserted only at processing age 295 s (accepted) and 305 s (rejected). The receipt-age 299 s case is a SUSPECTED design finding (the window is measured at processing, RD-6). **Owner decides** whether that is a defect; P5 owns the security verdict | P-MED-12b; CR-6 |
-| OD-7 | Stripe charge vs order total for KWD (up to 9 fils) | Recorded as an annotation with the gap; not asserted to be zero. **Owner decides** whether the conservation rule should include the Stripe charge | RD-13; P-MED-9; upstream test `get-smallest-unit.ts:9` |
+| OD-6 | MED-WH-006 at receipt age 299 s | Asserted only at processing age 295 s (accepted) and 305 s (rejected). The receipt-age 299 s case is a SUSPECTED design finding (the window is measured at processing, RD-6). **Decided 2026-11-02: keep as a suspected finding.** Confirm live (P-MED-2, P-MED-3 in the build's L0 stack); `test.fail` only if the live result proves the defect, and only after P5 agrees it is a defect. P5 owns the security verdict. | P-MED-12b; CR-6 |
+| OD-7 | Stripe charge vs order total for KWD (up to 9 fils) | Recorded as an annotation with the gap; not asserted to be zero. **Decided 2026-11-02: a finding, not a bug.** The KWD gap (charge minus order total, at most 9 fils) is recorded as an annotation with the value; the conservation rule does not treat it as a defect. | RD-13; P-MED-9; upstream test `get-smallest-unit.ts:9` |
 | OD-8 | Admin and store API request shapes | L0 probe P-MED-16 fixes them before any spec uses them | Section 6.8 (UNPROBED) |
 | OD-9 | No Medusa serial job | `tests/serial/med/` empty; CI runs `med-api` only. Owner changes it if a product-wide job is found (P-MED-14) | RD-16 |
 | OD-10 | Lane region countries (JP, KW, CA) unused by the seed | Chosen; L0 checks `GET /admin/regions` and changes the codes if one is used | RD-15 |
 | OD-11 | Cold `up` time and the job deadline | 30-minute job, 1.5x the measured cold `up` once measured | Foundation Task 6 skeleton; no Medusa cold time recorded |
 | OD-12 | Authorization probe (P-MED-6) | DB end state only; P5 owns the verdict | Brief section 3 ownership |
-| OD-13 | Cache flag for the whole lane | `MEDUSA_FF_CACHING=1` for the one stack. Flag-off behaviour is not covered by a second stack; CACHE-001 skips with its reason when off. **Owner decides** if flag-off coverage is wanted (a second stack would double the cold-start cost) | RD-7; CR-12 |
+| OD-13 | Cache flag for the whole lane | `MEDUSA_FF_CACHING=1` for the one stack. Flag-off behaviour is not covered by a second stack; CACHE-001 skips with its reason when off. **Decided 2026-11-02: plan default** (one stack, flag on; flag-off not covered by a second stack). | RD-7; CR-12 |
 | OD-14 | Medusa lock provider at harness 0.3.0 | Unknown; the lane assumes nothing and L0 records it. If in-memory, WH-002 and WH-008 still run in one process | CR-9; RD-18 |
 
-**BLOCKING decisions: none.** Every decision has a safe default above.
+| OD-15 | Unit anchor for the base | **Open, BLOCKING for the probe run** (owner gate): measured 285 on `main` with locked deps and 0 failures, against the 277 stated; default: accept 285 with the evidence in the session-2 update above | Session 2 update; `tests/unit/env.test.ts` (10 tests) |
+
+**BLOCKING decisions:** OD-15 only, and only for the probe run (the owner's gate). Every other decision has a decided or safe default above.
 
 ### 14.3 Risks
 
