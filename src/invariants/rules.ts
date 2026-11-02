@@ -177,7 +177,7 @@ export const RULES: Readonly<Record<ProductId, readonly Rule[]>> = {
       basis: "live",
       verified: "2026-11-01",
       param: LEAK_LIKE_PREFIX,
-      sql: `SELECT "id"::text AS id, "email" AS value FROM "Recipient" WHERE "email" LIKE $1 ${ESC}`,
+      sql: `SELECT r."id"::text AS id, r."email" AS value FROM "Recipient" r JOIN "Envelope" e ON e."id" = r."envelopeId" WHERE r."email" LIKE $1 ${ESC} AND e."deletedAt" IS NULL`,
     },
   ],
   medusa: [
