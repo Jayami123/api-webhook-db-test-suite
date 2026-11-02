@@ -19,6 +19,32 @@ pinned fork). Nothing is built; no product, fork, harness or `.env` was changed.
 
 Naming: the brief's short forms (`TW-WH-001`) are written as the index writes them (`P2-TW-WH-001`). Same IDs.
 
+> **BUILD RECORD (2026-11-03, branch `feat/2026-11-03-p2-lane-tw`).** The plan is built except where stated. Measured
+> values, the corrections of proven-false statements (PC-1 to PC-8), and the product bugs are in the lane probe record
+> `docs/probes/2026-11-03-p2-lane-tw-probes.md`. Summary of this record:
+>
+> | Plan item | Build status |
+> |---|---|
+> | L0 helpers (section 6) | built; 18 unit tests (`people.update` was already on `main`, PC-7) |
+> | L1 CON-001 (×3), CON-002, PAG-001, PAG-002, CUR-001 (×2) | built; CON-001 and CUR-001 (2^53+1) carry proven known-bug markers (P2-TW-BUG-002, P2-TW-BUG-001) |
+> | L2 WH-001, WH-007, WH-003, WH-004, WH-005 (×2), WH-006, B1 control | built and passing; WH-003 uses `person.destroyed` (PC-2) |
+> | L3 STR-001 | gated skip with the blocker named (billing schema absent, checked at run time) |
+> | L3 DEL-002 | **not built: hard stop.** REST delete is a hard delete (PC-1), so the `deletedAt` oracle does not exist |
+> | L4 P2-TW-WH-010 study | built; 50 cases, 34 delivered, run valid; tied to P2-TW-BUG-003 (section 3 of the probe record) |
+> | L5 CI | `p2-tw.yml` (`tw-api` and `tw-multiws` jobs), `tw-study.yml`, workflow tests in `tests/unit/lanes/tw/` (PC-6) |
+> | STR-002 (moved here from v0.3.1) | built on a multi-workspace stack (`@multiws`); root cause and fix in section 6 of the probe record |
+> | RT-001 | BLOCKED, not built. Plan P-TW-13 stands; the driver setting is not a harness pass-through name (harness change needed) |
+> | CACHE-001, WH-009 | not built: the harness now supplies the knob (HR-4, HR-5 resolved in v0.3.1), but the plan defines no test for either case. Open decision |
+>
+> **UNPROBED values, measured (section 14.4 and the appendix):**
+> - `/graphql` bearer path (CON-002): `POST /graphql` with the bearer returns 200 with `errors[]` (B-P10).
+> - Currency column (CUR-001): per-workspace schema `opportunity`, column `amountAmountMicros` (bigint), `amountCurrencyCode` (B-P9).
+> - Soft-delete REST filter syntax (DEL-002): not applicable (DEL-002 is a hard stop). The REST list ignores a `deletedAt` filter; the working filter form is `name.firstName[like]:<prefix>%` (B-P7).
+> - Billing ordering (STR-001): the billing schema is still absent on the pinned image (`to_regclass('core."billingProduct"')` is NULL). The case stays a gated skip.
+> - Cursor wire name: `starting_after` (not `startingAfter`) (B-P7).
+> - CI runner allow-list address and `PRODUCTS_ROOT`: UNPROBED until the first CI run on the pull request (probe record, section 8).
+> - RT-001 executor: unchanged from P-TW-13.
+
 ---
 
 ## 1. Header
