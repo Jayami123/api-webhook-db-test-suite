@@ -176,6 +176,23 @@ describe("product clients", () => {
     });
   });
 
+  test("twenty people.update sends PATCH with the first name", async () => {
+    const auth = {
+      product: "twenty",
+      headerName: "authorization",
+      headerValue: secret("Bearer jwt-0123456789"),
+      label: "l",
+    } as unknown as TwentyAuth;
+    const { request, seen } = fake(200, {});
+    const tw = twentyClient({ request, baseUrl: "http://t", runPrefix: RUN, auth });
+    await tw.people.update("p-1", `${RUN}-b`);
+    assert.equal(nth(seen, 0).url, "http://t/rest/people/p-1");
+    assert.equal(nth(seen, 0).options.method, "PATCH");
+    assert.deepEqual(JSON.parse(String(nth(seen, 0).options.data)), {
+      name: { firstName: `${RUN}-b` },
+    });
+  });
+
   test("documenso: envelopes use the token, tRPC calls the session cookie and team header", async () => {
     const auth = {
       product: "documenso",
