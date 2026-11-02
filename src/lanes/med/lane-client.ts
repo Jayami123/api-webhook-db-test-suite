@@ -1,4 +1,6 @@
 import type { MedusaAuth } from "../../auth/medusa.ts";
+import { apiBaseUrl } from "../../env.ts";
+import { currentRunPrefix } from "../../run/prefix.ts";
 import {
   createCaller,
   type ApiRequestLike,
@@ -57,6 +59,18 @@ export interface LaneClient {
     readonly title: string;
   }): Promise<string>;
   removeProduct(productId: string): Promise<void>;
+  /** Removes every product whose title starts with the prefix (a failed test may not have kept the id). */
+  removeProductsByPrefix(prefix: string): Promise<number>;
+  /** Id of the seed's default sales channel (stock locations are linked to it). */
+  salesChannelId(): Promise<string>;
+  /** Adds a stock location with run-scoped name, linked to the default sales channel. */
+  stockLocation(label: string): Promise<string>;
+  /** One inventory level of an item at a location (creates it with the given stock). */
+  inventoryLevel(inventoryItemId: string, locationId: string, stocked: number): Promise<void>;
+  /** Restock an existing level (admin inventory update). */
+  restock(inventoryItemId: string, locationId: string, stocked: number): Promise<void>;
+  /** Delete a stock location through the admin API. */
+  removeStockLocation(locationId: string): Promise<number>;
   /** Store GET with the publishable key; returns status and text for contract checks. */
   rawGet(path: string): Promise<CallResult<unknown>>;
   /** Store POST with the publishable key; expects any status (the caller asserts it). */
@@ -152,11 +166,16 @@ export function laneClient(input: {
       if (variantId === undefined) throw new Error("TEST BUG: product created without a variant");
       let inventoryItemId: string | undefined;
       if (options.managedInventory === true) {
-        const link = await admin<{ variant: { inventory_items: { inventory_item_id: string }[] } }>(
+        const link = await admin<{
+          product: {
+            variants: { id: string; inventory_items?: { inventory_item_id: string }[] }[];
+          };
+        }>(
           "GET",
-          `/admin/product-variants/${variantId}?fields=id,inventory_items.inventory_item_id`,
+          `/admin/products/${res.body.product.id}?fields=id,variants.id,variants.inventory_items.inventory_item_id`,
         );
-        inventoryItemId = link.body.variant.inventory_items[0]?.inventory_item_id;
+        const variant = link.body.product.variants.find((v) => v.id === variantId);
+        inventoryItemId = variant?.inventory_items?.[0]?.inventory_item_id;
         // A managed variant without a shipping method needs requires_shipping:false (probe P-MED-16).
         if (inventoryItemId !== undefined) {
           await admin("POST", `/admin/inventory-items/${inventoryItemId}`, {
@@ -208,6 +227,58 @@ export function laneClient(input: {
       });
       return res.body.price_list.id;
     },
+    async salesChannelId() {
+      return defaultChannel();
+    },
+    async stockLocation(label) {
+      const created = await admin<{ stock_location: { id: string } }>(
+        "POST",
+        "/admin/stock-locations",
+        {
+          body: { name: runScopedName(label) },
+        },
+      );
+      const channel = await defaultChannel();
+      await admin(
+        "POST",
+        `/admin/stock-locations/${created.body.stock_location.id}/sales-channels`,
+        {
+          body: { add: [channel] },
+        },
+      );
+      return created.body.stock_location.id;
+    },
+    async inventoryLevel(inventoryItemId, locationId, stocked) {
+      await admin("POST", `/admin/inventory-items/${inventoryItemId}/location-levels`, {
+        body: { location_id: locationId, stocked_quantity: stocked },
+      });
+    },
+    async restock(inventoryItemId, locationId, stocked) {
+      await admin(
+        "POST",
+        `/admin/inventory-items/${inventoryItemId}/location-levels/${locationId}`,
+        {
+          body: { stocked_quantity: stocked },
+        },
+      );
+    },
+    async removeStockLocation(locationId) {
+      const res = await admin("DELETE", `/admin/stock-locations/${locationId}`, {
+        expect: anyStatus as unknown as number[],
+      });
+      return res.status;
+    },
+    async removeProductsByPrefix(prefix) {
+      const found = await admin<{ products: { id: string; title: string }[] }>(
+        "GET",
+        `/admin/products?q=${encodeURIComponent(prefix)}&fields=id,title&limit=100`,
+      );
+      const mine = found.body.products.filter((p) => p.title.startsWith(prefix));
+      for (const product of mine) {
+        await admin("DELETE", `/admin/products/${product.id}`, { expect: [200, 404] });
+      }
+      return mine.length;
+    },
     async removeProduct(productId) {
       await admin("DELETE", `/admin/products/${productId}`, { expect: [200, 404] });
     },
@@ -218,4 +289,17 @@ export function laneClient(input: {
       return storeCall("POST", path, { body, expect: anyStatus as unknown as number[] });
     },
   };
+}
+
+/** The lane client for a spec, from its Playwright request context and the worker's minted credential. */
+export function laneOf(fixtures: {
+  readonly request: ApiRequestLike;
+  readonly medAuth: MedusaAuth;
+}): LaneClient {
+  return laneClient({
+    request: fixtures.request,
+    baseUrl: apiBaseUrl("medusa"),
+    runPrefix: currentRunPrefix(),
+    auth: fixtures.medAuth,
+  });
 }

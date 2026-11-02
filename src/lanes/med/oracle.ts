@@ -21,6 +21,9 @@ export const ORACLE_QUERIES = {
   inventoryRow: `SELECT "stocked_quantity"::text AS stocked, "reserved_quantity"::text AS reserved FROM "inventory_level" WHERE "id" = $1`,
   dbNow: `SELECT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS now`,
   orderTotal: `SELECT "totals"->>'current_order_total' AS total, "version" AS version FROM "order_summary" WHERE "order_id" = $1 AND "deleted_at" IS NULL ORDER BY "version" DESC LIMIT 1`,
+  inventoryLevelsForItem: `SELECT "location_id" AS location, "stocked_quantity"::text AS stocked, "reserved_quantity"::text AS reserved FROM "inventory_level" WHERE "inventory_item_id" = $1 AND "deleted_at" IS NULL ORDER BY "location_id"`,
+  cartCompleted: `SELECT ("completed_at" IS NOT NULL) AS done FROM "cart" WHERE "id" = $1`,
+  reservationLiveCount: `SELECT COUNT(*)::text AS n FROM "reservation_item" WHERE "inventory_item_id" = $1 AND "deleted_at" IS NULL`,
   orderLineSum: `SELECT COALESCE(SUM(oi."quantity" * li."unit_price"), 0)::text AS items FROM "order_item" oi JOIN "order_line_item" li ON li."id" = oi."item_id" JOIN LATERAL (SELECT MAX("version") AS v FROM "order_summary" os WHERE os."order_id" = oi."order_id" AND os."deleted_at" IS NULL) latest ON oi."version" = latest.v WHERE oi."order_id" = $1 AND oi."deleted_at" IS NULL`,
 } as const;
 
@@ -110,4 +113,37 @@ export async function dbNowIso(): Promise<string> {
   const now = rows[0]?.now;
   if (now === undefined) throw new Error("TEST BUG: database clock returned no row");
   return now;
+}
+
+/** Live reservation rows for one inventory item (any location). */
+export async function reservationLiveCount(inventoryItemId: string): Promise<number> {
+  const rows = await db().select<{ n: string }>(ORACLE_QUERIES.reservationLiveCount, [
+    inventoryItemId,
+  ]);
+  return Number(rows[0]?.n ?? "0");
+}
+
+export interface LevelRow {
+  readonly location: string;
+  readonly stocked: number;
+  readonly reserved: number;
+}
+
+/** Live inventory levels of one item, one row per location (ordered by location id). */
+export async function inventoryLevelsForItem(inventoryItemId: string): Promise<LevelRow[]> {
+  const rows = await db().select<{ location: string; stocked: string; reserved: string }>(
+    ORACLE_QUERIES.inventoryLevelsForItem,
+    [inventoryItemId],
+  );
+  return rows.map((r) => ({
+    location: r.location,
+    stocked: Number(r.stocked),
+    reserved: Number(r.reserved),
+  }));
+}
+
+/** Whether the cart row has completed_at set. */
+export async function cartCompleted(cartId: string): Promise<boolean> {
+  const rows = await db().select<{ done: boolean }>(ORACLE_QUERIES.cartCompleted, [cartId]);
+  return rows[0]?.done === true;
 }
