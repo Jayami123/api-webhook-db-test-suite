@@ -1,0 +1,173 @@
+# P2 Medusa lane: L0 probe record (build branch, 2026-11-02 UTC)
+
+Probe record for the build: one live stack on harness **0.3.1** (`package-lock.json` pin `7d4a3ae`, installed `node_modules/qa-portfolio-harness` 0.3.1), product fork `f677db4` (checked before the stack), Medusa `2.21.2`, Node 22.23.3, Docker 29.9.2. One stack, brought up with `node node_modules/qa-portfolio-harness/scripts/up.mjs medusa` (rc 0, 146 s cold build), seeded with `scripts/harness-seed.mjs medusa`, roles provisioned with `npm run db:roles:provision -- medusa`. No ids, tokens, secrets or passwords are recorded here. Scratch probe scripts live outside the repo and are not committed. Probe result states: **CONFIRMED** (run on this stack), **CONFIRMED (code)** (read in the installed package, file:line), **UNPROBED** (not run; reason given).
+
+## 0. Environment and harness facts (0.3.1)
+
+| Item | Result | Evidence |
+|---|---|---|
+| Harness version after `npm ci` | 0.3.1 (the 0.3.0 install in the foundation session is replaced) | `node -p "require('./node_modules/qa-portfolio-harness/package.json').version"` |
+| Caching switch | `MEDUSA_FF_CACHING=true` (exact string) registers `@medusajs/medusa/caching` with provider `cache-redis` | `node_modules/qa-portfolio-harness/src/adapters/medusa-env.ts:184-186, 282-300` |
+| Redis switch | `MEDUSA_REDIS=1` wires `event-bus-redis`, `cache-redis`, `workflow-engine-redis` | `medusa-env.ts:282-320` |
+| Lock provider | `MEDUSA_LOCK` unset resolves to `memory` (the default) | `medusa-env.ts:162, 176-177`. OD-14 resolved: in-process lock |
+| Payment webhook route | `@medusajs/medusa` 2.21.2 `dist/api/hooks/payment/[provider]/route.js`, lines 21-22: `delay: options.webhook_delay \|\| 5000`, `attempts: options.webhook_retries \|\| 3`. Not in the fork source (the fork has no hooks directory); it is in the installed package | `node_modules/.pnpm/@medusajs+medusa@2.21.2_*/node_modules/@medusajs/medusa/dist/api/hooks/payment/[provider]/route.js:21-22` |
+| Event bus retry | `event-bus-redis` has no backoff setting; attempts come from the emit options | `@medusajs/event-bus-redis` `dist/services/event-bus-redis.js:48-50, 105`; no `backoff` match in its `dist` |
+| Payment verification | `constructEvent` with no tolerance argument (SDK default 300 s) | `@medusajs/payment-stripe` `dist/core/stripe-base.js:511-519` |
+| Price window | pricing reads `now()` on the database | `@medusajs/pricing` `dist/repositories/pricing.js:137, 188` |
+| Cart lock | `lock-cart-when-available` step | `@medusajs/core-flows` `dist/payment/workflows/process-payment.js:85-88` |
+
+Process facts (not product findings): `scripts/db-roles` and the read-only oracle need `P2_QA_RO_PASSWORD` in `.env`, written by `npm run qa:passwords` (gitignored). Without it every oracle call fails with a TEST BUG message. `npm run up`/`down` scripts do not exist in `package.json`; the plan's harness entry points are used directly.
+
+## 1. Probes on the 0.3.1 stack
+
+### P-MED-1. Event bus and one event in Redis
+- Server log: `Connection to Redis in module 'event-bus-redis' established`, `cache-redis`, `workflow-engine-redis`.
+- Parked job fields (one bad-signature event): `name=payment.webhook_received`, `delay=5000`, `attempts=3`, `atm=3`, `ats=3`.
+- Status: **CONFIRMED**.
+
+### P-MED-2. Signed `payment_intent.succeeded` by receipt age (system-provider session, signed with the run secret)
+| Receipt age (s) | Route answer | Control (valid, second session) authorized | Target session after control | Payments |
+|---|---|---|---|---|
+| 0 | 200 | yes (5465 ms) | authorized | 1 |
+| 299 | 200 | yes (5157 ms) | **pending** | 0 |
+| 301 | 200 | yes (5079 ms) | **pending** | 0 |
+
+The route answers 200 before verification. Status: **CONFIRMED**.
+
+### P-MED-2b. Processing-time window (receipt ages 290 and 300)
+| Receipt age (s) | Processing age (s) | Target session |
+|---|---|---|
+| 290 | 295 | authorized (accepted) |
+| 300 | 305 | pending (rejected) |
+
+The window is measured when the subscriber verifies, five seconds after receipt. Status: **CONFIRMED**. The 299 s receipt case is rejected, which is OD-6/OD-17 (kept as a design finding, no `test.fail`).
+
+### P-MED-3. Repeat delivery of one event (two parallel POSTs, identical bytes)
+- Responses `[200, 200]`; session `authorized` after 5135 ms; payments **1**. Status: **CONFIRMED**.
+
+### P-MED-4. Webhook racing cart completion (one round)
+- Webhook 200; completion 200 with `type: order`; session `authorized`; live orders for the cart **1**; payments **1**. Status: **CONFIRMED** (one round). The 20-run end state is measured by the WH-008 spec on the stack. The lock is in-process (OD-14).
+
+### P-MED-5. Currency precision (system provider, one cart, quantity 3)
+| Currency | Unit | Cart total | Order `current_order_total` (`order_summary.totals`) |
+|---|---|---|---|
+| JPY | 1500 | 4500 | 4500 |
+| KWD | 1.234 | 3.702 | 3.702 (raw `"3.702"`) |
+
+Status: **CONFIRMED**.
+
+### P-MED-6. Guest cart write by id (finding F2 for P5; not a bug per OD-16)
+- Anonymous `POST /store/carts/{other}/line-items` on another guest's open cart: `200`; victim quantity **1 → 4**; bystander cart **1 → 1**. Status: **CONFIRMED** (end state; verdict P5).
+
+### P-MED-7. Cache keys and price visibility (flag on, harness 0.3.1)
+- Fresh product, region `usd`. `mc:*` keys: before first read **16**; after first warm read **25**; after second read **25** (a hit writes nothing new).
+- Key shapes: `mc:<hash>`, `mc:tag:<hash>`, `mc:tags:<hash>`.
+- Admin price update of the variant from 10 to 15 USD: `200`; the store read returns `15` after **51 ms**.
+- Status: **CONFIRMED**. This resolves the 0.2.11 registration gap (F3, HR-4): the cache is registered in 0.3.1.
+
+### P-MED-8. Schema through the read-only role
+Confirmed names used by the lane (columns not listed here are not read):
+- `order` (`currency_code`, `status`, `region_id`, `email`, `deleted_at`, `canceled_at`); `order_summary` (`order_id`, `version`, `totals` jsonb with `current_order_total`, `original_order_total`, `accounting_total`, `paid_total`, `transaction_total`, `refunded_total`, `pending_difference`, `credit_line_total` and `raw_*`; **no** item, shipping, tax or discount keys).
+- `order_item` (`order_id`, `version`, `item_id`, `quantity` numeric, `unit_price` numeric (null on the probe orders), `deleted_at`); `order_line_item` (`id`, `unit_price` numeric, `variant_id`, `product_id`).
+- `order_cart` (`order_id`, `cart_id`, `deleted_at`); `cart` (`id`, `currency_code`, `completed_at`); `cart_line_item` (`cart_id`, `quantity`, `unit_price`, `deleted_at`).
+- `payment` (`payment_session_id`, `amount`, `currency_code`, `captured_at`, `deleted_at`); `payment_session` (`status`, `authorized_at`, `payment_collection_id`, `provider_id`).
+- `inventory_level` (`inventory_item_id`, `location_id`, `stocked_quantity`, `reserved_quantity`, `deleted_at`); `reservation_item` (`line_item_id`, `location_id`, `inventory_item_id`, `quantity`, `deleted_at`); `product_variant_inventory_item` (`variant_id`, `inventory_item_id`).
+- `price_list` (`status`, `starts_at`, `ends_at`, `deleted_at`); `price` (`price_list_id`, `price_set_id`, `amount`, `currency_code`); `api_key` (`title`, `type`, `revoked_at`); `region` (`name`, `currency_code`, `deleted_at`); `customer` (`email`, `deleted_at`); `product` (`title`, `handle`, `status`, `deleted_at`).
+- There is no `location_level` table (inventory levels are `inventory_level`).
+- Status: **CONFIRMED**. Latest-version rule: for an order, the live lines are the `order_item` rows whose `version` equals the largest `order_summary.version` of the order (`order_item` keeps earlier versions; probe order: version 1 and 2 rows, 1 row at version 2).
+
+### P-MED-9. Stripe smallest-unit rounding
+- Pure (session 1, unchanged): `getSmallestUnit(1.234, 'KWD') = 1240`; `10.005 USD → 1001`. Live KWD through Stripe is refused by the account (P-MED-18). Status: **CONFIRMED** (pure).
+
+### P-MED-10. Bad signature: retries and parking
+- Bad-signature event answered 200; the next valid event (second session) authorized after 5140 ms; the bad session stayed `pending`.
+- Failed set is a sorted set `RedisEventBusService:events-queue:failed` (`zrange`, not `smembers`). The parked job hash has `name=payment.webhook_received`, `atm=3`, `ats=3`, `opts.attempts=3`, `opts.delay=5000`, and `data` holds the stored headers (the marker the EB-002 test uses to find its own job).
+- Status: **CONFIRMED**. Finding F1: a deterministic rejection replays identically three times and parks.
+
+### P-MED-11. Price-list boundary on the database clock
+- Database `now()` at creation 18:33:05.984Z; `starts_at` = now + 5 s; store price (base 1500 JPY) changed to the list price (800) after **4902 ms** of 100 ms polling. Status: **CONFIRMED**.
+
+### P-MED-13. Product CSV import
+- `POST /admin/uploads` (multipart, field `files`) → `200 {files:[{id,url}]}`.
+- `POST /admin/products/imports` `{file_key, originalname, extension, size, mime_type}`:
+  - good 100-row file → `202 {transaction_id, summary:{toCreate:100}}`; `POST /admin/products/imports/{transaction_id}/confirm` → `202`; **100** products with the run prefix after **255 ms**;
+  - bad file (row 50 price `abc`) → `400 {"type":"invalid_data","message":"Row 150: Invalid value provided for \"variant price usd\". Expected value to be a number, received \"abc\""}`; the whole file is refused at preview, no product written.
+- `POST /admin/product-imports` is `404` (wrong path).
+- Status: **CONFIRMED**. Outcome: all-or-nothing at preview (F7). The reported row number (150) is the importer's row index; the test asserts the message text, not the number.
+
+### P-MED-14. Product-wide scheduled job
+- No product-defined scheduled job in the installed packages (framework job loader only). Status: **CONFIRMED (code)**. The serial project stays empty (RD-16).
+
+### P-MED-15. Store OpenAPI document
+- `/docs/store/openapi.json` 404; `/store/openapi.json` 400 without the publishable key; `/openapi.json` 404; `/docs` 404; `/store/openapi.yaml` 400 without the key. No document served. Installed packages contain no OpenAPI file. Status: **CONFIRMED**. OD-2 applies (see the build's decision log in the PR body).
+
+### P-MED-16. Admin and store request shapes (all 200 unless stated)
+- `GET /admin/regions` → seed regions: `eur` (dk fr de it es se gb), `usd` (us).
+- `POST /admin/regions {name, currency_code, countries:[iso], payment_providers:['pp_system_default']}` → 200 (`jp`, `kw`, `ca` unused by the seed; a second region with the same country → 400 "already assigned").
+- `POST /admin/products {title, status:'published', sales_channels:[{id}], options:[{title,values}], variants:[{title, sku, options:{Size:'One'}, manage_inventory, prices:[{currency_code, amount}]}]}` → 200. A duplicate handle → 400.
+- `GET /admin/sales-channels` → 200 (the seed's "Default Sales Channel").
+- Store: `POST /store/carts {region_id, email}`, `POST /store/carts/{id}/line-items {variant_id, quantity}`, `POST /store/payment-collections {cart_id}`, `POST /store/payment-collections/{id}/payment-sessions {provider_id}`, `POST /store/carts/{id}/complete` → 200 `{type:'order'}`.
+- Price list: `POST /admin/price-lists {title, description, type:'sale', status:'active', starts_at, rules:{}, prices:[{amount, currency_code, variant_id}]}` → 200 (`variant_id` required per price; without it 400).
+- Inventory: `POST /admin/inventory-items/{id}/location-levels {location_id, stocked_quantity}` → 200; `POST /admin/inventory-items/{id}/location-levels/{location_id} {stocked_quantity}` → 200 (restock); `POST /admin/inventory-items/{id} {requires_shipping:false}` → 200 (needed for a managed variant without a shipping method; without it complete → 400 `invalid_data`).
+- Stock locations: `POST /admin/stock-locations {name}` → 200; `POST /admin/stock-locations/{id}/sales-channels {add:[channel]}` → 200.
+- Status: **CONFIRMED**.
+
+### P-MED-16b. Reservation on completion, release on cancel (managed inventory)
+- Level stocked 9, reserved 0 → complete qty 2 → reserved **2**, one live `reservation_item` (quantity 2) → `POST /admin/orders/{id}/cancel` 200 → reserved **0**, reservation soft-deleted. Status: **CONFIRMED**.
+
+### P-MED-17. Stripe reachable from the stack
+- Earlier session (S-A) and this session: a Stripe-provider JPY session creates a PaymentIntent. Status: **CONFIRMED** (session 3; not repeated here).
+
+### P-MED-18. KWD through Stripe on this account
+- Stripe-provider KWD session → `500 {"code":"unknown_error"}`. Account refuses KWD (`Invalid currency: kwd. Stripe accounts in GB do not support kwd`, session 3). Status: **CONFIRMED** (account). OD-18: skip with the named reason. ENV finding, not a product bug.
+
+### P-MED-LOC-002. Two stock locations, one unit each, quantity 2
+- Run 1, locations not linked to the sales channel: complete qty 2 → 200 (`type: order`) with **no** reservation at either location, because the channel does not use them. Run 2, both locations linked to the channel: the result below. LOC-002 uses the linked configuration.
+- Complete qty 2 → **400 `not_allowed`**, message `Not enough stock available for item … at location …`. No split. No reservation (`reservation_item` count 0). Live order links for the cart **0**, orders **0**, payment session `pending`, cart not completed.
+- A rejected completion leaves soft-deleted `order_cart` rows that point at no order (2 such rows on this stack, both `deleted_at` set): compensation, not orders. The oracle counts live links only.
+- Status: **CONFIRMED**. The branch is "reject" (LOC-002 asserts it; there is no `oneOf`).
+
+### P-MED-FC-B. Rate limiting
+- 60 sequential `GET /store/regions` → 60 × `200`. No rate limit in this harness. Status: **CONFIRMED** (FC-MED-B: not real here).
+
+### CON-002 (invalid variant)
+- `POST /store/carts/{cart}/line-items {variant_id:'variant_does_not_exist', quantity:1}` → **400** `{"type":"invalid_data","message":"Variants … do not exist or belong to a product that is not published"}`; live cart lines **0**. Status: **CONFIRMED**.
+
+### CON-003 (store GET routes, valid parameters)
+| Route | Status |
+|---|---|
+| `/store/regions` | 200 |
+| `/store/products?limit=2` | 200 |
+| `/store/product-categories?limit=2` | 200 |
+| `/store/collections?limit=2` | 200 |
+| `/store/product-tags?limit=2` | 200 |
+| `/store/product-types?limit=2` | 200 |
+| `/store/shipping-options?cart_id=…` | 200 |
+| `/store/carts/{id}` | 200 |
+| `/store/currencies?limit=2` | 200 |
+| `/store/return-reasons` | 200 |
+| `/store/payment-providers?region_id=…` | 200 |
+| `/store/customers/me` | 401 (`{"message":"Unauthorized"}`, requires a customer) |
+| `/store/orders` | 401 (requires a customer) |
+| `/store/locales`, `/store/store` | 404 (not routes) |
+
+### P-MED-12a/b (SDK boundary)
+- Pure (session 1): the pinned SDK accepts 299 and 300 s and rejects 301 s at the SDK level; the product's processing age decides in practice (P-MED-2b). Status: **CONFIRMED** (SDK pure, product live).
+
+### P-MED-14/16 (read again on 0.3.1)
+- Re-measured above. Status: **CONFIRMED**.
+
+## 2. Findings for the plan (not product bugs)
+
+- **F1** Deterministic rejections (bad signature, tolerance) are attempted three times and parked (P-MED-10). EB-002 asserts it.
+- **F2** Guest cart id is a bearer capability (P-MED-6; OD-16 decided). FC-MED-A asserts the observed behaviour; P5 owns the verdict.
+- **F3** Cache registration: **resolved in 0.3.1** (P-MED-7).
+- **F4** The flag is the string `true` (`medusa-env.ts:185`).
+- **F5** The Stripe account refuses KWD (P-MED-18). ENV finding; KWD Stripe rows skip with the reason (OD-18).
+- **F6** `api.stripe.com` is reachable from the stack (P-MED-17).
+- **F7** The CSV import refuses the whole file at preview on one bad price (P-MED-13).
+- **F8** `order_item.unit_price` is null on the probe orders; line prices are in `order_line_item.unit_price` (P-MED-8).
+- **F9** A rejected completion leaves soft-deleted `order_cart` link rows (LOC-002). Not counted by the oracle.
+- **F10** Order totals JSON has no item, shipping, tax or discount keys (P-MED-8). The conservation rule computes them from line, shipping and adjustment tables (latest version).
+
+No product bug is suspected in L0. Any red case later is root-caused and recorded here or in the PR body.
