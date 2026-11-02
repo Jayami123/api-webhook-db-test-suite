@@ -1,0 +1,11 @@
+Digital Signature Info of: sealed.pdf
+Signature #1:
+  - Signature Field Name: Signature_1
+  - Signer Certificate Common Name: Documenso
+  - Signer full Distinguished Name: CN=Documenso,OU=Documenso,O=Documenso,L=Hamburg,ST=Hamburg,C=DE
+  - Signing Time: Nov 02 2026 18:36:56
+  - Signing Hash Algorithm: SHA-256
+  - Signature Type: ETSI.CAdES.detached
+  - Signed Ranges: [0 - 188925], [213503 - 214231]
+  - Total document signed
+  - Signature Validation: Digest Mismatch.
