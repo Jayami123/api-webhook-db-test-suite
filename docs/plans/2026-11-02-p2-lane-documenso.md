@@ -21,7 +21,7 @@ uses the `P2-DOC-…` form everywhere, including test titles. The IDs are the sa
   measured number wins (CONTRADICTS index section 1, Task 6 row). Every task states "base + N" and the builder measures
   the base at task start.
 - **Pinned product:** Documenso `f4105e47eba56f5d8d7e70dd516a8fcc0c870d7c` (`scripts/bootstrap.sh:11`). Checked clean before every probe.
-- **Harness:** `qa-portfolio-harness` tag `v0.3.0` = `be86e0e` (`package.json` pin, `package-lock.json` resolved entry).
+- **Harness:** `qa-portfolio-harness` tag `v0.3.0` = `be86e0e` (`package.json` pin, `package-lock.json` resolved entry). Installed in the repo's `node_modules` on 2026-11-02 by `bash scripts/cloud-install.sh` (`0.3.0` verified). Unit on that install: 285 pass, 0 fail.
 - **Plan branch:** `plan/2026-11-02-p2-lane-documenso` (no PR, no merge, no tag).
 - **Build branches** (one per task, stacked, each a PR whose base is the previous build branch until that PR merges, then `main`):
   - L0 `feat/2026-11-02-p2-documenso-l0-probes-helpers` (cut from `origin/main`)
@@ -49,11 +49,11 @@ Full records in the probe file. Status column uses the vocabulary from that file
 | P-DOC-3c | Receiver 302 | CONFIRMED | 4 deliveries on the original path only; `302` recorded x4 |
 | P-DOC-4a | BackgroundJob states | CONFIRMED | PROCESSING observed; COMPLETED retried 0; FAILED retried 3 = maxRetries |
 | P-DOC-4b | Re-dispatch of a terminal job (CAS) | CONFIRMED on terminal rows | wrong signature 401; correct signature 404 x3, row unchanged. Concurrent race UNPROBED |
-| P-DOC-4c | Seal-sweep window edges, cron tick | UNPROBED | code: `seal-document-sweep.handler.ts:12-13, 25-76`, cron `*/15` (`seal-document-sweep.ts:18`); the cadence query failed and was not re-run |
+| P-DOC-4c | Seal-sweep window edges, cron tick | tick timing CONFIRMED (RR-TICK); window edges UNPROBED | two quarter-hour batches observed (10:15:34 and 10:45:10); window edges need OD-4 (deferred); code: `seal-document-sweep.handler.ts:12-13, 25-76`, cron `*/15` (`seal-document-sweep.ts:18`) |
 | P-DOC-5 | B3 recount | CONFIRMED (seed) | COMPLETED 333, completedAt 0, all 333 seeded (no run prefix) |
 | P-DOC-5b | B3 runtime oracle | CONFIRMED | API-completed envelope: COMPLETED with `completedAt` set (`seal-document.handler.ts:310-316`) |
 | P-DOC-6 | Expiry live refusal, guard call sites | CONFIRMED (one entry point) | sign after `expiresAt` in the past: 400 `RECIPIENT_EXPIRED`, row unchanged. Six files, not five (C-DOC-1) |
-| P-DOC-7 | Stripe rows without a Stripe call | CONFIRMED (six rows) | unsigned 400; bad 500; stale 500; unsynced 200; synced without customer 200; synced with customer 500 (placeholder key) |
+| P-DOC-7 | Stripe rows without a Stripe call | CONFIRMED (six rows; real-key re-run RR-STRIPE) | unsigned 400; bad 500; stale 500; unsynced 200; synced without customer 200; synced with customer: 500 with the placeholder key, 200 with the real key (Stripe rejected the placeholder) |
 | P-DOC-8 | `pdfsig` and the sealed signature | CONFIRMED | `pdfsig 24.02.0`; sealed PDF `Signature is Valid.`; one flipped byte `Digest Mismatch.` |
 | P-DOC-9 | API-only completion | CONFIRMED | create, field create-many SIGNATURE 200, distribute 200, sign 200, complete 200, COMPLETED |
 | P-DOC-10 | Signing mail | CONFIRMED | 1 mail per recipient in Inbucket (REST 9003), token matches the recipient |
@@ -64,7 +64,7 @@ Full records in the probe file. Status column uses the vocabulary from that file
 | P-DOC-15 | Audit rows | CONFIRMED (types) | DOCUMENT_CREATED, DOCUMENT_SENT, DOCUMENT_FIELD_INSERTED, DOCUMENT_RECIPIENT_COMPLETED, DOCUMENT_COMPLETED and more |
 | P-DOC-16 | Stack and harness facts | CONFIRMED | cold `up` 396 s; warm `up` 26 s; `down` rc 0; port 5451 is the Documenso DB |
 | P-DOC-17 | `api.stripe.com` reachability | CONFIRMED (CONTRADICTS foundation U14) | HTTP 401 now |
-| P-DOC-18 | Recurring sweeps run in the stack | CONFIRMED (names), tick timing UNPROBED | `internal.expire-recipients-sweep`, `internal.send-signing-reminders-sweep`, `internal.cleanup-rate-limits` COMPLETED |
+| P-DOC-18 | Recurring sweeps run in the stack | CONFIRMED (names and tick timing, RR-TICK) | `internal.expire-recipients-sweep`, `internal.send-signing-reminders-sweep`, `internal.cleanup-rate-limits`, `internal.seal-document-sweep` COMPLETED; ticks at 10:15:34 and 10:45:10 |
 
 Not probed in this planning session (each has a settling probe in its task): the concurrent CAS race, the seal-sweep
 edges, UP-002/003/004/005 content and limits, CON-001 contract, I18N-001/002 settings, BULK-001/002, SM-002,
@@ -87,12 +87,12 @@ AUD-002 certificate, EXP-001/002 timing and the other five entry points, WH-004 
 | R9 | The Stripe bad-signature 500 is the blanket catch (`handler.ts:113-118`), not a proven bug. The lane asserts non-2xx and no row change; no `test.fail`. | P-DOC-7; OD-5 |
 | R10 | A sealed PDF is verifiable with `pdfsig`; a one-byte change is detected. | P-DOC-8 |
 | R11 | Signing mail is captured by Inbucket (SMTP 2525, REST 9003); one mail per recipient. | P-DOC-10; `documenso.compose.yml:30-32` (harness v0.3.0) |
-| R12 | STR-002/003 need a real test-mode key to reach Stripe's API; without one they are skipped with an explicit condition. | P-DOC-7 (placeholder key gives 500 for a synced event); R13 |
-| R13 | `api.stripe.com` answers from this sandbox (401). A real key can be used live; none is present. | P-DOC-17 (CONTRADICTS foundation U14) |
+| R12 | STR-002/003 run live with the real test-mode key (present in this session's environment). The oracle is PARTIAL: the test account has no subscriptions. | P-DOC-7, RR-STRIPE; OD-2, OD-15 |
+| R13 | `api.stripe.com` answers and accepts the test-mode key (`/v1/balance` 200; no auth 401). | P-DOC-17, RR-STRIPE (CONTRADICTS foundation U14) |
 | R14 | CAS: a correctly signed re-dispatch of a non-PENDING job returns 404 and changes nothing. | P-DOC-4b; `local.ts:277-295` |
 | R15 | The login limiter is 10 per 15-minute fixed bucket per user and IP. The lane mints one session per worker, and never sets `DANGEROUS_BYPASS_RATE_LIMITS`. | P-DOC-14; `rate-limits.ts:34-39`; `rate-limit.ts:48-53, 73, 84-93` |
 | R16 | Billing on breaks document creation (`LIMIT_EXCEEDED`, foundation P1.3). Stripe rows therefore run in their own billing stack. | foundation `2026-11-01-p2-foundation-probes.md` 1.3; P-DOC-7 ran billing-on only for webhook rows |
-| R17 | Every sweep and cron is `*/15 * * * *`. Reminder and expiry cases wait for one quarter-hour tick; the tick budget is 15 min + 2 min. | `seal-document-sweep.ts:18`, `send-signing-reminders-sweep.ts`, `expire-recipients-sweep.ts`, `cleanup-rate-limits.ts` (cron fields, code-read); P-DOC-18 |
+| R17 | Every sweep and cron is `*/15 * * * *`. Observed: one batch of the four sweeps per quarter hour (10:15:34 and 10:45:10), dispatched while the web process is up. Reminder and expiry cases wait for one tick; the tick budget is 15 min + 2 min. | `seal-document-sweep.ts:18`; RR-TICK; P-DOC-18 |
 | R18 | DOC-JOB-003/005 need writes to `Envelope.status`, `Recipient.signingStatus` or `BackgroundJob.status`. None is allow-listed (timestamps only), and the database refuses the column write. Deferred (OD-4). | P-DOC-13; `src/db/fixture-allowlist.ts:8-18` (`kind: 'timestamp'` only); `src/db/roles.ts:58-89` |
 | R19 | The zero-byte upload returns 500 with a session. Confirmed against the case's own expectation (4xx). Candidate `test.fail` after a positive control. | P-DOC-12; `files.ts:56-57` |
 | R20 | Precondition refusals use a plain `Error` in two routes (500) and `AppError` in others (400). Recorded, not `test.fail` (no stated contract). | P-DOC-11; `sign-field-with-token.ts:100`; `send-document.ts:125`; OD-6 |
@@ -114,7 +114,7 @@ AUD-002 certificate, EXP-001/002 timing and the other five entry points, WH-004 
 ### 4.1 IDs, decisions and tasks
 
 Decision: K = keep as written, U = upgrade as noted, NEW = new ID (scope from the 2026-10-29 review or derived as noted),
-CUT = cut. Test titles begin with the ID. "BUILT" = the task writes it; "BLOCKED" = a named prerequisite is missing; "DEFERRED" = an open decision (section 14).
+CUT = cut. Test titles begin with the ID. "BUILT" = the task writes it; "DEFERRED" = an owner decision (section 14.2; HR-4 and HR-5 move to harness v0.3.1); "BLOCKED" = a missing prerequisite (none in this plan).
 
 | ID | Dec. | Task | Spec file | Test title (exact) | Oracle | Fails when | Status |
 |---|---|---|---|---|---|---|---|
@@ -125,8 +125,8 @@ CUT = cut. Test titles begin with the ID. "BUILT" = the task writes it; "BLOCKED
 | P2-DOC-UP-004 | U | L1 | same | `P2-DOC-UP-004 a file one byte over 50 MB is refused with 400 and stores nothing` | status 400; no `DocumentData` row of this run | a 2xx; a stored row | BUILT after probe (UNPROBED size) |
 | P2-DOC-UP-005 | K | L1 | same | `P2-DOC-UP-005 an encrypted PDF is refused with 4xx and stores nothing` | 4xx; no row | a 2xx | BUILT after probe (UNPROBED fixture) |
 | P2-DOC-CON-001 | K | L1 | `tests/contracts/doc/envelope-contract.spec.ts` | `P2-DOC-CON-001 GET /api/v2/envelope/{id} matches the served OpenAPI document` | AJV validation against the committed OAS | a field violates the schema | BUILT after the OAS path is probed (UNPROBED) |
-| P2-DOC-CONV-002 | U | — | — | — | — | — | BLOCKED: HR-5 (no Gotenberg in the harness; `document-conversion.ts:15-17` reads `NEXT_PRIVATE_DOCUMENT_CONVERSION_URL`) |
-| P2-DOC-CONV-003 | K | — | — | — | — | — | BLOCKED: HR-5 |
+| P2-DOC-CONV-002 | U | — | — | — | — | — | DEFERRED (owner decision 2026-11-02): harness v0.3.1, HR-5 (no Gotenberg in the Documenso stack; `document-conversion.ts:15-17`) |
+| P2-DOC-CONV-003 | K | — | — | — | — | — | DEFERRED (owner decision 2026-11-02): harness v0.3.1, HR-5 |
 | P2-DOC-I18N-001 | K | L1 | `tests/contracts/doc/i18n.spec.ts` | `P2-DOC-I18N-001 the sealed PDF shows the German date format dd.MM.yyyy` | `pdftotext` contains the expected date string | date absent or another format | BUILT after the meta field names are probed (UNPROBED) |
 | P2-DOC-I18N-002 | K | L1 | same | `P2-DOC-I18N-002 the sealed PDF renders the Asia/Kathmandu time as UTC+05:45` | rendered time = UTC + 5:45 | another offset | BUILT after probe (UNPROBED) |
 | P2-DOC-WH-001 | U | L2 | `tests/webhooks/doc/delivery.spec.ts` | `P2-DOC-WH-001 the secret header equals the configured secret; a loopback webhook URL is refused at create` | `verifyDocumenso` ok; create 400 | a different secret; a create that succeeds | BUILT |
@@ -140,8 +140,8 @@ CUT = cut. Test titles begin with the ID. "BUILT" = the task writes it; "BLOCKED
 | P2-DOC-STR-001 | U | L2 | `tests/billing/doc/stripe.spec.ts` (billing project) | `P2-DOC-STR-001 an unsigned Stripe event is refused with 400` | 400 `No signature found in request` | any 2xx | BUILT (billing stack) |
 | P2-DOC-STR-001 | U | L2 | same | `P2-DOC-STR-001 a bad or stale signature is refused with a non-2xx and changes no rows` | non-2xx; `Subscription` and `Organisation` row counts unchanged | a 2xx; a changed row | BUILT (OD-5) |
 | P2-DOC-STR-001 | U | L2 | same | `P2-DOC-STR-001 a correctly signed event that is not synced is accepted (200) and changes no rows` | 200 `Webhook received`; counts unchanged | non-200 | BUILT |
-| P2-DOC-STR-002 | U | L2 | same | `P2-DOC-STR-002 a validly signed event is processed once (needs STRIPE_API_KEY)` | `test.skip(!hasStripeKey, ...)` | (skipped without a key) | BUILT, skipped without key (explicit condition) |
-| P2-DOC-STR-003 | U | L2 | same | `P2-DOC-STR-003 out-of-order subscription events end in one state (needs STRIPE_API_KEY)` | `test.skip(!hasStripeKey, ...)` | (skipped without key) | BUILT, skipped without key |
+| P2-DOC-STR-002 | U | L2 | same | `P2-DOC-STR-002 a validly signed event is processed once (needs STRIPE_API_KEY)` | `test.skip(!hasStripeKey, ...)` | (skipped without a key) | BUILT; live with the real key (RR-STRIPE, oracle PARTIAL); skips without a key (explicit condition) |
+| P2-DOC-STR-003 | U | L2 | same | `P2-DOC-STR-003 out-of-order subscription events end in one state (needs STRIPE_API_KEY)` | `test.skip(!hasStripeKey, ...)` | (skipped without key) | BUILT; live with the real key (RR-STRIPE, oracle PARTIAL); skips without a key |
 | P2-DOC-SM-001 | K | L3 | `tests/integration/doc/lifecycle.spec.ts` | `P2-DOC-SM-001 completing an envelope through the product sets completedAt (B3 oracle)` | status COMPLETED and `completedAt` not NULL | completedAt NULL after COMPLETED | BUILT |
 | P2-DOC-SM-001 | K | L3 | same | `P2-DOC-SM-001 refused transitions on a COMPLETED envelope change no rows` | distribute: non-2xx; field create: 400; row snapshot equal | a 2xx; a changed row | BUILT (OD-6) |
 | P2-DOC-SM-002 | K | L3 | same | `P2-DOC-SM-002 distributing a PENDING envelope a second time changes no rows` | status and recipient rows unchanged; non-2xx or 2xx with unchanged rows | a changed row | BUILT after probe (UNPROBED) |
@@ -166,7 +166,7 @@ CUT = cut. Test titles begin with the ID. "BUILT" = the task writes it; "BLOCKED
 | P2-DOC-JOB-005 | NEW | — | — | — | — | — | DEFERRED (OD-4): needs PENDING envelopes with signed recipients, not reachable through the API |
 
 Count of reviewed IDs covered: 22 K + 14 U + 3 CUT = 39. NEW: 5 (JOB-004, JOB-005, WH-006, WH-007, EXP-003).
-BUILT rows: L1 9 tests (incl. 1 `test.fail`), L2 12 (7 in `doc-api`, 5 in `doc-billing-api`, of which 2 skip without a key), L3 14, L4 4: 39 new test definitions in total. DEFERRED or BLOCKED: CONV-002, CONV-003, WH-005, MAIL-002, JOB-002, JOB-003, JOB-005.
+BUILT rows: L1 9 tests (incl. 1 `test.fail`), L2 12 (7 in `doc-api`, 5 in `doc-billing-api`, of which 2 skip without a key), L3 14, L4 4: 39 new test definitions in total. DEFERRED: CONV-002, CONV-003 (harness v0.3.1, HR-5), WH-005, MAIL-002, JOB-002, JOB-003, JOB-005.
 
 ### 4.2 CUT list (not built; never in a task, spec title or file name)
 
@@ -205,7 +205,7 @@ P2-DOC-CONV-001, P2-DOC-I18N-003, P2-DOC-CON-002. Listed here only.
 | UP-001 | none for a zero-byte upload (`api-access-file-upload.spec.ts` covers unauthorised access) | KEEP |
 | UP-002..005, CON-001 | none found | KEEP |
 | I18N-001 / I18N-002 | `packages/app-tests/e2e/envelope-editor-v2/envelope-settings.spec.ts:107,268` (the Date Format control in the UI, not the sealed PDF) | KEEP |
-| CONV-002/003 | none; conversion service is not in the harness (R-HR5) | BLOCKED (HR-5) |
+| CONV-002/003 | none; conversion service is not in the harness (HR-5) | DEFERRED (harness v0.3.1) |
 
 No PROPOSE CUT is made by this plan. The owner decides in OD-13.
 
@@ -807,7 +807,7 @@ L5: `ci(api): add the documenso lane jobs` (`.github/workflows/api.yml`); `test(
 - **Automatic:** the session-start hook sets `NODE24` and runs `npm run qa:passwords` and the hosts script (AGENTS.md).
 - **Verified in this session:** `pdfsig` 24.02.0 and `pdftotext` present (`/usr/bin/pdfsig`, `/usr/bin/pdftotext`); Docker present; `api.stripe.com` reachable (401).
 - **Pasted by the owner:** the same Stripe test-mode key as an environment variable `STRIPE_API_KEY` (optional).
-- **Known stale state (ENV):** the checkout's `node_modules` is not in sync with the lockfile (harness `0.2.11`, no `stripe` package). `npm ci` in the checkout was refused by the sandbox classifier (it deletes `node_modules` first). The owner or the environment setup script must run `npm ci` once before the L0 build, or the build uses a scratch copy as in the probe file.
+- **Install state (resolved 2026-11-02):** the checkout's `node_modules` was stale (harness `0.2.11`, no `stripe`). The owner approved `npm ci`; `bash scripts/cloud-install.sh` ran (rc 0). The repo's `node_modules` now holds harness `0.3.0` and `stripe` 23.0.1; the unit baseline on that install is 285 pass, 0 fail.
 - **Steps for the owner:** environment settings → variables → add `STRIPE_API_KEY` if available. Then run `npm ci` in the environment setup script (the owner decides; the builder does not run it unless the sandbox allows it).
 
 ### 12.3 Running the lane locally (both clouds)
@@ -823,7 +823,7 @@ PRODUCTS_ROOT=/home/user/products "$NODE24" node_modules/qa-portfolio-harness/sc
 
 The billing run is the same with the billing variables (`NEXT_PUBLIC_FEATURE_BILLING_ENABLED=true`, `NEXT_PRIVATE_STRIPE_WEBHOOK_SECRET=$P2_STRIPE_TEST_WH_SECRET`, `NEXT_PRIVATE_STRIPE_API_KEY=${STRIPE_API_KEY:-p2-placeholder-stripe-key}`) and `--project=doc-billing-api`. Billing and the envelope tests never share a stack.
 
-The scratch-harness workaround (a clone of tag `v0.3.0` built in `/tmp`) is for this planning session only. A build session uses `node_modules` after `npm ci`. If the installed harness is not `0.3.0`, STOP (section 8 STOP list).
+The scratch harness (a clone of tag `v0.3.0`) was used only before the 2026-11-02 install and is no longer used. Build sessions use the repo's `node_modules` after `bash scripts/cloud-install.sh`. If the installed harness is not `0.3.0`, STOP (section 8 STOP list).
 
 ---
 
@@ -833,10 +833,10 @@ The scratch-harness workaround (a clone of tag `v0.3.0` built in `/tmp`) is for 
 
 | HR | Problem | Evidence | Blocks | Proposed change |
 |---|---|---|---|---|
-| HR-4 | The Inbucket REST base is a compose mapping, not an output of `up documenso` | `documenso.compose.yml:31-32`; P-DOC-10 | none (the lane constant works; a unit test pins the port) | export `documensoMailApiUrl` from the harness config |
-| HR-5 | No Gotenberg in the Documenso stack, so DOCX conversion cannot run | `document-conversion.ts:15-17` (`NEXT_PRIVATE_DOCUMENT_CONVERSION_URL`); no harness reference (search of `harness-v0.3.0/src` and `docker/`) | **P2-DOC-CONV-002 (U) and P2-DOC-CONV-003 (K): BLOCKED** | add a Gotenberg service to the Documenso compose with a published port and the env var; the stop/start fault needs the container name |
+| HR-4 | The Inbucket REST base is a compose mapping, not an output of `up documenso` | `documenso.compose.yml:31-32`; P-DOC-10 | none (the lane constant works; a unit test pins the port) | to harness **v0.3.1** (owner decision 2026-11-02): export `documensoMailApiUrl` from the harness config |
+| HR-5 | No Gotenberg in the Documenso stack, so DOCX conversion cannot run | `document-conversion.ts:15-17` (`NEXT_PRIVATE_DOCUMENT_CONVERSION_URL`); no harness reference | **P2-DOC-CONV-002 (U) and P2-DOC-CONV-003 (K): DEFERRED** until v0.3.1 | to harness **v0.3.1** (owner decision 2026-11-02): add a Gotenberg service to the Documenso compose with a published port and the env var; the stop/start fault needs the container name |
 
-HR-5 blocks two KEEP-or-UPGRADE cases. The owner escalation check in section 15 reports it (YES). The lane builds neither case until HR-5 exists.
+The owner decided on 2026-11-02 to move HR-4 and HR-5 to harness v0.3.1 and to defer CONV-002 and CONV-003 until it is released. The lane builds neither case before then.
 
 ### 13.2 Shared-file touch list (exact hunks, per task)
 
@@ -862,7 +862,7 @@ Any other shared file is out of scope. A builder who needs one raises a STOP.
 
 - No test of CUT IDs (CONV-001, I18N-003, CON-002). No `test.fail` on an unproven product behaviour. No fixed sleeps except the labelled `SETTLE_MS` in MAIL-001 (justified by P-DOC-10). No use of `DANGEROUS_BYPASS_RATE_LIMITS`. No write to seed rows. No edit to the fork, its `.env`, its `node_modules`, or the harness. No stripe-mock or TLS interception (rejected in the foundation). No merge, tag or workflow dispatch. No PR review request by the builder.
 
-### 14.2 Open decisions (every one has a default; none is BLOCKING)
+### 14.2 Open decisions (owner decision 2026-11-02: every default accepted; none is BLOCKING)
 
 | ID | Decision | Evidence | Default |
 |---|---|---|---|
@@ -874,19 +874,20 @@ Any other shared file is out of scope. A builder who needs one raises a STOP.
 | OD-6 | Precondition refusals answer 500 in two routes, 400 in others | P-DOC-11; `sign-field-with-token.ts:100`, `send-document.ts:125` | assert non-2xx and no row change; no `test.fail` |
 | OD-7 | The concurrent CAS race (three simultaneous dispatches on one PENDING row) | no PENDING row can be produced (P-DOC-13) | JOB-004 tests the replay (three sequential, terminal rows); the race is recorded as not built |
 | OD-8 | Zero-byte upload `test.fail` (UP-001) | P-DOC-12; the case expects 4xx | `test.fail` after the positive control. The owner may change the case to "non-2xx" |
-| OD-9 | DOC-CONV-002 and DOC-CONV-003 | HR-5 | BLOCKED until HR-5 |
+| OD-9 | DOC-CONV-002 and DOC-CONV-003 | HR-5 | ACCEPTED: DEFERRED until harness v0.3.1 |
 | OD-10 | DOC-EXP-003 scope (no row text in the master plan) | derived from EXP-001/002 | "a recipient whose expiry is moved into the future signs again" |
 | OD-11 | DOC-WH-005 (row text not in the repository) | search of `docs/master-plan.html` found no row | DEFERRED; the owner supplies the text |
 | OD-12 | DOC-MAIL-002 (row text not in the repository) | the master plan lists MAIL-001 only | DEFERRED; the owner supplies the text |
 | OD-13 | Upstream duplicates: the verdicts in section 4.4 | the table | no cut proposed; KEEP for all rows that have a DB end-state, timing or artifact oracle |
 | OD-14 | Fork secret for job signing read from the fork's `.env` at run time | `readSecondaryKey` | read in memory, never printed; the CI variant reads from the cloned fork's `.env` written by bootstrap |
+| OD-15 (new, 2026-11-02) | Stripe test-mode fixtures for a meaningful STR-002/003 oracle (a test customer with a subscription, linked to a Documenso organisation) | RR-STRIPE: 0 subscriptions in the test account, so the counts cannot show "processed once" | ACCEPTED: the lane does not create Stripe objects. STR-002/003 assert the 200s and unchanged counts only, and are marked PARTIAL |
 
 ### 14.3 Risks
 
 - **Wall clock.** Reminders and the seal tick cost up to 15 min per run; the serial job is about 34 min. Mitigation: the tick waits run once per CI run for all sweep cases together (`tickDeadlineMs`).
 - **Rate limit.** 10 logins per 15 minutes per IP. A re-run within the bucket fails with 429. Mitigation: one session per worker (R15); the builder waits for the bucket reset before a live re-run (about 15 min).
-- **Stale local install.** `node_modules` lacks `stripe`; the lane's unit tests importing `stripe` fail until `npm ci` runs (ENV, section 12.2).
-- **Stripe reachability changed** (P-DOC-17). The CI lane's own check is needed: a lane job step prints the status of `api.stripe.com` (informational).
+- **Install state (resolved 2026-11-02, section 12.2).** The repo's `node_modules` now matches the lockfile (harness 0.3.0, stripe 23.0.1). The `npm audit` advisories printed by the install are not addressed by this plan.
+- **Stripe reachability and oracle** (P-DOC-17, RR-STRIPE): the test-mode key is accepted from this sandbox, so the live rows run. The STR-002/003 oracle is PARTIAL (OD-15); the CI lane needs the key as a secret.
 - **Seeded state.** Seed rows are not used by the lane; the B3 rows remain for other lanes and are excluded by the run-scoped rule (R6).
 - **Probe defects.** Two probe defects were found and corrected (P-DOC-3 early read, P-DOC-9 missing field); the builder must not reuse the probe scripts without the fixes listed in the probe file.
 
@@ -909,16 +910,16 @@ Any other shared file is out of scope. A builder who needs one raises a STOP.
 
 ---
 
-## 15. Escalation check for the owner (planning session)
+## 15. Escalation check for the owner (planning session, updated 2026-11-02)
 
 - Base mismatch: NO (`origin/main` = `aa10ec1`).
-- Any BLOCKING decision: NO. Every OD has a default.
-- Any HR item that blocks a KEEP case: **YES** (HR-5 blocks CONV-002 (U) and CONV-003 (K)).
-- Any CONTRADICTS against the index: **YES** (unit count 285 vs 277; expiry entry points 6 vs 5; U14 Stripe reachability; C-DOC-3 zero-byte 500 vs the case; SIG-002 phrase; the local harness pin state).
-- Any secret risk: NO (no secret printed; the fork's encryption key was read in memory by the probe and not printed; the Stripe placeholder is not a credential).
-- Any stop hit: **YES, with a mitigation recorded**: (a) the checkout's installed harness is 0.2.11, not 0.3.0 (STOP condition); the pinned tag `v0.3.0` was built in scratch and used for the probes; (b) `npm ci` in the checkout was denied by the sandbox classifier; (c) the harness `up` needed `PRODUCTS_ROOT`. The owner decides whether (a) and (b) are acceptable for the build.
+- Any BLOCKING decision: NO. Every OD default is accepted (owner decision, 2026-11-02).
+- Any HR item that blocks a KEEP case: NO. The owner moved HR-4 and HR-5 to harness v0.3.1; CONV-002 and CONV-003 are DEFERRED until then.
+- Any CONTRADICTS against the index: YES, recorded and accepted: unit count 285 vs 277; expiry entry points 6 vs 5; U14 Stripe reachability; C-DOC-3 zero-byte 500 vs the case; SIG-002 wording; the earlier harness pin state; tick batches at the quarter hour with a dispatch lag of 10 to 34 s (RR-TICK).
+- Any secret risk: NO. The key was checked by prefix and by count only; it appears in no output, log or file.
+- Any stop hit: NO. The two earlier hits are resolved: `npm ci` was approved and run (`cloud-install.sh` rc 0), and harness 0.3.0 is in `node_modules`.
 
-Verdict: **ESCALATE** (HR-5 blocks two cases; the install state needs the owner's decision; the index contradictions need the owner's decision).
+Verdict: **NO ESCALATION**. The open items are owner-accepted defaults: the DEFERRED cases (CONV-002, CONV-003, WH-005, MAIL-002, JOB-002, JOB-003, JOB-005), the PARTIAL Stripe oracle (OD-15), and harness v0.3.1 (HR-4, HR-5).
 
 ---
 

@@ -6,9 +6,9 @@ contradicts an older entry, the entry names it ("CONTRADICTS <file> <entry>").
 
 - Base: `origin/main` = `aa10ec1` (verified before any probe).
 - Product: Documenso at the pinned ref `f4105e47eba56f5d8d7e70dd516a8fcc0c870d7c` (`scripts/bootstrap.sh:11`); `git -C /home/user/products/documenso rev-parse HEAD` returned that SHA before every stack `up`, and the tree was clean.
-- Harness: `qa-portfolio-harness` **tag `v0.3.0` (commit `be86e0e608f7ae2ccbe973a57465d2cbe88fb752`)**, built from a scratch clone in `/tmp/p2-lane-probes/harness-v0.3.0` (`npm ci` there: 21 packages; `node -p "require('./package.json').version"` printed `0.3.0`). Ops run with `PRODUCTS_ROOT=/home/user/products`. The repo's own `node_modules/qa-portfolio-harness` is **0.2.11** (stale against `package-lock.json`, which pins `0.3.0` at `be86e0e`). See P-DOC-16.
+- Harness: `qa-portfolio-harness` **tag `v0.3.0` (commit `be86e0e608f7ae2ccbe973a57465d2cbe88fb752`)**, built from a scratch clone in `/tmp/p2-lane-probes/harness-v0.3.0` (`npm ci` there: 21 packages; `node -p "require('./package.json').version"` printed `0.3.0`). Ops run with `PRODUCTS_ROOT=/home/user/products`. The repo's own `node_modules/qa-portfolio-harness` is **0.2.11** (stale against `package-lock.json`, which pins `0.3.0` at `be86e0e`). See P-DOC-16. **Superseded 2026-11-02:** from the re-run section on, the harness is the repo's own `node_modules` at 0.3.0 (after `bash scripts/cloud-install.sh`); the scratch build is no longer used.
 - Host: Claude Code cloud VM, Node 22.23.3 (`/usr/local/bin/node`), Node 24.22.0 (`$NODE24=/opt/node24/bin/node`), Docker present, `pdfsig` poppler 24.02.0, `pdftotext` present, 4 cores (foundation record).
-- Foundation clients and receiver were used through a scratch copy of `origin/main` (`git archive` into `/tmp/p2-lane-probes/ws`, exact pins from `package.json` installed there). Probe scripts are throwaway files in `/tmp/p2-lane-probes/` and are not committed.
+- Foundation clients and receiver (first entries): a scratch copy of `origin/main`. **Superseded 2026-11-02:** the re-run probes import the repo checkout `src/` directly (same content at `aa10ec1`).
 - Secrets: the per-run webhook secret, the job-signing key and the API tokens were never printed. Only lengths and equality results are shown. The Stripe placeholder key is the string `p2-placeholder-stripe-key`; it is not a credential.
 - Login budget: Documenso limits login to 10 per 15-minute bucket per user and IP (P-DOC-14). Probes were batched to one login per probe run after the first 429.
 - Stacks: one at a time. Every `up` was preceded by `docker ps` and `/dev/tcp` port checks (all clear), and every stack ended with `down` (`down rc=0`).
@@ -114,7 +114,8 @@ Index: P-DOC-1 webhook send | P-DOC-2 receiver 500 | P-DOC-3 slow 9/11 s and red
 - Command: `node --experimental-strip-types p4c-cron.mts` (a read of `BackgroundJob` rows with `id LIKE 'cron\_%'`). First attempt: the script exited with an error after the stack was stopped; no retry was made.
 - Output: not available (script error on the first attempt; no output captured).
 - Code facts (read, not probed): the sweep reads `Recipient.signedAt`, not the envelope's last action: an envelope is picked when `status = PENDING`, every recipient is `SIGNED` or `CC` (or one is `REJECTED`), no recipient has `signedAt > now - 15 min`, and some recipient has `signedAt > now - 6 h` (`packages/lib/jobs/definitions/internal/seal-document-sweep.handler.ts:12-13, 25-76`; `.limit(100)` at 77). The cron is `*/15 * * * *` (`packages/lib/jobs/definitions/internal/seal-document-sweep.ts:18`).
-- Status: UNPROBED for the window edges (14 min / 16 min / 5 h 59 min / 6 h 01 min) and for the cron tick timing. Reason: the edge cases need `PENDING` envelopes with all recipients signed, which the product never leaves (completion seals at once, P-DOC-9), and the fixture role cannot write `Envelope.status` or `Recipient.signingStatus` (P-DOC-13). Settled by plan Open decision OD-4 (deferred), not by this probe.
+- Status (updated in the re-run section, RR-TICK): cron tick timing CONFIRMED (two tick batches observed, see RR-TICK). Window edges (14 min / 16 min / 5 h 59 min / 6 h 01 min): UNPROBED.
+- Builder's command for the window edges (not run; needs OD-4 approval, the plan defers JOB-005): `npx playwright test --project=doc-serial -g "P2-DOC-JOB-005"`. Until then the window is not measured and no test claims it. Reason: the edge cases need `PENDING` envelopes with all recipients signed, which the product never leaves (completion seals at once, P-DOC-9), and the fixture role cannot write `Envelope.status` or `Recipient.signingStatus` (P-DOC-13). Settled by plan Open decision OD-4 (deferred), not by this probe.
 
 ## P-DOC-5. B3 recount: COMPLETED envelopes with `completedAt` NULL, split by seed rows and rows of this run
 
@@ -185,7 +186,7 @@ Index: P-DOC-1 webhook send | P-DOC-2 receiver 500 | P-DOC-3 slow 9/11 s and red
 - Proves: a missing signature is 400; a bad or stale signature is 500 through the blanket catch; a correctly signed unsynced or customer-less event is 200. The per-run secret was not printed.
 - Citation: `packages/ee/server-only/stripe/webhook/handler.ts:31-34` (missing secret throws), `:50-56` (no signature 400), `:72` (`constructEvent`), `:74-80` (unsynced 200), `:89-100` (no customer 200), `:113-118` (catch, 500 `Unknown error`); route `apps/remix/app/routes/api+/stripe.webhook.ts`.
 - Status: CONFIRMED for the six rows above. Not proven: the 500 for a bad signature is a deliberate contract (it is the catch-all, `handler.ts:113-118`). The plan treats it as an open decision (OD-5) and asserts non-2xx plus no DB change.
-- Not run here: a synced event with a real key (STR-002/003 live). UNPROBED: needs `STRIPE_API_KEY` (test mode), which this session does not have.
+- Re-run with the real test-mode key: see RR-STRIPE. The 500 on a synced event with a customer is explained: with the real key the same request returns 200 (the placeholder key was rejected by Stripe).
 
 ## P-DOC-8. `pdfsig` on the VM; the sealed PDF's signature is valid; a flipped byte is rejected
 
@@ -354,9 +355,75 @@ Index: P-DOC-1 webhook send | P-DOC-2 receiver 500 | P-DOC-3 slow 9/11 s and red
 - Command: `SELECT "jobId", "status", "retried", "completedAt" IS NOT NULL FROM "BackgroundJob" WHERE "submittedAt" >= now() - interval '3 minutes'`.
 - Output (trimmed): `internal.cleanup-rate-limits COMPLETED`, `internal.send-signing-reminders-sweep COMPLETED`, `internal.expire-recipients-sweep COMPLETED`, `send.document.completed.emails PROCESSING`, `internal.seal-document PROCESSING`, `send.recipient.signed.email COMPLETED`.
 - Proves: the recurring sweeps run inside a stack without any harness action, so the serial cases can observe their effects. The cadence is 15 minutes (code: `*/15 * * * *` in `send-signing-reminders-sweep.ts`, `expire-recipients-sweep.ts`, `seal-document-sweep.ts`, `cleanup-rate-limits.ts`); the tick timing itself is UNPROBED (P-DOC-4c).
-- Status: CONFIRMED (names and states); cadence: CODE-READ, tick timing UNPROBED.
+- Status: CONFIRMED (names and states) and CONFIRMED for tick timing (RR-TICK): ticks at quarter-hour batches, each batch dispatches the four sweeps within 0.1 s, dispatch lag 10 s to 34 s after the quarter hour, and no tick while the web process is down.
 
 ---
+
+## Re-run on 2026-11-02 (owner-requested): repo harness 0.3.0, real key, consolidated
+
+Why: the first entries used a scratch harness and a scratch copy of the foundation code. The owner ran `bash scripts/cloud-install.sh` (`npm ci` approved), and asked for the probes that depended on the scratch build and the Stripe rows to be re-run with the real key.
+
+- Install: `bash scripts/cloud-install.sh` rc 0 (72 s; `npm ci` added 138 packages; bootstrap of the four products ran; Twenty comes from Docker images). Harness in the repo's own `node_modules`: `0.3.0` (`node -p "require('./node_modules/qa-portfolio-harness/package.json').version"`). `stripe` 23.0.1 present. Unit: `npm run unit` → `# tests 285`, `# pass 285`, `# fail 0`, exit 0. `npm audit` printed advisories; they were not changed (out of scope).
+- Probe code: the probes now import the repo checkout `src/` (content identical to `aa10ec1`); the scratch copy is no longer used. The scratch harness is no longer used.
+- Key handling: `STRIPE_API_KEY` is set in the environment and is test mode (prefix checked silently, never printed). Every output and log was checked by count only: `grep -c -F` = 0 in the `up` logs, the probe outputs and the `down` logs. The key authenticates: `GET /v1/balance` with `Authorization: Bearer` via a header on stdin returned 200; without auth 401. Test account: 3 customers returned by `/v1/customers?limit=3` (counted, ids not printed), 0 subscriptions.
+- Stacks (one at a time; port and container checks clear before each): (1) billing off, `up` rc 0 in 28 s (build cached by SHA), roles provisioned (`node scripts/db-roles.ts provision documenso` → ok), `down` rc 0. (2) billing on, real key passed in the `up` environment, `up` rc 0 in 29 s, `down` rc 0. No container left running.
+
+### RR-1 to RR-3. Webhook delivery (P-DOC-1, P-DOC-2, P-DOC-3), repo harness
+
+- RR-1 send: deliveries 1, secret equal to configured (`verifyDocumenso` ok), event `DOCUMENT_CREATED`, `WebhookCall` SUCCESS 200, job COMPLETED retried 0. CONFIRMED.
+- RR-2 receiver 500: deliveries 4 (attempts 1 to 4), body `createdAt` distinct 4, `payload.id` distinct 1, gaps 22, 23, 22 ms; `WebhookCall` FAILED 500 x4; job FAILED retried 3. CONFIRMED.
+- RR-3a slow 9 s: deliveries 1, SUCCESS 200, job COMPLETED. Isolated run: completion at 9.38 s (`slow-iso.mts`, 1 s sampling). CONFIRMED.
+- RR-3b slow 11 s: deliveries 4, gaps 10016, 10019, 10016 ms; `WebhookCall` FAILED responseCode 0 x4; job FAILED retried 3. CONFIRMED.
+- RR-3c redirect 302: deliveries 4, all on the original path; `WebhookCall` FAILED 302 x4; job FAILED retried 3. CONFIRMED.
+- Probe defects corrected in this re-run (recorded, not hidden): (a) the first consolidated run left each case's webhook subscribed, so later envelope events also fired earlier webhooks and the slow cases were still `PROCESSING` when read; each case now removes its own webhook after reading its rows. (b) the first wait condition counted any job submitted after the start time, which an unrelated job could satisfy; the wait now uses that webhook's own call rows. The first consolidated output is `out-rerun.json` (errors and the defects above); the valid output is `out-rerun3.json`.
+- Product fact found while cleaning up: deleting a webhook removes its `WebhookCall` rows (`packages/prisma/schema.prisma:215`, `onDelete: Cascade`). Probes and tests must read call rows before they delete the webhook.
+
+### RR-4 to RR-15. Completion, CAS, B3, expiry, grants, mail, PDF, refusals, upload, audit (repo harness, one login)
+
+- RR-4b CAS replay on a FAILED job (`cmvz4marl00f37d5elkja2agz`) and a COMPLETED job: wrong signature 401; correct signature 404 `Job not found` x3; row unchanged (status, retried, completedAt). CONFIRMED on terminal rows (concurrent race still UNPROBED).
+- RR-5 B3 recount: `COMPLETED` 339, of which `completedAt` set 6, `completedAt` NULL 333 (all seeded, title without run prefix). The 6 are the runtime-completed envelopes of this session's runs (earlier probes and this re-run). CONFIRMED (seed data, not a runtime defect). P-DOC-5b stands: the runtime sets `completedAt`.
+- RR-5b completion through the API (repo harness): field create 200, distribute 200, sign 200, complete 200 → envelope COMPLETED with `completedAt` set. CONFIRMED.
+- RR-6 expiry: fixture `Recipient.expiresAt` UPDATE 1 row; sign after expiry 400 `RECIPIENT_EXPIRED`; recipient unchanged. CONFIRMED.
+- RR-13 grants: fixture `Recipient.signingStatus` UPDATE → `42501`. CONFIRMED.
+- RR-10 mail: distribute 200; Inbucket messages `1` and `1` for two recipients. Token-to-recipient match was not re-checked in the re-run (P-DOC-10 entry stands). CONFIRMED (counts).
+- RR-8 PDF: sealed download `GET /api/v2/envelope/item/<id>/download` 200, 212795 bytes, `%PDF-`. `pdfsig`: `Signature is Valid.`, `CN=Documenso`. One flipped byte in a copy: `Digest Mismatch.`. CONFIRMED.
+- RR-11 refusals: distribute on a COMPLETED envelope 500; field create-many on it 400. CONFIRMED.
+- RR-12 upload: zero-byte with session 500. CONFIRMED.
+- RR-15 audit: `DOCUMENT_COMPLETED`, `DOCUMENT_CREATED`, `DOCUMENT_FIELD_INSERTED`, `DOCUMENT_FIELDS_AUTO_INSERTED`, `DOCUMENT_RECIPIENT_COMPLETED`, `DOCUMENT_SENT` and further types (full output in `out-rerun3.json`). CONFIRMED.
+
+### RR-STRIPE. Stripe webhook route with the real test-mode key (billing on)
+
+| Case | Result | Note |
+|---|---|---|
+| unsigned | 400 `No signature found in request` | unchanged from P-DOC-7 |
+| bad signature | 500 `Unknown error` | unchanged |
+| stale (-600 s) | 500 `Unknown error` | unchanged |
+| valid, not synced (`charge.succeeded`) | 200 `Webhook received` | unchanged |
+| valid, synced, no customer | 200 `Webhook received` | unchanged |
+| valid, synced, real customer (STR-002, sent twice, same event id) | 200, 200 | placeholder key gave 500 (P-DOC-7); with the real key 200. Cause of the earlier 500 confirmed: Stripe rejected the placeholder key |
+| valid, out of order (STR-003: `updated` t2, then `created` t1) | 200, 200 | |
+
+Row counts before and after the synced and out-of-order rows (qa_ro): `Subscription` 0 → 0, `Organisation` 5 → 5, `Webhook` 0 → 0. Oracle strength: weak. The test account has no subscriptions and no Documenso organisation is linked to the customer used, so "processed once" and "one end state" are not proven by these counts. STR-002 and STR-003 therefore run live with the key, and are marked PARTIAL in the plan. A meaningful oracle needs Stripe test-mode fixtures (new decision OD-15 in the plan, default: not created).
+
+### RR-TICK. Quarter-hour ticks (P-DOC-18 and P-DOC-4c, tick timing)
+
+`BackgroundJob` rows with `id LIKE 'cron\_%'` (qa_ro), read after each tick:
+
+```text
+batch A  internal.seal-document-sweep  10:15:34.452   (stack up 10:03 to 10:19)
+         internal.expire-recipients-sweep 10:15:34.480
+         internal.send-signing-reminders-sweep 10:15:34.499
+         internal.cleanup-rate-limits  10:15:34.518
+  (no batch at 10:30: no stack was running)
+batch B  internal.seal-document-sweep  10:45:09.996   (stack up 10:36 to 10:4x)
+         internal.expire-recipients-sweep 10:45:10.045
+         internal.send-signing-reminders-sweep 10:45:10.064
+         internal.cleanup-rate-limits  10:45:10.082
+```
+
+- Proves: the four `*/15` sweeps run as one batch per quarter hour (the batch lands 10 s and 34 s after the quarter hour, consistent with the scheduler's own dispatch lag; the scheduled quarter-hour is the cron time, which the row id hashes but does not expose), and no tick runs while the web process is down.
+- Builder's command to reproduce (any run with the stack up across a quarter hour): `node --experimental-strip-types /tmp/p2-lane-probes/cron-rows.mts` (a read-only qa_ro query; the builder keeps it outside the repo). The lane's own check is the serial reminder test, `npx playwright test --project=doc-serial -g "P2-DOC-REM-001"`.
+- Status: tick timing CONFIRMED. Window edges (P-DOC-4c): UNPROBED (see P-DOC-4c).
 
 ## Probe-derived facts that contradict or extend older records
 
