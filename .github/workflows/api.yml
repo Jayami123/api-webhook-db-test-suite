@@ -40,12 +40,12 @@ jobs:
         run: npm ci
       - name: Format, lint, typecheck
         run: npm run check:static
-      - name: Playwright has the four API projects, their serial twins and no browser
+      - name: Playwright has the four API projects, the Documenso billing project, their serial twins and no browser
         run: |
           set -euo pipefail
           npm run list:api
           out="$(npx playwright test --list --project=__list_projects__ 2>&1 || true)"
-          echo "$out" | grep -F 'Available projects: "cal-api", "doc-api", "med-api", "tw-api", "cal-serial", "doc-serial", "med-serial", "tw-serial"'
+          echo "$out" | grep -F 'Available projects: "cal-api", "doc-api", "med-api", "tw-api", "doc-billing-api", "cal-serial", "doc-serial", "med-serial", "tw-serial"'
           if [ -d "$HOME/.cache/ms-playwright" ]; then
             echo "A Playwright browser cache exists; P2 must not download browsers." >&2
             exit 1

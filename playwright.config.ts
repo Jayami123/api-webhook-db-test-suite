@@ -58,6 +58,7 @@ export default defineConfig({
     apiProject("doc-api", "doc"),
     apiProject("med-api", "med"),
     apiProject("tw-api", "tw"),
+    { name: "doc-billing-api", testMatch: ["billing/doc/**/*.spec.ts"] },
     serialProject("cal-serial", "cal", "cal-api"),
     serialProject("doc-serial", "doc", "doc-api"),
     serialProject("med-serial", "med", "med-api"),

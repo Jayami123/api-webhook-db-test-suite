@@ -61,7 +61,7 @@ describe("api.yml foundation shape", () => {
   test("the check job still asserts the four API projects, their serial twins and no browser", () => {
     assert.ok(
       workflow.includes(
-        `Available projects: "cal-api", "doc-api", "med-api", "tw-api", "cal-serial", "doc-serial", "med-serial", "tw-serial"`,
+        `Available projects: "cal-api", "doc-api", "med-api", "tw-api", "doc-billing-api", "cal-serial", "doc-serial", "med-serial", "tw-serial"`,
       ),
     );
     assert.ok(workflow.includes("ms-playwright"));
