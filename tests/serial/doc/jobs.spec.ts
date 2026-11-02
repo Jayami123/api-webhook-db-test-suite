@@ -4,6 +4,7 @@ import { replayDispatch, readSecondaryKey, signJobOptions } from "../../../src/l
 import { apiBaseUrl } from "../../../src/env.ts";
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
 import { completedEnvelope } from "../../fixtures/doc/completed-envelope.ts";
+import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 
 test("P2-DOC-JOB-001 a completed envelope has exactly one seal job", async ({
   doc,
@@ -52,18 +53,23 @@ test("P2-DOC-JOB-004 three signed re-dispatches of a terminal job are refused by
     const secondary = readSecondaryKey(process.env, (p) => {
       process.loadEnvFile(p);
     });
-    const jobRows = await db.select<{
-      id: string;
-      jobId: string;
-      payload: unknown;
-      status: string;
-    }>(
-      `SELECT "id" AS id, "jobId" AS "jobId", "payload" AS payload, "status" AS status FROM "BackgroundJob" WHERE "jobId" = 'internal.seal-document' AND "payload"->>'documentId' = $1`,
-      [String(done.prepared.documentId)],
-    );
-    const job = jobRows[0];
+    const lookup = async () =>
+      (
+        await db.select<{ id: string; jobId: string; payload: unknown; status: string }>(
+          `SELECT "id" AS id, "jobId" AS "jobId", "payload" AS payload, "status" AS status FROM "BackgroundJob" WHERE "jobId" = 'internal.seal-document' AND "payload"->>'documentId' = $1`,
+          [String(done.prepared.documentId)],
+        )
+      )[0];
+    // Wait for the real condition: the seal job row is terminal (the envelope is COMPLETED before its job row is).
+    await expect
+      .poll(async () => (await lookup())?.status, {
+        timeout: SLO.docWebhookDelivery.ms,
+        intervals: POLL_INTERVALS,
+        message: "seal job row COMPLETED",
+      })
+      .toBe("COMPLETED");
+    const job = await lookup();
     if (job === undefined) throw new Error("TEST BUG: no seal job row for the envelope");
-    expect(job.status).toBe("COMPLETED");
     const options = { name: job.jobId, payload: job.payload };
     const signature = signJobOptions(secondary, options);
     const snapshot = JSON.stringify(
