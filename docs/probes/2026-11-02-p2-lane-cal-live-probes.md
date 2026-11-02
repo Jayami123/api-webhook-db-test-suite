@@ -1,0 +1,120 @@
+# P2 cal lane: live probes on harness v0.3.1 (2026-11-02)
+
+Build-time measurements for `docs/plans/2026-11-02-p2-lane-cal.md`. Each entry names the run that produced it. Products were
+started and stopped only with the harness (`node_modules/qa-portfolio-harness/scripts/up.mjs cal` and `down.mjs cal`).
+Secrets were generated per run and never printed. Ids and emails are run-scoped and removed by the test cleanup.
+
+Stack: Cal fork `c2b7ac4`, harness `v0.3.1` (`7d4a3ae`), API v2 `DATABASE_URL` from the harness (HR-4). Cold `up cal` 13 min 22 s,
+warm `up cal` 28 s, `down cal` 2 s (plan section 2 timings reproduced).
+
+## L1 API v2 health, auth and booking (run "probe-a")
+
+| Request | Status | Body (head) |
+|---|---|---|
+| `GET /health` (5555) | 200 | `OK` |
+| `GET /v2/health` | 404 | `Cannot GET /v2/health` (envelope) |
+| `GET /v2/me` without key | 401 | `ApiAuthStrategy - No authentication` |
+| `GET /v2/bookings` without key | 403 | `PermissionsGuard - no authentication` |
+| `GET /v2/me` with lane key | 200 | `data.email` = `pro@example.com` (FC-2, DB-backed: HR-4 holds) |
+| `GET /v2/slots` (30min, days 3 to 5, Europe/London) | 200 | `data` keyed by date, 25 slots (13 per day in this run) |
+| `POST /v2/bookings` (first slot) | 201 | `status: success`, `data.uid` |
+| same request again | 400 | BadRequest; one Booking row (`accepted`), so the unique key refuses the duplicate (not 409) |
+| `POST /v2/bookings/{uid}/cancel` | 200 | row becomes `cancelled` |
+
+## L2 recorded-daily-video route (runs "probe-b", "probe-c", suite)
+
+| Request | Status | Body |
+|---|---|---|
+| unsigned `{"test":"test"}` | 200 | `Test request successful` (zero DB writes: DLY-003) |
+| signed (canonical) non-test body `{"triggerEvent":"RECORDING_READY","payload":{"x":1}}` | 200 | `Invalid type in /recorded-daily-video` (plan said 400 `Invalid Payload`: corrected) |
+| tampered body, old signature | 403 | `Signature does not match` |
+| raw-signed non-canonical body | 403 | `Signature does not match` |
+| reserialised signature over a non-canonical body | 200 | `Invalid type in /recorded-daily-video` (the route verifies `JSON.stringify(parsed)`) |
+
+## L3 cron routes (runs "probe-b" and suite)
+
+| Request | Status |
+|---|---|
+| `GET /api/tasks/cron`, wrong bearer | 401 |
+| `GET /api/tasks/cron`, right bearer | 200 |
+| `POST /api/cron/webhookTriggers`, wrong key | 401 |
+| `POST /api/cron/webhookTriggers`, right key | 200 |
+
+## L4 webhook delivery (runs "probe-a", "probe-b", "probe-d", "probe-e")
+
+- Direct path (`webhook/testTrigger`): one delivery, headers include `X-Cal-Signature-256` (hex), `x-cal-webhook-version`; body keys
+  `triggerEvent`, `createdAt`, `payload`; HMAC over the raw bytes verifies.
+- Trigger bodies (run "probe-e", BOOKING_CREATED, BOOKING_RESCHEDULED, BOOKING_CANCELLED): the 32 payload keys common to all three
+  are the required set of `tests/fixtures/cal/webhook-payload.schema.json` (marked `x-derived`). All three validate.
+- Tasker path (`GET /api/tasks/cron`): a booking queues one Task per subscribed webhook. A reschedule or cancel is delivered on the
+  next tasker run, not at the action (the RESCHEDULED and CANCELLED deliveries appeared only after a run).
+
+## L5 retry and concurrency (runs "probe-b", "probe-c", "probe-d", "probe-e", suite)
+
+| Case | Measured |
+|---|---|
+| B2, receiver 500, tasker run 1 | 1 delivery; Task `attempts` 1, `succeeded` true, `lastError` null |
+| B2, receiver 500, later runs | no further delivery; Task unchanged (no retry) |
+| TASK-001, receiver reset | runs 1 to 3: deliveries attempts `[1]`, `[1,2]`, `[1,2,3]`; Task `attempts` 1, 2, 3, `succeeded` false, `lastError` `fetch failed`; run 4 adds nothing |
+| TASK-002, reset then ok | run 1 attempts 1; run 2 attempts 2, `succeeded` true; run 3 unchanged |
+| TASK-003 control, 5 bookings, one run | 5 deliveries; each Task attempts 1, succeeded |
+| TASK-003 finding, two concurrent runs, receiver slow 1500 ms | 10 deliveries for 5 tasks in each of three rounds (B4) |
+| SCH-002 finding, two concurrent cron fires (three rounds, suite) | round 1: 2 deliveries; round 2: 2 deliveries; round 3: 1 delivery. Not reproducible: see the STOP below |
+
+## L6 scheduled triggers (runs "probe-c" and suite)
+
+- A MEETING_STARTED booking creates one `WebhookScheduledTriggers` row per subscribed hook (`startAfter` = the start time).
+- Cancel removes the row for that booking.
+- Control (`startAfter` moved to now minus 60 s, allow-listed `P2-CAL-SCH-002`): one fire gives 1 delivery and the row is gone.
+- Stale row (`startAfter` now minus 2 days, `P2-CAL-SCH-003`): the fire deletes the row and sends nothing (silent purge, NOT A BUG).
+
+## L7 slot cache (runs "probe-g" and "probe-h")
+
+- The same query returns a booked slot for up to the cache TTL: `withSlotsCache` in the fork's `packages/platform/libraries/dist/slots.cjs`
+  caches the result per query key with `DEFAULT_SLOTS_CACHE_TTL = 2e3` ms (overridable by `SLOTS_CACHE_TTL`).
+- A query with a new key (timeZone UTC) does not list the booked slot. So availability is correct; the staleness is the cache TTL.
+- Not a product bug. PROP-002 polls for the slot's removal within `SLOTS_CACHE_BUDGET_MS` (5 s, TTL plus margin); no sleep.
+
+## L8 concurrency limits and throttle (run "probe-e")
+
+- FC-3: 125 `GET /v2/me` calls on one key: 110 answered 200, 15 answered 429. The 429 is observed at the configured 120 per minute.
+
+## L9 recurring booking (run "probe-f")
+
+- `yoga-class` (recurring): one `POST /v2/bookings` answers 201 with `data` as an array of 12 occurrences, all `accepted`.
+- Cancel one occurrence: 200; one row `cancelled`, 11 `accepted`; one BOOKING_CANCELLED delivery on the next tasker run (REC-002).
+
+## L10 PENDING (run "probe-c")
+
+- `POST /v2/event-types` with `requiresConfirmation: true` (version `2024-06-14`) answers 201. A booking on it is **ACCEPTED**, not
+  PENDING, and the duplicate answers 400 (single row). No PENDING booking was produced, so the PENDING duplicate case cannot be exercised
+  as the plan describes. Decision: PROPOSE CUT for the PENDING sub-case of IDEM-001; the ACCEPTED positive control stays.
+- The temporary event type was deleted with `DELETE /v2/event-types/{id}` (200).
+
+## L11 availability and timezones (run "probe-d" and suite)
+
+- Pro user availability lives in `Availability` rows linked by `scheduleId` to the user's `Schedule` (`Schedule.userId`).
+  `Availability.userId` is NULL for these rows (schema checked: `packages/prisma/schema.prisma`).
+- PROP-003 (same UTC instants for five `timeZone` values over day 3 to day 5): NOT HOLDING as written. Each zone's calendar-day window
+  covers different instants at its edges (one extra instant, 14:00Z, appears in some sets). HARD STOP for PROP-003 (plan statement
+  proven false for calendar-day windows); the case is not built. See the PR body.
+
+## L12 committed OpenAPI versus live responses (suite, CON-001/002/005)
+
+- `GET /v2/slots`: the 200 schema describes the inner `data` map as the whole body; the live body and the document's own example are
+  `{status, data}`. Schema validation fails (PB-CAL-OAS-1).
+- `POST /v2/bookings`: the 201 schema requires strings and numbers where the live body has `null` (`rescheduledByEmail`, `rating`) and
+  requires attendee `seatUid`, `bookingFieldsResponses` that the live body omits (PB-CAL-OAS-1).
+- CON-005 crawl (55 GET operations, own key): 29 crawled, 12 answered 200, 26 UNCRAWLED with reasons (no value for a path parameter,
+  or an undocumented status). Six 200 bodies fail validation: `/v2/bookings`, `/v2/bookings/{bookingUid}`,
+  `/v2/bookings/{bookingUid}/calendar-links`, `/v2/bookings/{bookingUid}/references`, `/v2/calendars`, `/v2/webhooks` (PB-CAL-OAS-1).
+  Two 404 answers (`/v2/slots` without a query, `/v2/schedules`) are caused by the crawl's version header and missing query parameters,
+  not by the product.
+
+## L13 harness and environment
+
+- The API v2 spawn environment has `NODE_ENV=production` (`Cal API v2 env:` line of the harness log). B5 (exit when `NODE_ENV` is unset)
+  therefore cannot be reached through the harness: recorded as code evidence only: `apps/api/v2/src/swagger/generate-swagger.ts:32` reads `NODE_ENV`, and `apps/api/v2/src/main.ts:71` calls `generateSwaggerForApp(app)` without `await`. The harness env sets `NODE_ENV=production` (`cal-api-env.ts:55`), so the path is not reached; not reproduced.
+- The harness's default `PRODUCTS_ROOT` resolves inside `node_modules` (`node_modules/products`) when unset: the lane sets
+  `PRODUCTS_ROOT=/home/user/products` in the environment (plan F-ENV-2, an environment note, not a harness change).
+- Seed message P10 reproduced: `Error adding google credentials to DB: Unexpected end of JSON input` (not a failure of the seed).
