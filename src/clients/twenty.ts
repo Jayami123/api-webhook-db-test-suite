@@ -5,6 +5,7 @@ import { createCaller, type ApiRequestLike, type CallResult } from "./base.ts";
 export interface TwentyClient {
   people: {
     create(firstName: string): Promise<string>;
+    update(id: string, firstName: string): Promise<void>;
     remove(id: string): Promise<void>;
   };
   webhooks: {
@@ -38,6 +39,12 @@ export function twentyClient(input: {
           body: { name: { firstName, lastName: "Qa" } },
         });
         return res.body.data.createPerson.id;
+      },
+      async update(id, firstName) {
+        await call("PATCH", `/rest/people/${id}`, {
+          body: { name: { firstName } },
+          expect: [200],
+        });
       },
       async remove(id) {
         await call("DELETE", `/rest/people/${id}`, { expect: [200] });

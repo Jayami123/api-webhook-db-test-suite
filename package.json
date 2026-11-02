@@ -23,11 +23,13 @@
     "specs:validate": "node scripts/validate-specs.ts"
   },
   "dependencies": {
-    "qa-portfolio-harness": "github:Jayami123/qa-portfolio-harness#v0.3.0"
+    "qa-portfolio-harness": "github:Jayami123/qa-portfolio-harness#v0.3.1"
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "13.1.0",
     "@eslint/js": "10.0.1",
+    "@noble/ciphers": "0.6.0",
+    "@noble/hashes": "1.8.0",
     "@playwright/test": "1.64.0",
     "@types/node": "22.20.5",
     "@types/pg": "8.23.1",

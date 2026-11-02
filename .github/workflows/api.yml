@@ -1,5 +1,6 @@
-# Foundation shape (plan Task 6). The four product lanes (cal, doc, med, tw) are added later as jobs
-# that declare `needs: foundation`; see the commented skeleton at the end of this file.
+# Foundation shape (plan Task 6). Each product lane owns its own workflow file (p2-cal.yml, p2-med.yml,
+# p2-doc.yml, p2-tw.yml; tw-study.yml for twenty), so lanes never edit this file. The gate for them is
+# described in docs/lane-ownership.md; the commented skeleton at the end of this file is guidance only.
 name: api
 
 on:
@@ -40,12 +41,12 @@ jobs:
         run: npm ci
       - name: Format, lint, typecheck
         run: npm run check:static
-      - name: Playwright has the four API projects, their serial twins and no browser
+      - name: Playwright has the four API projects, the Documenso billing project, their serial twins and no browser
         run: |
           set -euo pipefail
           npm run list:api
           out="$(npx playwright test --list --project=__list_projects__ 2>&1 || true)"
-          echo "$out" | grep -F 'Available projects: "cal-api", "doc-api", "med-api", "tw-api", "cal-serial", "doc-serial", "med-serial", "tw-serial"'
+          echo "$out" | grep -F 'Available projects: "cal-api", "doc-api", "med-api", "tw-api", "doc-billing-api", "cal-serial", "doc-serial", "med-serial", "tw-serial"'
           if [ -d "$HOME/.cache/ms-playwright" ]; then
             echo "A Playwright browser cache exists; P2 must not download browsers." >&2
             exit 1
@@ -147,7 +148,7 @@ jobs:
           echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
           echo "$NEEDS" | jq -e 'all(.[]; .result == "success")' >/dev/null
 
-  # ---- Lane skeleton (guidance only; lanes are added by their own tasks) -----------------------
+  # ---- Lane skeleton (guidance only; the job goes in the lane's own workflow file) ------------
   # A lane is one job per product, about 25 minutes at most, with its own stack:
   #
   #   cal-api:                          # doc-api, med-api, tw-api alike

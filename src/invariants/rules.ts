@@ -1,5 +1,9 @@
 import type { ProductId } from "../env.ts";
 import type { Rule } from "./engine.ts";
+import { ESC, LEAK_LIKE_CONTAINS, LEAK_LIKE_PREFIX, RUN_START } from "./lane-kit.ts";
+import { calLaneRules } from "./lanes/cal.ts";
+import { documensoLaneRules } from "./lanes/documenso.ts";
+import { medusaLaneRules } from "./lanes/medusa.ts";
 
 /**
  * One rule list per product. Every rule cites the schema line it relies on at the pinned ref
@@ -7,12 +11,7 @@ import type { Rule } from "./engine.ts";
  * `basis: "live"` rules are checked against the running product by the Task 5 readiness spec,
  * which fails on an unknown table or column (SQLSTATE 42P01/42703).
  */
-const LEAK_LIKE_PREFIX = "prefix-like" as const;
-const LEAK_LIKE_CONTAINS = "contains-like" as const;
-const RUN_START = "run-start" as const;
-const ESC = String.raw`ESCAPE '\'`;
-
-export const RULES: Readonly<Record<ProductId, readonly Rule[]>> = {
+const FOUNDATION_RULES: Readonly<Record<ProductId, readonly Rule[]>> = {
   cal: [
     {
       id: "cal-task-succeeded-has-attempt",
@@ -155,7 +154,7 @@ export const RULES: Readonly<Record<ProductId, readonly Rule[]>> = {
       basis: "live",
       verified: "2026-11-01",
       param: LEAK_LIKE_PREFIX,
-      sql: `SELECT "id"::text AS id, "email" AS value FROM "Recipient" WHERE "email" LIKE $1 ${ESC}`,
+      sql: `SELECT r."id"::text AS id, r."email" AS value FROM "Recipient" r JOIN "Envelope" e ON e."id" = r."envelopeId" WHERE r."email" LIKE $1 ${ESC} AND e."deletedAt" IS NULL`,
     },
   ],
   medusa: [
@@ -244,6 +243,17 @@ export const RULES: Readonly<Record<ProductId, readonly Rule[]>> = {
       sql: `SELECT "id"::text AS id, "nameFirstName" AS value FROM {schema}."person" WHERE "nameFirstName" LIKE $1 ${ESC} AND "deletedAt" IS NULL`,
     },
   ],
+};
+
+/**
+ * The shared index. Foundation rules stay in FOUNDATION_RULES above; each lane's rules come from its
+ * own file under ./lanes/ and are appended here. A lane never edits this file.
+ */
+export const RULES: Readonly<Record<ProductId, readonly Rule[]>> = {
+  cal: [...FOUNDATION_RULES.cal, ...calLaneRules],
+  documenso: [...FOUNDATION_RULES.documenso, ...documensoLaneRules],
+  medusa: [...FOUNDATION_RULES.medusa, ...medusaLaneRules],
+  twenty: FOUNDATION_RULES.twenty,
 };
 
 export function rulesFor(product: ProductId): readonly Rule[] {
