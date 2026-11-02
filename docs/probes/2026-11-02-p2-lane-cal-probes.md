@@ -240,7 +240,7 @@ P12 API v2 authentication answers | P13 API v2 throttle | P14 server timezone | 
   so with no `DATABASE_URL` in `up`'s environment the client falls back to `localhost:5432`, where nothing listens (the harness
   Postgres is host port 5450). `/health` still answers 200, so the harness readiness check does not see it.
 - Citation: `packages/prisma/index.ts:10`; `apps/api/v2/src/modules/prisma/prisma-read.service.ts:19`; harness `src/adapters/cal.adapter.ts:531,542` (API spawn env is `{...calHeapEnv(process.env), ...apiEnv}`); harness `src/adapters/cal-api-env.ts:12-20` (no-fallback list, no `DATABASE_URL`).
-- Status: CONFIRMED (ENV). Workaround used in this session and in the plan: `DATABASE_URL` in the `up` environment (no harness edit). Proposed HR-4.
+- Status: CONFIRMED (harness wiring). A `DATABASE_URL` value in the `up` environment was used only to run stacks 2 to 4 of this session. The plan does not use it: HR-4 (harness v0.3.1) is required.
 
 ### P12. API v2 authentication and error answers (input for CON-003)
 - Date (UTC): 2026-11-02T10:08Z
