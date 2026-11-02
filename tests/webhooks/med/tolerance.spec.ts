@@ -6,7 +6,7 @@ import {
   sendEvent,
 } from "../../../src/lanes/med/webhook-flow.ts";
 import { paymentSession } from "../../../src/lanes/med/oracle.ts";
-import { runScopedName } from "../../../src/run/prefix.ts";
+import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 
 // Processing-time window (observed 2026-11-02, P-MED-2b): the product verifies five seconds after
@@ -35,9 +35,7 @@ test.describe("medusa webhook tolerance", () => {
         })
         .toBe("authorized");
     } finally {
-      await lane.removeProductsByPrefix(runScopedName(label));
-      await med.admin.deleteCustomersByEmailPrefix(runScopedName(label));
-      await lane.releaseRegions();
+      await cleanupLabel(lane, med, label);
     }
   });
 
@@ -73,9 +71,7 @@ test.describe("medusa webhook tolerance", () => {
         "pending",
       );
     } finally {
-      await lane.removeProductsByPrefix(runScopedName(label));
-      await med.admin.deleteCustomersByEmailPrefix(runScopedName(label));
-      await lane.releaseRegions();
+      await cleanupLabel(lane, med, label);
     }
   });
 
@@ -110,9 +106,7 @@ test.describe("medusa webhook tolerance", () => {
         "pending",
       );
     } finally {
-      await lane.removeProductsByPrefix(runScopedName(label));
-      await med.admin.deleteCustomersByEmailPrefix(runScopedName(label));
-      await lane.releaseRegions();
+      await cleanupLabel(lane, med, label);
     }
   });
 });

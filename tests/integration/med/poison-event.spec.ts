@@ -9,7 +9,7 @@ import {
 } from "../../../src/lanes/med/webhook-flow.ts";
 import { paymentSession } from "../../../src/lanes/med/oracle.ts";
 import { redisHget, redisZrange } from "../../../src/lanes/med/redis.ts";
-import { runScopedName } from "../../../src/run/prefix.ts";
+import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 
 const hasKey = Boolean(process.env["STRIPE_API_KEY"]);
@@ -83,9 +83,7 @@ test.describe("medusa poison event", () => {
       expect(parked?.atm, "attempts made").toBe("3");
       expect(parked?.ats, "attempts configured").toBe("3");
     } finally {
-      await lane.removeProductsByPrefix(runScopedName(label));
-      await med.admin.deleteCustomersByEmailPrefix(runScopedName(label));
-      await lane.releaseRegions();
+      await cleanupLabel(lane, med, label);
     }
   });
 });

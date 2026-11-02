@@ -1,5 +1,6 @@
 import { test, expect } from "../../../src/fixtures/index.ts";
 import { laneOf } from "../../../src/lanes/med/lane-client.ts";
+import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
 import { dbNowIso } from "../../../src/lanes/med/oracle.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
@@ -8,9 +9,11 @@ test.describe("medusa price list boundary", () => {
   test("P2-MED-PL-001 a price list is active exactly at starts_at on the database clock", async ({
     request,
     medAuth,
+    med,
   }) => {
     const label = "pl001";
     const lane = laneOf({ request, medAuth });
+    let priceListId: string | undefined;
     try {
       const region = await lane.regionFor("usd");
       const product = await lane.productWithPrice(label, "usd", 10);
@@ -19,7 +22,7 @@ test.describe("medusa price list boundary", () => {
       // starts_at is five seconds after the DATABASE clock: the product compares to now() there.
       const dbNow = await dbNowIso();
       const startsAt = new Date(Date.parse(dbNow) + 5_000).toISOString();
-      await lane.createPriceList({
+      priceListId = await lane.createPriceList({
         variantId: product.variantId,
         currency: "usd",
         amountMajor: 8,
@@ -37,8 +40,8 @@ test.describe("medusa price list boundary", () => {
         .info()
         .annotations.push({ type: "list-title", description: runScopedName(`${label}-list`) });
     } finally {
-      await lane.removeProductsByPrefix(runScopedName(label));
-      await lane.releaseRegions();
+      if (priceListId !== undefined) await lane.removePriceList(priceListId);
+      await cleanupLabel(lane, med, label);
     }
   });
 });

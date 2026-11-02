@@ -6,7 +6,7 @@ import {
   sendEvent,
 } from "../../../src/lanes/med/webhook-flow.ts";
 import { paymentRowCount, paymentSession } from "../../../src/lanes/med/oracle.ts";
-import { runScopedName } from "../../../src/run/prefix.ts";
+import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 
 const hasKey = Boolean(process.env["STRIPE_API_KEY"]);
@@ -122,9 +122,7 @@ test.describe("medusa out-of-order payment events", () => {
       ).toBe("authorized");
       expect(await paymentRowCount(second.sessionId)).toBe(1);
     } finally {
-      await lane.removeProductsByPrefix(runScopedName(label));
-      await med.admin.deleteCustomersByEmailPrefix(runScopedName(label));
-      await lane.releaseRegions();
+      await cleanupLabel(lane, med, label);
     }
   });
 });
