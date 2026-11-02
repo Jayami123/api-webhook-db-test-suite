@@ -434,7 +434,7 @@ batch B  internal.seal-document-sweep  10:45:09.996   (stack up 10:36 to 10:4x)
 | C-DOC-3 | Master-plan DOC-UP-001: zero-byte gives 4xx | 500 with a session | P-DOC-12 |
 | C-DOC-4 | Master-plan DOC-SIG-002 text "Signature is invalid" | pdfsig 24.02 prints `Digest Mismatch.` | P-DOC-8 |
 | C-DOC-5 | Index note: local dispatch is CAS with no lease | CAS confirmed on terminal rows; no lease in code | P-DOC-4b |
-| C-DOC-6 | Index B3: seed data, "report to the fork owner" | confirmed seed data, and runtime sets `completedAt` | P-DOC-5, P-DOC-5b |
+| C-DOC-6 | Index B3: seed data, "report to the fork team" | confirmed seed data, and runtime sets `completedAt` | P-DOC-5, P-DOC-5b |
 | C-DOC-7 | `package.json` and `package-lock.json` pin the harness at `v0.3.0` (`be86e0e`) | the checkout's installed `node_modules` has harness 0.2.11 and no `stripe` package (ENV, plan section 14) | P-DOC-16 |
 | C-DOC-8 | Foundation index section 6, U9/U13 | not probed in this session | n/a |
 
