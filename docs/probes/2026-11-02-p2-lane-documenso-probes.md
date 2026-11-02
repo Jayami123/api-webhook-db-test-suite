@@ -481,7 +481,7 @@ Run by the build session on the build branch. Harness `0.3.1` (lock `7d4a3ae`), 
 - **Mechanism (read):** `apps/remix/server/api/files/files.ts:56-57`: every error in the `try` falls into one `catch` that answers 500 (`console.error('Upload failed:', error)`). Client errors (bad input) are not separated from server errors.
 - **Lane treatment:** `test.fail` after the positive control in each of the four tests (`tests/contracts/doc/upload.spec.ts`), so the suite is green while the product answers 500, and turns red once it answers 4xx.
 
-#### Upstream draft (for the fork maintainer; not posted)
+#### Upstream draft (for the fork team; not posted)
 
 Title: `Upload of an invalid PDF answers 500 instead of 4xx`
 
