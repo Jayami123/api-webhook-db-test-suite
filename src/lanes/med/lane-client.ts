@@ -1,0 +1,221 @@
+import type { MedusaAuth } from "../../auth/medusa.ts";
+import {
+  createCaller,
+  type ApiRequestLike,
+  type Caller,
+  type CallResult,
+} from "../../clients/base.ts";
+import { runScopedName } from "../../run/prefix.ts";
+
+/**
+ * The medusa lane's own calls: regions, products, price lists, inventory and raw store reads and
+ * writes. The shared MedusaClient (src/clients/medusa.ts) is not edited; this wraps the same
+ * createCaller plumbing with the lane's needs. Request shapes are the ones probed on 2026-11-02
+ * (probe record, P-MED-16, P-MED-13, P-MED-16b).
+ */
+export type LaneCurrency = "usd" | "jpy" | "kwd";
+
+/** Country per lane region. None of these is used by the harness seed (dk fr de it es se gb us). */
+export const LANE_COUNTRY: Readonly<Record<LaneCurrency, string>> = {
+  usd: "ca",
+  jpy: "jp",
+  kwd: "kw",
+};
+
+export interface LaneRegion {
+  readonly id: string;
+  readonly currency: LaneCurrency;
+}
+
+export interface LaneProduct {
+  readonly id: string;
+  readonly variantId: string;
+  readonly inventoryItemId: string | undefined;
+}
+
+export interface LaneClient {
+  readonly admin: Caller;
+  readonly store: Caller;
+  /** Creates (or reuses, by run-scoped name) the lane's region for a currency. Pays with pp_system_default only. */
+  regionFor(currency: LaneCurrency): Promise<LaneRegion>;
+  /** Deletes every region this client created or reused. Called from afterAll of each spec file. */
+  releaseRegions(): Promise<void>;
+  productWithPrice(
+    label: string,
+    currency: LaneCurrency,
+    amountMajor: number,
+    options?: { readonly managedInventory?: boolean },
+  ): Promise<LaneProduct>;
+  setVariantPrice(variantId: string, currency: LaneCurrency, amountMajor: number): Promise<void>;
+  /** Store price of a product in a region (calculated amount, major units). undefined if absent. */
+  productPrice(productId: string, regionId: string): Promise<number | undefined>;
+  createPriceList(input: {
+    readonly variantId: string;
+    readonly currency: LaneCurrency;
+    readonly amountMajor: number;
+    readonly startsAt: string;
+    readonly title: string;
+  }): Promise<string>;
+  removeProduct(productId: string): Promise<void>;
+  /** Store GET with the publishable key; returns status and text for contract checks. */
+  rawGet(path: string): Promise<CallResult<unknown>>;
+  /** Store POST with the publishable key; expects any status (the caller asserts it). */
+  rawPost(path: string, body: unknown): Promise<CallResult<unknown>>;
+}
+
+export function laneClient(input: {
+  request: ApiRequestLike;
+  baseUrl: string;
+  runPrefix: string;
+  auth: MedusaAuth;
+}): LaneClient {
+  const { request, baseUrl, runPrefix, auth } = input;
+  const admin = createCaller({
+    request,
+    baseUrl,
+    runPrefix,
+    auth: { headerName: auth.headerName, headerValue: auth.headerValue },
+  });
+  const storeCall = createCaller({
+    request,
+    baseUrl,
+    runPrefix,
+    extraHeaders: () => ({ "x-publishable-api-key": auth.publishableKey.reveal() }),
+  });
+  const anyStatus = [200, 201, 400, 401, 404, 409, 422, 500] as const;
+  const regions = new Map<LaneCurrency, LaneRegion>();
+  let channelId: string | undefined;
+
+  const defaultChannel = async (): Promise<string> => {
+    if (channelId !== undefined) return channelId;
+    const res = await admin<{ sales_channels: { id: string; name: string }[] }>(
+      "GET",
+      "/admin/sales-channels?limit=100&fields=id,name",
+    );
+    const list = res.body.sales_channels;
+    const channel = list.find((c) => c.name === "Default Sales Channel") ?? list[0];
+    if (channel === undefined) throw new Error("TEST BUG: no sales channel in the seed");
+    channelId = channel.id;
+    return channelId;
+  };
+
+  return {
+    admin,
+    store: storeCall,
+    async regionFor(currency) {
+      const existing = regions.get(currency);
+      if (existing) return existing;
+      const name = runScopedName(`region-${currency}`);
+      const created = await admin<{ region: { id: string } }>("POST", "/admin/regions", {
+        body: {
+          name,
+          currency_code: currency,
+          countries: [LANE_COUNTRY[currency]],
+          payment_providers: ["pp_system_default"],
+        },
+      });
+      const region: LaneRegion = { id: created.body.region.id, currency };
+      regions.set(currency, region);
+      return region;
+    },
+    async releaseRegions() {
+      for (const region of regions.values()) {
+        await admin("DELETE", `/admin/regions/${region.id}`, { expect: [200, 404] });
+      }
+      regions.clear();
+    },
+    async productWithPrice(label, currency, amountMajor, options = {}) {
+      const title = runScopedName(label);
+      const sales = await defaultChannel();
+      const res = await admin<{ product: { id: string; variants: { id: string }[] } }>(
+        "POST",
+        "/admin/products",
+        {
+          body: {
+            title,
+            status: "published",
+            sales_channels: [{ id: sales }],
+            options: [{ title: "Size", values: ["One"] }],
+            variants: [
+              {
+                title: `${title}-v`,
+                sku: `${title}-v`,
+                options: { Size: "One" },
+                manage_inventory: options.managedInventory ?? false,
+                prices: [{ currency_code: currency, amount: amountMajor }],
+              },
+            ],
+          },
+        },
+      );
+      const variantId = res.body.product.variants[0]?.id;
+      if (variantId === undefined) throw new Error("TEST BUG: product created without a variant");
+      let inventoryItemId: string | undefined;
+      if (options.managedInventory === true) {
+        const link = await admin<{ variant: { inventory_items: { inventory_item_id: string }[] } }>(
+          "GET",
+          `/admin/product-variants/${variantId}?fields=id,inventory_items.inventory_item_id`,
+        );
+        inventoryItemId = link.body.variant.inventory_items[0]?.inventory_item_id;
+        // A managed variant without a shipping method needs requires_shipping:false (probe P-MED-16).
+        if (inventoryItemId !== undefined) {
+          await admin("POST", `/admin/inventory-items/${inventoryItemId}`, {
+            body: { requires_shipping: false },
+          });
+        }
+      }
+      return { id: res.body.product.id, variantId, inventoryItemId };
+    },
+    async setVariantPrice(variantId, currency, amountMajor) {
+      const found = await admin<{ variant: { product_id: string } }>(
+        "GET",
+        `/admin/product-variants/${variantId}?fields=id,product_id`,
+      );
+      await admin(
+        "POST",
+        `/admin/products/${found.body.variant.product_id}/variants/${variantId}`,
+        {
+          body: { prices: [{ currency_code: currency, amount: amountMajor }] },
+        },
+      );
+    },
+    async productPrice(productId, regionId) {
+      const res = await storeCall<{
+        product: { variants: { calculated_price?: { calculated_amount?: number } }[] };
+      }>(
+        "GET",
+        `/store/products/${productId}?region_id=${regionId}&fields=*variants.calculated_price`,
+      );
+      return res.body.product.variants[0]?.calculated_price?.calculated_amount;
+    },
+    async createPriceList(input) {
+      const res = await admin<{ price_list: { id: string } }>("POST", "/admin/price-lists", {
+        body: {
+          title: runScopedName(input.title),
+          description: "P2 medusa lane",
+          type: "sale",
+          status: "active",
+          starts_at: input.startsAt,
+          rules: {},
+          prices: [
+            {
+              amount: input.amountMajor,
+              currency_code: input.currency,
+              variant_id: input.variantId,
+            },
+          ],
+        },
+      });
+      return res.body.price_list.id;
+    },
+    async removeProduct(productId) {
+      await admin("DELETE", `/admin/products/${productId}`, { expect: [200, 404] });
+    },
+    async rawGet(path) {
+      return storeCall("GET", path, { expect: anyStatus as unknown as number[] });
+    },
+    async rawPost(path, body) {
+      return storeCall("POST", path, { body, expect: anyStatus as unknown as number[] });
+    },
+  };
+}
