@@ -1,3 +1,7 @@
+import {
+  resolveEventTypeSchedule,
+  dateOverridesInWindow,
+} from "../../../src/lanes/cal/availability.ts";
 import { test, expect } from "../../../src/fixtures/index.ts";
 import { readOnlyDb } from "../../../src/db/pg.ts";
 import { calBookingApi, attendeeEmailFor } from "../../../src/lanes/cal/booking.ts";
@@ -17,16 +21,12 @@ import { POLL_INTERVALS } from "../../../src/slo.ts";
 const db = (): ReturnType<typeof readOnlyDb> => readOnlyDb("cal");
 const SLOT_MS = 30 * 60_000;
 
-/** Availability windows of the pro user's schedules (Availability.scheduleId -> Schedule.userId; schema checked: docs/probes/2026-11-02-p2-lane-cal-live-probes.md L11). */
-type Window = {
-  days: number[];
-  startTime: string;
-  endTime: string;
-};
-async function availabilityWindows(): Promise<Window[]> {
+/** Weekly availability rows of one schedule (Availability.scheduleId; date overrides are asserted absent by the test). */
+type Window = { days: number[]; startTime: string; endTime: string };
+async function availabilityWindows(scheduleId: number): Promise<Window[]> {
   return db().select<Window>(
-    `SELECT a."days" AS days, to_char(a."startTime", 'HH24:MI') AS "startTime", to_char(a."endTime", 'HH24:MI') AS "endTime" FROM "Availability" a JOIN "Schedule" s ON s."id" = a."scheduleId" JOIN "users" u ON u."id" = s."userId" WHERE u."email" = $1`,
-    [PRO_EMAIL],
+    `SELECT a."days" AS days, to_char(a."startTime", 'HH24:MI') AS "startTime", to_char(a."endTime", 'HH24:MI') AS "endTime" FROM "Availability" a WHERE a."scheduleId" = $1 AND a."date" IS NULL`,
+    [scheduleId],
   );
 }
 
@@ -49,24 +49,31 @@ function localParts(instant: Date, zone: string): { weekday: number; hhmm: strin
 }
 
 test.describe("P2-CAL-PROP slot properties", () => {
-  test("P2-CAL-PROP-001 every returned slot lies inside the seeded availability", async ({
+  test("P2-CAL-PROP-001 every returned slot lies inside the event type's own schedule (in its zone)", async ({
     request,
     calAuth,
   }) => {
     const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
-    const windows = await availabilityWindows();
-    expect(windows.length).toBeGreaterThan(0);
-    const starts = await slotStartsAhead(request, calAuth, eventTypeId, "Europe/London");
+    // Setup, asserted first: the schedule and zone the product uses for this event type, read from the rows (A4).
+    const resolved = await resolveEventTypeSchedule(db(), PRO_EMAIL, PRO_SLUG_30);
+    expect(resolved.scheduleId).toBeGreaterThan(0);
+    expect(() => new Intl.DateTimeFormat("en-GB", { timeZone: resolved.timeZone })).not.toThrow();
+    const day = (n: number) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+    expect(await dateOverridesInWindow(db(), resolved.scheduleId, day(3), day(12))).toBe(0);
+    const windows = await availabilityWindows(resolved.scheduleId);
+    expect(windows.length, "weekly availability rows of the resolved schedule").toBeGreaterThan(0);
+    // The oracle is this schedule and this zone only (never another schedule, never a hard-coded zone).
+    const starts = await slotStartsAhead(request, calAuth, eventTypeId, resolved.timeZone);
     expect(starts.length).toBeGreaterThan(0);
     for (const s of starts) {
       const at = new Date(s);
-      const { weekday, hhmm } = localParts(at, "Europe/London");
+      const { weekday, hhmm } = localParts(at, resolved.timeZone);
       const inside = windows.some(
         (w) => w.days.includes(weekday) && hhmm >= w.startTime && hhmm < w.endTime,
       );
       expect(
         inside,
-        `slot ${s} (London ${hhmm}, weekday ${String(weekday)}) outside availability`,
+        `slot ${s} (${resolved.timeZone} ${hhmm}, weekday ${String(weekday)}) outside schedule ${String(resolved.scheduleId)}`,
       ).toBe(true);
       expect(at.getUTCMinutes() % 30).toBe(0);
     }
