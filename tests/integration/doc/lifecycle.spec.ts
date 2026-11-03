@@ -6,6 +6,7 @@ import { test, expect } from "../../../src/fixtures/index.ts";
 import { readOnlyDb } from "../../../src/db/pg.ts";
 import { apiBaseUrl } from "../../../src/env.ts";
 import { v2Post, distribute, type LaneHttp } from "../../../src/lanes/doc/envelope.ts";
+import { listMail, mailboxOf } from "../../../src/lanes/doc/mail.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
 import { completedEnvelope } from "../../fixtures/doc/completed-envelope.ts";
@@ -100,7 +101,9 @@ test("P2-DOC-SM-001 refused transitions on a COMPLETED envelope change no rows",
   try {
     const before = await snapshot();
     const redistribute = await distribute(http, done.envelopeId);
-    expect(redistribute).toBeGreaterThanOrEqual(400); // P-DOC-11: 500 (plan OD-6)
+    // P-DOC-11 (observed 2026-11-03): send-document.ts:125 throws a plain Error for a completed envelope, which
+    // answers 500. A P5 design finding (no documented 4xx contract), so no test.fail; the status is pinned.
+    expect(redistribute).toBe(500);
     const addField = await v2Post(http, "/api/v2/envelope/field/create-many", {
       envelopeId: done.envelopeId,
       data: [
@@ -150,8 +153,21 @@ test("P2-DOC-SM-002 distributing a PENDING envelope a second time changes no row
         ),
       });
     const before = await snapshot();
-    await distribute(env.http, env.envelopeId);
+    // Observed 2026-11-03 (B-34): a second distribute of a PENDING envelope answers 200 and changes no row.
+    // EMAIL_SENT and each signer's mail count are read at the same points (no quiet window; see the report).
+    const emailsBefore = await emailTypeCounts(db, env.envelopeId);
+    const mailsBefore = await Promise.all(
+      env.prepared.signers.map(async (x) => (await listMail(mailboxOf(x.email))).length),
+    );
+    const second = await distribute(env.http, env.envelopeId);
+    expect(second).toBe(200);
     expect(await snapshot()).toBe(before);
+    expect(await emailTypeCounts(db, env.envelopeId)).toEqual(emailsBefore);
+    expect(
+      await Promise.all(
+        env.prepared.signers.map(async (x) => (await listMail(mailboxOf(x.email))).length),
+      ),
+    ).toEqual(mailsBefore);
   } finally {
     await doc.envelopes.remove(env.envelopeId);
   }

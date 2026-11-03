@@ -60,7 +60,9 @@ test("P2-DOC-STR-001 a bad or stale signature is refused with a non-2xx and chan
   const now = Math.floor(Date.now() / 1000);
   const stale = signedStripeHeaders(stripeWebhookSecret(process.env), body, now - 600); // outside the 300 s tolerance
   const res = await post(request, stale, body);
-  expect(res.status()).toBeGreaterThanOrEqual(400); // OD-5: the catch-all answers 500 (P-DOC-7)
+  // P-DOC-7 (observed): the webhook catch-all answers 500 "Unknown error" (packages/ee/server-only/stripe/webhook/handler.ts:113-118
+  // at f4105e4). A P5 design finding (OD-5): no documented 4xx contract, so no test.fail; the status is pinned.
+  expect(res.status()).toBe(500);
   expect(await rowCounts()).toBe(before);
 });
 
@@ -110,6 +112,8 @@ test.describe("STR-002 and STR-003 against the run's Stripe fixture", () => {
         created: ts,
       });
       const headers = signedStripeHeaders(stripeWebhookSecret(process.env), body, ts);
+      // A3 setup: before the first event the run customer has no subscription row, so "processed" is the event's doing.
+      expect(await subsFor()).toEqual([]);
       expect((await post(request, headers, body)).status()).toBe(200);
       const afterFirst = await subsFor();
       expect(afterFirst).toHaveLength(1); // the sync writes exactly one row for the run customer
@@ -146,6 +150,12 @@ test.describe("STR-002 and STR-003 against the run's Stripe fixture", () => {
       expect((await post(request, signedStripeHeaders(secret, newer, t2), newer)).status()).toBe(
         200,
       );
+      // A3: the live Stripe status (the newer event's, untouched by the webhook) must differ from the older event's
+      // status, or "newest wins" could not be told apart from "last write wins". Both come from the bodies.
+      const olderStatus = (JSON.parse(older) as { data: { object: { status: string } } }).data
+        .object.status;
+      const liveAfterNewer = (await stripe.subscriptions.retrieve(stripeRun.subscriptionId)).status;
+      expect(liveAfterNewer).not.toBe(olderStatus);
       expect((await post(request, signedStripeHeaders(secret, older, t1), older)).status()).toBe(
         200,
       );
