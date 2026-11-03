@@ -20,6 +20,29 @@ function laneFiles(dirs: readonly string[]): string[] {
   return out;
 }
 
+/**
+ * Every generated secret (an `openssl rand` value) must be masked with ::add-mask:: before it is written to
+ * GITHUB_ENV or GITHUB_OUTPUT. Returns the generated variables that are not masked first (empty = pass).
+ */
+function unmaskedGeneratedSecrets(text: string): string[] {
+  const bad: string[] = [];
+  const lines = text.split("\n");
+  lines.forEach((line, i) => {
+    if (!line.includes("openssl rand")) return;
+    const assign = /(\w+)="\$\(openssl rand/.exec(line);
+    if (assign === null || /GITHUB_(ENV|OUTPUT)/.test(line)) {
+      bad.push(`inline:${String(i + 1)}`);
+      return;
+    }
+    const name = assign[1] ?? "";
+    const mask = "::add-mask::$" + name;
+    const write = lines.findIndex((l, j) => j > i && /GITHUB_(ENV|OUTPUT)/.test(l));
+    const maskAt = lines.findIndex((l, j) => j > i && l.includes(mask));
+    if (maskAt === -1 || (write !== -1 && maskAt > write)) bad.push(name);
+  });
+  return bad;
+}
+
 describe("documenso lane workflow (.github/workflows/p2-doc.yml)", () => {
   test("it has the doc-api job (API and serial steps) and the doc-billing-api job", () => {
     assert.ok(WORKFLOW.includes("\n  doc-api:\n"));
@@ -61,6 +84,21 @@ describe("documenso lane workflow (.github/workflows/p2-doc.yml)", () => {
         `${name} not in config`,
       );
     }
+  });
+
+  test("every generated secret is masked before it reaches GITHUB_ENV or GITHUB_OUTPUT", () => {
+    assert.deepEqual(unmaskedGeneratedSecrets(WORKFLOW), []);
+  });
+
+  test("negative: an inline generated value written to GITHUB_ENV without a mask is caught", () => {
+    const inline = 'run: echo "P2_STRIPE_TEST_WH_SECRET=$(openssl rand -hex 24)" >> "$GITHUB_ENV"';
+    assert.notDeepEqual(unmaskedGeneratedSecrets(inline), []);
+    const unmasked = [
+      "run: |",
+      '  v="$(openssl rand -hex 24)"',
+      '  echo "P2_STRIPE_TEST_WH_SECRET=$v" >> "$GITHUB_ENV"',
+    ].join("\n");
+    assert.deepEqual(unmaskedGeneratedSecrets(unmasked), ["v"]);
   });
 
   test("FC-2: the rate-limit bypass flag appears in neither the workflow nor the lane's code", () => {

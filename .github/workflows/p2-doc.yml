@@ -199,7 +199,10 @@ jobs:
 
       - name: Per-run webhook secret for the billing stack (never printed)
         timeout-minutes: 2
-        run: echo "P2_STRIPE_TEST_WH_SECRET=$(openssl rand -hex 24)" >> "$GITHUB_ENV"
+        run: |
+          v="$(openssl rand -hex 24)"
+          echo "::add-mask::$v"
+          echo "P2_STRIPE_TEST_WH_SECRET=$v" >> "$GITHUB_ENV"
 
       - name: Start the Documenso stack with billing on (harness v0.3.1)
         timeout-minutes: 30
