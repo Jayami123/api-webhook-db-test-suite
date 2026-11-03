@@ -19,4 +19,14 @@ export const documensoLaneRules: readonly Rule[] = [
     param: LEAK_LIKE_PREFIX,
     sql: `SELECT "id" AS id, "name" AS value FROM "Organisation" WHERE "name" LIKE $1 ${ESC}`,
   },
+  {
+    id: "doc-leak-user-email",
+    kind: "leak",
+    description: "No user created by this run is left",
+    cite: "packages/prisma/schema.prisma:39-60 (User; email is a plain unique column, no deletedAt; verified 2026-11-03)",
+    basis: "live",
+    verified: "2026-11-03",
+    param: LEAK_LIKE_PREFIX,
+    sql: `SELECT "id"::text AS id, "email" AS value FROM "User" WHERE "email" LIKE $1 ${ESC}`,
+  },
 ];
