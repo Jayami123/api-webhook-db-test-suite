@@ -17,7 +17,11 @@ import {
 } from "../../../src/lanes/cal/booking.ts";
 import { eventTypeIdBySlug } from "../../../src/lanes/cal/event-types.ts";
 import { fireScheduledTriggersOnce } from "../../../src/lanes/cal/cron.ts";
-import { CAL_QUIET_WINDOW_MS, quietState } from "../../../src/lanes/cal/quiet.ts";
+import {
+  CAL_QUIET_TEST_BUDGET_MS,
+  CAL_QUIET_WINDOW_MS,
+  quietState,
+} from "../../../src/lanes/cal/quiet.ts";
 import {
   moveStartAfter,
   scheduledRowsForBooking,
@@ -114,6 +118,8 @@ test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
     cal,
     receiverHandle,
   }) => {
+    // Holds a quiet window (one cron tick plus margin): its own budget, the shared 60 s limit is unchanged (quiet.ts).
+    test.setTimeout(CAL_QUIET_TEST_BUDGET_MS);
     const ctx = { request, calAuth, cal, receiverHandle };
     const track: { hookId?: string; uid?: string } = {};
     const testId = "cal-sch-002c";
@@ -168,6 +174,8 @@ test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
     cal,
     receiverHandle,
   }) => {
+    // Holds a quiet window (one cron tick plus margin): its own budget, the shared 60 s limit is unchanged (quiet.ts).
+    test.setTimeout(CAL_QUIET_TEST_BUDGET_MS);
     const ctx = { request, calAuth, cal, receiverHandle };
     const track: { hookId?: string; uid?: string } = {};
     const testId = "cal-sch-003c";
@@ -216,6 +224,8 @@ test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
     cal,
     receiverHandle,
   }) => {
+    // Holds a quiet window (one cron tick plus margin): its own budget, the shared 60 s limit is unchanged (quiet.ts).
+    test.setTimeout(CAL_QUIET_TEST_BUDGET_MS);
     const ctx = { request, calAuth, cal, receiverHandle };
     const track: { hookId?: string; uid?: string } = {};
     const testId = "cal-sch-003p";

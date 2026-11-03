@@ -1,11 +1,22 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CAL_QUIET_WINDOW_MS, quietState } from "../../../../src/lanes/cal/quiet.ts";
+import {
+  CAL_CRON_TICK_MS,
+  CAL_QUIET_TEST_BUDGET_MS,
+  CAL_QUIET_WINDOW_MS,
+  quietState,
+} from "../../../../src/lanes/cal/quiet.ts";
 
-const W = 10_000;
+const W = CAL_QUIET_WINDOW_MS;
 
-test("the quiet window is the scheduled-delivery budget, not a cron interval", () => {
-  assert.equal(CAL_QUIET_WINDOW_MS, 10_000);
+test("the quiet window is one cron tick plus the delivery-budget margin", () => {
+  assert.equal(CAL_CRON_TICK_MS, 60_000);
+  assert.equal(CAL_QUIET_WINDOW_MS, 70_000);
+});
+
+test("the per-test budget covers the window, the margin and the setup, and stays above the shared 60 s", () => {
+  assert.equal(CAL_QUIET_TEST_BUDGET_MS, 85_000);
+  assert.ok(CAL_QUIET_TEST_BUDGET_MS > CAL_QUIET_WINDOW_MS);
 });
 
 test("inside the window the state is waiting, whatever the count below the expected", () => {
