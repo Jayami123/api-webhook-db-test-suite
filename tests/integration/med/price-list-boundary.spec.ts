@@ -2,8 +2,14 @@ import { test, expect } from "../../../src/fixtures/index.ts";
 import { laneOf } from "../../../src/lanes/med/lane-client.ts";
 import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
 import { dbNowIso } from "../../../src/lanes/med/oracle.ts";
-import { runScopedName } from "../../../src/run/prefix.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
+
+/**
+ * starts_at is compared with now() on the DATABASE clock (@medusajs/pricing dist/repositories/pricing.js:137,
+ * 188). Both sides are proven: before starts_at the price is still the base price, and the first read of the
+ * sale price happens at or after starts_at on the same clock.
+ */
+const START_OFFSET_MS = 5_000;
 
 test.describe("medusa price list boundary", () => {
   test("P2-MED-PL-001 a price list is active exactly at starts_at on the database clock", async ({
@@ -17,11 +23,9 @@ test.describe("medusa price list boundary", () => {
     try {
       const region = await lane.regionFor("usd");
       const product = await lane.productWithPrice(label, "usd", 10);
-      expect(await lane.productPrice(product.id, region.id), "price before the list").toBe(10);
 
-      // starts_at is five seconds after the DATABASE clock: the product compares to now() there.
       const dbNow = await dbNowIso();
-      const startsAt = new Date(Date.parse(dbNow) + 5_000).toISOString();
+      const startsAt = new Date(Date.parse(dbNow) + START_OFFSET_MS).toISOString();
       priceListId = await lane.createPriceList({
         variantId: product.variantId,
         currency: "usd",
@@ -29,16 +33,35 @@ test.describe("medusa price list boundary", () => {
         startsAt,
         title: `${label}-list`,
       });
+
+      // Before starts_at: the database clock is earlier, and the store still shows the base price.
+      expect(Date.parse(await dbNowIso()), "database clock before starts_at").toBeLessThan(
+        Date.parse(startsAt),
+      );
+      expect(await lane.productPrice(product.id, region.id), "base price before starts_at").toBe(
+        10,
+      );
+
+      // At starts_at: the first read of the sale price happens at or after starts_at (database clock).
+      let firstSaleAtMs: number | undefined;
       await expect
-        .poll(() => lane.productPrice(product.id, region.id), {
-          timeout: SLO.medPriceListBoundary.ms,
-          intervals: POLL_INTERVALS,
-          message: "sale price after starts_at",
-        })
+        .poll(
+          async () => {
+            const price = await lane.productPrice(product.id, region.id);
+            if (price === 8 && firstSaleAtMs === undefined)
+              firstSaleAtMs = Date.parse(await dbNowIso());
+            return price;
+          },
+          {
+            timeout: SLO.medPriceListBoundary.ms,
+            intervals: POLL_INTERVALS,
+            message: "sale price after starts_at",
+          },
+        )
         .toBe(8);
-      test
-        .info()
-        .annotations.push({ type: "list-title", description: runScopedName(`${label}-list`) });
+      expect(firstSaleAtMs, "database clock at the first sale read").toBeGreaterThanOrEqual(
+        Date.parse(startsAt),
+      );
     } finally {
       if (priceListId !== undefined) await lane.removePriceList(priceListId);
       await cleanupLabel(lane, med, label);
