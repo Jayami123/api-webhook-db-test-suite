@@ -113,8 +113,10 @@ warm `up cal` 28 s, `down cal` 2 s (plan section 2 timings reproduced).
   documentation bug (the date-only note above is a different input form).
 - Observed counts differ by database state, so the test asserts a non-empty baseline, not a number. Local database: 29 instants per zone.
   CI (fresh database, run 41570521198): 32 instants per zone, identical across the five zones. The earlier hard-coded 29 was a test bug (see the PR body).
-- Negative control: `end=<day6>T01:00:00Z` (UTC) returned 13 instants, not the 29 plus any extra. The set changed, which is the
-  control's purpose. The count drop is observed and not investigated further (the case does not assert it).
+- Widened end (`end=<day6>T01:00:00Z`) returned 13 instants, not a superset of 29. Root cause (review A3, probe "probe-a3" on a fresh
+  stack, section L15): the product maps a midnight end to 23:59:59 of that day (`adjustEndTime`, `slots-input.service.ts:140-151`
+  at `c2b7ac4`), but a 01:00 end is an instant, which excludes every slot of that day after 01:00. The lane's negative control
+  assumed a midnight end was an instant. This is a lane cause, not a product defect; the call was not malformed, the expectation was.
 - PROP-003 is built with these explicit bounds and the negative control (`tests/integration/cal/cal-prop.spec.ts`). Its earlier
   HARD STOP is void: the property holds for the input the OAS specifies.
 
@@ -137,6 +139,82 @@ warm `up cal` 28 s, `down cal` 2 s (plan section 2 timings reproduced).
 - The harness's default `PRODUCTS_ROOT` resolves inside `node_modules` (`node_modules/products`) when unset: the lane sets
   `PRODUCTS_ROOT=/home/user/products` in the environment (plan F-ENV-2, an environment note, not a harness change).
 - Seed message P10 reproduced: `Error adding google credentials to DB: Unexpected end of JSON input` (not a failure of the seed).
+
+## L14 rate-limit headers and scope (review A5; probe "probe-a5", fresh key)
+
+- Headers on every API-key response: `x-ratelimit-limit-default` = 120, `x-ratelimit-remaining-default` (119 after the first call),
+  `x-ratelimit-reset-default` = 60 (seconds). The names come from `apps/api/v2/src/lib/throttler-guard.ts:193-198` at `c2b7ac4`
+  (`X-RateLimit-{Limit,Remaining,Reset}-<name>`; the name here is `default`).
+- Burst: 120 GET `/v2/me` answered 200 and the 121st answered 429; `remaining` was 0 before the 429.
+- The limit is per API key across endpoints (tracker `api_key_...`): `POST /v2/bookings` answered 429 `ThrottlerException` while the
+  key was limited, and the Booking count was unchanged (433 before, 433 after).
+- Observed scope: default, per key, not per route. FC-3 proves the 429 on the booking request (`cal-framework.spec.ts`).
+
+## L15 PROP-003 widened-window root cause (review A3; probe "probe-a3", fresh stack)
+
+| Request (timeZone UTC, eventTypeId 3) | Status | Count | First | Last | Dates in body |
+|---|---|---|---|---|---|
+| start `<day3>T00:00Z`, end `<day6>T00:00Z` (spec baseline) | 200 | 29 | `<day3>` 10:30Z | `<day6>` 16:30Z | 2 |
+| same start, end `<day6>T01:00Z` (widened) | 200 | 13 | `<day3>` 10:30Z | `<day6>` 16:30Z | 1 |
+| start `<day0>T00:00Z`, end `<day6>T00:00Z` | 200 | 70 | `<day0>` 09:00Z | `<day6>` 16:30Z | 5 |
+| same start, end `<day6>T01:00Z` | 200 | 54 | `<day0>` 09:00Z | `<day6>` 16:30Z | 4 |
+
+- The body has only `data` and `status`; no range clamp is reported.
+- Pinned rules (c2b7ac4, `apps/api/v2/src/modules/slots/slots-2024-09-04/services/slots-input.service.ts`): a start that is not
+  midnight is an instant (`adjustStartTime`, lines 126-137); an end at exactly 00:00:00 is end-of-day, set to 23:59:59 of that day
+  (`adjustEndTime`, lines 140-151); any other end is an instant.
+- Outcome: lane cause. The widened window excludes the last day's slots because they start after 01:00. No product finding.
+  The fixed control is: start one minute after the first baseline instant must return exactly the baseline minus its first element.
+
+## L16 contract identities (review A1; probe "probe-crawl2", fresh stack, one booking and one webhook seeded by the crawl)
+
+- The crawl seeds one booking and one webhook (`webhookId`), so the identities do not move with the seed. Without the webhook,
+  `/v2/webhooks` answers a valid 200 body (validity is data-dependent; measured), and `/v2/webhooks/{webhookId}` is not crawled.
+- Crawled: 31 operations; no path value: 24 (reason `no-path-value`, the closed list); undocumented statuses: 18; invalid 200 bodies: 7.
+- The pins live in `src/lanes/cal/contract-pins.ts`; each undocumented entry has its note. The CI run that confirms them on a clean
+  runner is recorded in the PR body (review step 8).
+- Invalid 200 bodies (PB-CAL-OAS-1, product documentation, proven): GET /v2/bookings, GET /v2/bookings/{bookingUid}, GET /v2/bookings/{bookingUid}/calendar-links, GET /v2/bookings/{bookingUid}/references, GET /v2/calendars, GET /v2/webhooks, GET /v2/webhooks/{webhookId}.
+- Undocumented statuses (SPEC-CAL-UNDOC, each pinned; none filtered):
+  - GET /v2/bookings/{bookingUid}/conferencing-sessions 404
+  - GET /v2/bookings/{bookingUid}/recordings 404
+  - GET /v2/bookings/{bookingUid}/transcripts 404
+  - GET /v2/calendars/busy-times 400
+  - GET /v2/calendars/ics-feed/check 400
+  - GET /v2/event-types 404
+  - GET /v2/event-types/{eventTypeId} 404
+  - GET /v2/event-types/{eventTypeId}/private-links 404
+  - GET /v2/event-types/{eventTypeId}/webhooks/{webhookId} 400
+  - GET /v2/oauth-clients 401
+  - GET /v2/schedules 404
+  - GET /v2/schedules/default 404
+  - GET /v2/slots 404
+  - GET /v2/stripe/check 404
+  - GET /v2/stripe/connect 400
+  - GET /v2/stripe/save 400
+  - GET /v2/verified-resources/emails 404
+  - GET /v2/verified-resources/phones 404
+- Crawled operations (31): GET /v2/bookings, GET /v2/bookings/{bookingUid}, GET /v2/bookings/{bookingUid}/attendees, GET /v2/bookings/{bookingUid}/calendar-links, GET /v2/bookings/{bookingUid}/conferencing-sessions, GET /v2/bookings/{bookingUid}/recordings, GET /v2/bookings/{bookingUid}/references, GET /v2/bookings/{bookingUid}/transcripts, GET /v2/calendars, GET /v2/calendars/busy-times, GET /v2/calendars/connections, GET /v2/calendars/ics-feed/check, GET /v2/conferencing, GET /v2/conferencing/default, GET /v2/event-types, GET /v2/event-types/{eventTypeId}, GET /v2/event-types/{eventTypeId}/private-links, GET /v2/event-types/{eventTypeId}/webhooks, GET /v2/event-types/{eventTypeId}/webhooks/{webhookId}, GET /v2/me, GET /v2/oauth-clients, GET /v2/schedules, GET /v2/schedules/default, GET /v2/slots, GET /v2/stripe/check, GET /v2/stripe/connect, GET /v2/stripe/save, GET /v2/verified-resources/emails, GET /v2/verified-resources/phones, GET /v2/webhooks, GET /v2/webhooks/{webhookId}.
+- No-path-value operations (24): GET /v2/auth/oauth2/clients/{clientId}, GET /v2/bookings/by-seat/{seatUid}, GET /v2/bookings/{bookingUid}/attendees/{attendeeId}, GET /v2/calendars/connections/{connectionId}/events, GET /v2/calendars/connections/{connectionId}/events/{eventId}, GET /v2/calendars/connections/{connectionId}/freebusy, GET /v2/calendars/{calendar}/check, GET /v2/calendars/{calendar}/connect, GET /v2/calendars/{calendar}/event/{eventUid}, GET /v2/calendars/{calendar}/events, GET /v2/calendars/{calendar}/events/{eventUid}, GET /v2/calendars/{calendar}/freebusy, GET /v2/calendars/{calendar}/save, GET /v2/conferencing/{app}/oauth/auth-url, GET /v2/conferencing/{app}/oauth/callback, GET /v2/oauth-clients/{clientId}, GET /v2/oauth-clients/{clientId}/users, GET /v2/oauth-clients/{clientId}/users/{userId}, GET /v2/oauth-clients/{clientId}/webhooks, GET /v2/oauth-clients/{clientId}/webhooks/{webhookId}, GET /v2/schedules/{scheduleId}, GET /v2/slots/reservations/{uid}, GET /v2/verified-resources/emails/{id}, GET /v2/verified-resources/phones/{id}.
+
+## Escalation (review addendum)
+
+- Plan meaning changed, CON-005: the plan's "every non-200 status is documented" was a tautology (review R1). It is replaced by
+  identity pins: crawled set, no-path-value set, the undocumented (method, path, status) set and the invalid 200 set. The count
+  checks (29, 12, 43, 26) are gone. The meaning of CON-005 is now "the pinned identities hold and every invalid 200 is the known bug".
+- Plan meaning changed, PROP-003: the plan's negative control ("moving one bound by an hour changes the set") was a tautology and
+  hid an anomaly (review R4). It is now a deterministic control derived from the baseline (start one minute after the first instant
+  returns the baseline minus its first element). The meaning of PROP-003 is unchanged: the same instants for five viewer zones.
+- Plan scope, quiet windows: the window is the scheduled-delivery budget (10 s, `SLO.calWebhookDelivery`), not the product cron
+  interval, because the lane runs no cron and the shared 60 s test timeout cannot hold a 60 s window (`src/lanes/cal/quiet.ts`).
+
+## Findings (review addendum)
+
+- PB-CAL-OAS-1 (product documentation, proven): 200 bodies of the routes listed in L16 do not validate against the committed spec.
+  The validity is data-dependent (a webhook changes two routes), so the crawl seeds its own data.
+- SPEC-CAL-UNDOC (documentation, each entry pinned in `KNOWN_UNDOCUMENTED`): 18 non-200 answers the committed spec does not
+  list. Some are the crawl's input (no query or path value); the cause is recorded per entry, and entries marked UNVERIFIED have no
+  measured cause.
+- A3 outcome: no product finding. The widened-window anomaly is a lane cause (L15).
 
 ## Upstream drafts (product bugs found by this lane)
 
