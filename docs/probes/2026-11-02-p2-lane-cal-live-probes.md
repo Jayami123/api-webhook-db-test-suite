@@ -111,6 +111,8 @@ warm `up cal` 28 s, `down cal` 2 s (plan section 2 timings reproduced).
   Australia/Sydney, UTC. Each returned status 200 and 29 instants, first `2026-11-06T10:30:00Z`, last `2026-11-09T16:30:00Z`.
   The five sets are identical (no extra, no missing). So the OAS text ("Must be in UTC") holds for explicit bounds; no product or
   documentation bug (the date-only note above is a different input form).
+- Observed counts differ by database state, so the test asserts a non-empty baseline, not a number. Local database: 29 instants per zone.
+  CI (fresh database, run 41570521198): 32 instants per zone, identical across the five zones. The earlier hard-coded 29 was a test bug (see the PR body).
 - Negative control: `end=<day6>T01:00:00Z` (UTC) returned 13 instants, not the 29 plus any extra. The set changed, which is the
   control's purpose. The count drop is observed and not investigated further (the case does not assert it).
 - PROP-003 is built with these explicit bounds and the negative control (`tests/integration/cal/cal-prop.spec.ts`). Its earlier

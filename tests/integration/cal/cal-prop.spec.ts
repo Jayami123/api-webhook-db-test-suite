@@ -125,9 +125,11 @@ test.describe("P2-CAL-PROP slot properties", () => {
     const sets: string[][] = [];
     for (const z of zones)
       sets.push(await slotInstantsBetween(request, calAuth, eventTypeId, startUtc, endUtc, z));
-    // Setup, asserted before the property: every zone returned slots for the same bounds (measured: 29 each, probe L11).
-    expect(sets.map((s) => s.length)).toEqual([29, 29, 29, 29, 29]);
-    for (const set of sets) expect(set).toEqual(sets[0]);
+    // Setup, asserted before the property: the UTC baseline (first zone) is non-empty. The count is database state, not a constant.
+    const baseline = sets[0];
+    expect(baseline?.length ?? 0).toBeGreaterThan(0);
+    // Property: every viewer zone returns the same UTC instants as the baseline (same instants, not only the same count).
+    for (const set of sets) expect(set).toEqual(baseline);
     // Negative control: moving one bound by an hour changes the set, so the equality above can fail.
     const shifted = await slotInstantsBetween(
       request,
@@ -137,6 +139,6 @@ test.describe("P2-CAL-PROP slot properties", () => {
       `${day(6)}T01:00:00Z`,
       "UTC",
     );
-    expect(shifted).not.toEqual(sets[0]);
+    expect(shifted).not.toEqual(baseline);
   });
 });
