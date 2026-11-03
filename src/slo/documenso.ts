@@ -10,7 +10,7 @@ export const documensoSlo = {
     // A5: the window an expiry test gives signing, set from the DB clock (EXP-001).
     ms: 10_000,
     basis:
-      "measured sign + complete + SIGNED 353 ms (probe B-34, one sample, 2026-11-03); 10 s is about 28x that, so a slow run fails as a setup error",
+      "EXP-001 sign + complete + SIGNED over 10 samples (probe B-40, 2026-11-03): min 309 ms, median 375 ms, max 896 ms; 10 s is about 11x the slowest sample, so a slow run fails as a setup error",
   },
   docWebhookQuiet: {
     ms: 10_000,
