@@ -119,3 +119,27 @@ export async function deleteEventType(
   });
   return res.status();
 }
+
+/**
+ * Slot instants (UTC, sorted) for explicit UTC bounds (`start`/`end` as `...Z` datetimes, which the OAS requires) and a viewer
+ * timeZone. Date-only bounds are interpreted in the viewer's zone (probe L11); explicit bounds are not.
+ */
+export async function slotInstantsBetween(
+  request: ApiRequestLike,
+  auth: CalAuth,
+  eventTypeId: number,
+  startUtc: string,
+  endUtc: string,
+  timeZone: string,
+): Promise<string[]> {
+  const url = `${apiBase()}/v2/slots?eventTypeId=${String(eventTypeId)}&start=${encodeURIComponent(startUtc)}&end=${encodeURIComponent(endUtc)}&timeZone=${encodeURIComponent(timeZone)}`;
+  const res = await request.fetch(url, {
+    headers: { "cal-api-version": "2024-09-04", authorization: auth.headerValue.reveal() },
+    failOnStatusCode: false,
+  });
+  const body = JSON.parse(await res.text()) as { data?: Record<string, { start: string }[]> };
+  return Object.values(body.data ?? {})
+    .flat()
+    .map((s) => new Date(s.start).toISOString())
+    .sort();
+}

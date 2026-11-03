@@ -99,13 +99,22 @@ warm `up cal` 28 s, `down cal` 2 s (plan section 2 timings reproduced).
 - Result: one PENDING row for the retry. No PENDING duplicate observed, so IDEM-001 PENDING closes (D9) with no finding.
   Covered by `tests/integration/cal/cal-idem.spec.ts` ("a PENDING retry creates at most one PENDING booking").
 
-## L11 availability and timezones (run "probe-d" and suite)
+## L11 availability and timezones (probes "probe-d", "probe-prop3", and the suite)
 
 - Pro user availability lives in `Availability` rows linked by `scheduleId` to the user's `Schedule` (`Schedule.userId`).
   `Availability.userId` is NULL for these rows (schema checked: `packages/prisma/schema.prisma`).
-- PROP-003 (same UTC instants for five `timeZone` values over day 3 to day 5): NOT HOLDING as written. Each zone's calendar-day window
-  covers different instants at its edges (one extra instant, 14:00Z, appears in some sets). HARD STOP for PROP-003 (plan statement
-  proven false for calendar-day windows); the case is not built. See the PR body.
+- Date-only bounds (earlier run, `start=<day3>&end=<day5>`): the five viewer zones returned different instant sets at the edges. The
+  bounds were calendar dates, which the viewer's zone interprets. This is an observed behaviour of date-only input, recorded as a note,
+  not a finding.
+- Explicit UTC bounds (probe "probe-prop3", serial, no bookings in between): `start=<day3>T00:00:00Z`, `end=<day6>T00:00:00Z`,
+  `eventTypeId` 3, `cal-api-version` 2024-09-04. Five requests, `timeZone` = Europe/London, America/New_York, Asia/Tokyo,
+  Australia/Sydney, UTC. Each returned status 200 and 29 instants, first `2026-11-06T10:30:00Z`, last `2026-11-09T16:30:00Z`.
+  The five sets are identical (no extra, no missing). So the OAS text ("Must be in UTC") holds for explicit bounds; no product or
+  documentation bug (the date-only note above is a different input form).
+- Negative control: `end=<day6>T01:00:00Z` (UTC) returned 13 instants, not the 29 plus any extra. The set changed, which is the
+  control's purpose. The count drop is observed and not investigated further (the case does not assert it).
+- PROP-003 is built with these explicit bounds and the negative control (`tests/integration/cal/cal-prop.spec.ts`). Its earlier
+  HARD STOP is void: the property holds for the input the OAS specifies.
 
 ## L12 committed OpenAPI versus live responses (suite, CON-001/002/005)
 

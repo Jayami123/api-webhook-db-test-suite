@@ -8,6 +8,7 @@ import {
   PRO_EMAIL,
   PRO_SLUG_30,
   SLOTS_CACHE_BUDGET_MS,
+  slotInstantsBetween,
   slotStartsAhead,
 } from "../../../src/lanes/cal/cases.ts";
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
@@ -110,5 +111,32 @@ test.describe("P2-CAL-PROP slot properties", () => {
     } finally {
       for (const uid of booked.uids) await api.cancel(uid, "P2 lane cleanup");
     }
+  });
+
+  test("P2-CAL-PROP-003 the result set is invariant under the viewer timeZone (fixed UTC bounds)", async ({
+    request,
+    calAuth,
+  }) => {
+    const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
+    const day = (n: number) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+    const startUtc = `${day(3)}T00:00:00Z`;
+    const endUtc = `${day(6)}T00:00:00Z`;
+    const zones = ["Europe/London", "America/New_York", "Asia/Tokyo", "Australia/Sydney", "UTC"];
+    const sets: string[][] = [];
+    for (const z of zones)
+      sets.push(await slotInstantsBetween(request, calAuth, eventTypeId, startUtc, endUtc, z));
+    // Setup, asserted before the property: every zone returned slots for the same bounds (measured: 29 each, probe L11).
+    expect(sets.map((s) => s.length)).toEqual([29, 29, 29, 29, 29]);
+    for (const set of sets) expect(set).toEqual(sets[0]);
+    // Negative control: moving one bound by an hour changes the set, so the equality above can fail.
+    const shifted = await slotInstantsBetween(
+      request,
+      calAuth,
+      eventTypeId,
+      startUtc,
+      `${day(6)}T01:00:00Z`,
+      "UTC",
+    );
+    expect(shifted).not.toEqual(sets[0]);
   });
 });
