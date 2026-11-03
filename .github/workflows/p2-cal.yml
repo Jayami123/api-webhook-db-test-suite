@@ -64,6 +64,8 @@ jobs:
           daily="$(openssl rand -base64 32)"
           echo "::add-mask::$daily"
           echo "DAILY_WEBHOOK_SECRET=$daily" >> "$GITHUB_ENV"
+          # One run prefix for the tests and the leak check (playwright.config.ts uses a preset P2_RUN_ID as is).
+          echo "P2_RUN_ID=p2-qa-$(date -u +%Y%m%dt%H%M%Sz)-$(openssl rand -hex 4)" >> "$GITHUB_ENV"
       - name: Bootstrap the Cal product at its pinned ref
         timeout-minutes: 15
         run: bash scripts/bootstrap.sh cal
@@ -79,6 +81,10 @@ jobs:
           set -euo pipefail
           mkdir -p results
           npx playwright test --project=cal-api --project=cal-serial
+      - name: Lane leak check (fails on any violation; runs even when the tests fail)
+        if: always()
+        timeout-minutes: 3
+        run: node src/lanes/cal/leak-check.ts
       - name: Upload report, JUnit and receiver and fixture logs
         if: always()
         timeout-minutes: 5
