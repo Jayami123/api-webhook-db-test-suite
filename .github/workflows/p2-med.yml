@@ -22,7 +22,6 @@ jobs:
     timeout-minutes: 75
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
-      PRODUCTS_ROOT: ${{ runner.temp }}/products
     steps:
       - name: Checkout
         timeout-minutes: 5
@@ -67,6 +66,7 @@ jobs:
             echo "STRIPE_WEBHOOK_SECRET=$webhook_secret"
             echo "MEDUSA_ADMIN_EMAIL=p2-admin-$(openssl rand -hex 4)@example.test"
             echo "MEDUSA_ADMIN_PASSWORD=$admin_password"
+            echo "PRODUCTS_ROOT=$RUNNER_TEMP/products"
             echo "MEDUSA_REDIS=1"
             echo "MEDUSA_STRIPE=1"
             echo "MEDUSA_FF_CACHING=true"
