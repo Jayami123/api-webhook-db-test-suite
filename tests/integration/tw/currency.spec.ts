@@ -32,6 +32,9 @@ async function deleteOpportunity(
 ): Promise<void> {
   const res = await request.delete(`${OPPORTUNITIES}/${id}`, { headers: twAuthHeaders(auth) });
   expect(res.status(), "opportunity cleanup").toBe(200);
+  // In-test leak assert (until the shared opportunity rule lands): no opportunity row of this id remains.
+  const left = await rowsById(readOnlyDb("twenty"), "opportunity", id, `"id"`);
+  expect(left, "opportunity cleanup: no row remains").toHaveLength(0);
 }
 
 test("P2-TW-CUR-001: amountMicros 9007199254740991 round-trips exactly", async ({

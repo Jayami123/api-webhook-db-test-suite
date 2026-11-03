@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { TwentyAuth } from "../../auth/twenty.ts";
 import { SecretString } from "../../auth/secret.ts";
 import { metadataGql, exchangeToken } from "./workspaces.ts";
+import { runScopedName } from "../../run/prefix.ts";
 
 /**
  * A second workspace for multi-workspace cases (moved from tests/integration/tw/workspace.spec.ts, STR-002 setup).
@@ -30,7 +31,7 @@ export async function createSecondWorkspace(
   const created = await metadataGql(
     base,
     "mutation($i:SignUpInNewWorkspaceInput){ signUpInNewWorkspace(input:$i){ loginToken { token } workspace{ id workspaceUrls{ subdomainUrl } } } }",
-    { i: { displayName: `p2-qa-${subdomain}`, subdomain } },
+    { i: { displayName: runScopedName(`second-ws-${subdomain}`), subdomain } },
     userToken,
   );
   if (created.body.errors !== undefined)

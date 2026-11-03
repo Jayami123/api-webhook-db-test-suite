@@ -236,3 +236,29 @@ returned no violations (`npx playwright test` exit 0).
   missing (checked: `CI=1` run of WH-009 without the flag fails with that message). Locally the same case skips with the reason.
   The message names the variable and the required value, never the value set.
 - Used by WH-009 (`tw-multiws`) and CACHE-001 (`TWENTY_SERVER_REPLICAS=2`, `tw-cache`).
+
+**A8 (leak rules for what the lane creates). Table and column names, read through `qa_ro` (live, 2026-11-03).**
+- `workspace_*.opportunity`: `name`, `deletedAt`.
+- `core.fieldMetadata`: `name`, `label` (no `deletedAt`; a deleted field row is removed). The field name is camelCase, so the
+  run prefix goes in the `label`.
+- `workspace_*.workflow`: `name`, `deletedAt`.
+- `core.workspace`: `displayName`, `deletedAt`.
+
+Draft rules (for the shared `src/invariants/rules.ts`; NOT added here, because that file is shared; the escalation list is in the report):
+
+```ts
+{ id: "tw-leak-opportunity-name", kind: "leak", param: LEAK_LIKE_PREFIX,
+  perSchemaQuery: String.raw`SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE 'workspace\_%' ESCAPE '\' ORDER BY schema_name`,
+  sql: `SELECT "id"::text AS id, "name" AS value FROM {schema}."opportunity" WHERE "name" LIKE $1 ${ESC} AND "deletedAt" IS NULL` }
+{ id: "tw-leak-field-name", kind: "leak", param: LEAK_LIKE_PREFIX,
+  sql: `SELECT "id"::text AS id, "label" AS value FROM "core"."fieldMetadata" WHERE "label" LIKE $1 ${ESC}` }
+{ id: "tw-leak-workflow-name", kind: "leak", param: LEAK_LIKE_PREFIX,
+  perSchemaQuery: String.raw`SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE 'workspace\_%' ESCAPE '\' ORDER BY schema_name`,
+  sql: `SELECT "id"::text AS id, "name" AS value FROM {schema}."workflow" WHERE "name" LIKE $1 ${ESC} AND "deletedAt" IS NULL` }
+{ id: "tw-leak-workspace-name", kind: "leak", param: LEAK_LIKE_PREFIX,
+  sql: `SELECT "id"::text AS id, "displayName" AS value FROM "core"."workspace" WHERE "displayName" LIKE $1 ${ESC} AND "deletedAt" IS NULL` }
+```
+
+Interim (lane code, applied now): CUR-001 asserts its opportunity row is gone after the hard delete; CACHE-001 asserts its
+field row is gone (poll, `core.fieldMetadata`); WH-009 asserts its workspace row is soft-deleted (`deletedAt` set) and its
+display name carries the run prefix (`second-workspace.ts`). The workflow row is not created by any kept case (RT-001 deferred).

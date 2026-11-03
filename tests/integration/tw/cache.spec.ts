@@ -5,7 +5,10 @@ import { apiBaseUrl } from "../../../src/env.ts";
 import { twAuthHeaders } from "../../../src/lanes/tw/http.ts";
 import { requireTwEnv } from "../../../src/lanes/tw/gates.ts";
 import { POLL_INTERVALS } from "../../../src/slo.ts";
+import { readOnlyDb } from "../../../src/db/pg.ts";
+import { TW_STUDY_DELIVERY_MS } from "../../../src/lanes/tw/slo.ts";
 import { REPLICA_B_URL, CACHE_VISIBLE_BUDGET_MS } from "../../../src/lanes/tw/replicas.ts";
+import { runScopedName } from "../../../src/run/prefix.ts";
 import type { TwentyAuth } from "../../../src/auth/twenty.ts";
 
 async function metadata(request: APIRequestContext, base: string, auth: TwentyAuth, query: string) {
@@ -47,7 +50,7 @@ test("P2-TW-CACHE-001 @replicas: a custom field added on replica A is visible on
       request,
       a,
       twAuth,
-      `mutation { createOneField(input:{ field:{ name:"${name}", label:"${name}", type:TEXT, objectMetadataId:"${person}" } }) { id } }`,
+      `mutation { createOneField(input:{ field:{ name:"${name}", label:"${runScopedName(`cache-${name}`)}", type:TEXT, objectMetadataId:"${person}" } }) { id } }`,
     );
     fieldId = (made.data as { createOneField?: { id: string } } | null | undefined)?.createOneField
       ?.id;
@@ -84,6 +87,23 @@ test("P2-TW-CACHE-001 @replicas: a custom field added on replica A is visible on
         `mutation { deleteOneField(input:{ id:"${fieldId}" }) { id } }`,
       );
       expect(del.errors, "cleanup: delete the field on A").toBeUndefined();
+      // In-test leak assert (until the shared field rule lands): the field row is gone from the metadata table.
+      await expect
+        .poll(
+          async () =>
+            (
+              await readOnlyDb("twenty").select<{ n: string }>(
+                `SELECT COUNT(*)::text AS n FROM core."fieldMetadata" WHERE id = $1`,
+                [fieldId],
+              )
+            )[0]?.n,
+          {
+            timeout: TW_STUDY_DELIVERY_MS,
+            intervals: POLL_INTERVALS,
+            message: "cleanup: no field row remains",
+          },
+        )
+        .toBe("0");
     }
   }
 });
