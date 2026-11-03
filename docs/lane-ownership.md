@@ -39,11 +39,13 @@ adds a real file.
 
 ## Gate for lane workflows
 
-`needs` cannot cross workflow files, so `needs: foundation` from the plans becomes a `workflow_run`
-trigger on `api`. A lane job runs only when the `api` run for the same commit concluded `success` and
-its head repository is this repository. It checks out `github.event.workflow_run.head_sha`. Each stub
-in `.github/workflows/p2-*.yml` and `tw-study.yml` is manual-only and its job is skipped, so nothing
-runs until a lane replaces its stub.
+Lane workflows run on `pull_request` (and `workflow_dispatch`), not on `workflow_run`: GitHub runs a
+`workflow_run` workflow only from the file on the default branch, so a lane's PR version would never
+run. Each job that runs on `pull_request` is guarded by the same-repo check
+(`github.event.pull_request.head.repo.full_name == github.repository`), so fork PRs never start a stack
+or receive secrets. Lane workflows run alongside `api`; there is no cross-file `needs`. The shape is
+enforced by `tests/unit/ci/workflow.test.ts`, which also lists the allowed secret names (currently
+`STRIPE_API_KEY`). Inert stubs stay valid until a lane replaces its file.
 
 ## Shared changes made in this PR
 
