@@ -34,7 +34,7 @@ Naming: the brief's short forms (`TW-WH-001`) are written as the index writes th
 > | L5 CI | `p2-tw.yml` (`tw-api` and `tw-multiws` jobs), `tw-study.yml`, workflow tests in `tests/unit/lanes/tw/` (PC-6) |
 > | STR-002 (moved here from v0.3.1) | **HARD STOP, not built** (review fix step 6): billing changes workspace activation (`billing-webhook-subscription.service.ts:220-255`). See probe record section 6 |
 > | RT-001 | DEFERRED, not built. The master-plan row is a workflow route trigger (`POST /webhooks/workflows/:ws/:wf`). Fix step 4 (B-P21): the API key cannot create or activate a workflow version, so no run can start. The earlier P-TW-13 (logic-function route) stands as separate evidence. |
-> | CACHE-001, WH-009 | not built: the harness now supplies the knob (HR-4, HR-5 resolved in v0.3.1), but the plan defines no test for either case. Open decision |
+> | CACHE-001, WH-009 | **built (review fix step 7).** WH-009 in `tenant.spec.ts` (`@multiws`, job tw-multiws); CACHE-001 in `cache.spec.ts` (`@replicas`, job tw-cache). Measured budget for CACHE-001: probe record section 3a |
 >
 > **UNPROBED values, measured (section 14.4 and the appendix):**
 > - `/graphql` bearer path (CON-002): `POST /graphql` with the bearer returns 200 with `errors[]` (B-P10).
@@ -136,8 +136,8 @@ Every runtime claim below is either in this table as CONFIRMED / PARTIAL, or mar
 **Built new normal-lane `tw` tests: L1 = 7, L2 = 8 (WH-001 ×1, WH-007 ×1, WH-003 ×1, WH-004 ×1, WH-005 ×2, WH-006 ×1, B1 control ×1), L3 = 2 (STR-001 gated skip, DEL-002). Total 17.** The `tw-api` listing is 5 readiness + 17 = **22**. **Measurement study (L4): 50 cases** in their own workflow, not in the lane job.
 
 **DEFERRED (not built, no workaround planned; section 13):**
-- **P2-TW-CACHE-001**: HR-4 (two server replicas; P-TW-8).
-- **P2-TW-WH-009**: HR-5 (multi-workspace; P-TW-6). Note for the owner only: `core.workspace` already has 2 rows after the seed; using them needs a second workspace's token, which needs the flag, so this is not a workaround.
+- **P2-TW-CACHE-001**: built in fix step 7 (was HR-4; two replicas now supplied by the harness, P-TW-8).
+- **P2-TW-WH-009**: built in fix step 7 (was HR-5, multi-workspace; P-TW-6). The standalone STR-002 test is retired; its flow is the WH-009 setup and teardown. Note for the owner only: `core.workspace` already has 2 rows after the seed; using them needs a second workspace's token, which needs the flag, so this is not a workaround.
 - **P2-TW-STR-002**: HR-5 (deleted workspace).
 
 **CUT by owner decision (OD-6):** **P2-TW-WH-008** (rate-limit drops). Duplicate of the upstream test at `test/integration/usage-limit/webhook-rate-limit.integration-spec.ts:172`; the observable is a log and a metric, not DB state.
@@ -153,7 +153,7 @@ Every runtime claim below is either in this table as CONFIRMED / PARTIAL, or mar
 | P2-TW-WH-006 | none | KEEP (identity wording, OD-4) |
 | P2-TW-WH-007 | none | KEEP |
 | P2-TW-WH-008 | `test/integration/usage-limit/webhook-rate-limit.integration-spec.ts:172` ("delivers what the bucket admits and drops the rest of the burst") | **CUT** (OD-6, owner decision) |
-| P2-TW-WH-009 | none found (targeted search) | KEEP, DEFERRED (HR-5) |
+| P2-TW-WH-009 | none found (targeted search) | KEEP, BUILT (fix step 7): `tests/webhooks/tw/tenant.spec.ts` (`@multiws`); absorbs the STR-002 setup and teardown flow (`src/lanes/tw/second-workspace.ts`) |
 | P2-TW-STR-001 | `test/integration/billing/suites/billing-controller.integration-spec.ts:9,43,77,94` (no ordering case) | KEEP, BLOCKED |
 | P2-TW-STR-002 | none found | KEEP, DEFERRED (HR-5) |
 | P2-TW-RT-001 | `src/engine/metadata-modules/route-trigger/__tests__/route-trigger.controller.spec.ts` (unit; no workflow run) | KEEP, BLOCKED |
@@ -161,7 +161,7 @@ Every runtime claim below is either in this table as CONFIRMED / PARTIAL, or mar
 | P2-TW-PAG-001 | cursor specs are unit (`src/engine/api/utils/__tests__/build-cursor-page.util.spec.ts`); none with inserts between fetches | KEEP |
 | P2-TW-PAG-002 | none | KEEP (OD-5 wording) |
 | P2-TW-CUR-001 | 2^53 only in `src/database/commands/workspace-export/utils/__tests__/format-sql-value.util.spec.ts:28` (a formatter) | KEEP |
-| P2-TW-CACHE-001 | none found | KEEP, DEFERRED (HR-4) |
+| P2-TW-CACHE-001 | none found | KEEP, BUILT (fix step 7): `tests/integration/tw/cache.spec.ts` (`@replicas`, job tw-cache); budget from the measured window |
 | P2-TW-CON-001 | `test/integration/rest/suites/rest-api-core-find-many.integration-spec.ts` (behaviour, not OAS validation) | KEEP |
 | P2-TW-CON-002 | not searched in this session | KEEP by default; the builder searches first |
 

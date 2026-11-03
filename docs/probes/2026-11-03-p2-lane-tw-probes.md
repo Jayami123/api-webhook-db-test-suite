@@ -65,6 +65,13 @@ for case N posted to the URL of case N-1 (`…/p2-study-(N-1)`), a webhook the s
 log shows those paths receiving two deliveries each (their own, and the next case's event). Two undelivered cases (46 and
 49) have no outbound line in the worker log.
 
+## 3a. CACHE-001 field visibility, two replicas (measured)
+
+Ten trials on the two-replica stack (`TWENTY_SERVER_REPLICAS=2`, server-2 on `127.0.0.1:3003`): create a text custom field on
+replica A (`createOneField`, `:3002`), poll replica B (`field(id)`, `:3003`) every 100 ms until it returns the field. Windows
+(ms): 61, 31, 21, 20, 18, 18, 17, 36, 21, 23. **Max 61 ms.** Budget in the case: max + `CANARY_MARGIN_MS` (`src/slo.ts:32`,
+500 ms) = 561 ms (`src/lanes/tw/replicas.ts`). Fields deleted after each trial (`deleteOneField`: ok).
+
 ## 4. Product bugs
 
 ### P2-TW-BUG-001: amounts above 2^53-1 are rounded silently (PRODUCT BUG, SUSPECTED)

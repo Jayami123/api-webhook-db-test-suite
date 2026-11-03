@@ -115,7 +115,11 @@ describe("twenty lane workflows", () => {
 
   test("every lane job carries the same-repo guard, and dispatch is allowed by event name", () => {
     const jobs = jobIfs(live(".github/workflows/p2-tw.yml"));
-    assert.deepEqual([...jobs.keys()].sort(), ["tw-api", "tw-multiws"], "the two lane jobs");
+    assert.deepEqual(
+      [...jobs.keys()].sort(),
+      ["tw-api", "tw-cache", "tw-multiws"],
+      "the three lane jobs",
+    );
     for (const [id, condition] of jobs) {
       assert.ok(condition?.includes(SAME_REPO), `${id}: the same-repo guard in if:`);
       assert.ok(condition?.includes(DISPATCH), `${id}: manual runs allowed in if:`);
