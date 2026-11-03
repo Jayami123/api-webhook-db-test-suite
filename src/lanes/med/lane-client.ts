@@ -74,6 +74,11 @@ export interface LaneClient {
   stockLocation(label: string): Promise<string>;
   /** One inventory level of an item at a location (creates it with the given stock). */
   inventoryLevel(inventoryItemId: string, locationId: string, stocked: number): Promise<void>;
+  /** The product's own level figures at a location (admin read, not the database). */
+  levelFromProduct(
+    inventoryItemId: string,
+    locationId: string,
+  ): Promise<{ stocked: number; reserved: number; available: number } | undefined>;
   /** Restock an existing level (admin inventory update). */
   restock(inventoryItemId: string, locationId: string, stocked: number): Promise<void>;
   /** Delete a stock location through the admin API. */
@@ -251,6 +256,23 @@ export function laneClient(input: {
       await admin("POST", `/admin/inventory-items/${inventoryItemId}/location-levels`, {
         body: { location_id: locationId, stocked_quantity: stocked },
       });
+    },
+    async levelFromProduct(inventoryItemId, locationId) {
+      const res = await admin<{
+        inventory_levels: {
+          location_id: string;
+          stocked_quantity: number;
+          reserved_quantity: number;
+          available_quantity: number;
+        }[];
+      }>("GET", `/admin/inventory-items/${inventoryItemId}/location-levels`);
+      const level = res.body.inventory_levels.find((l) => l.location_id === locationId);
+      if (level === undefined) return undefined;
+      return {
+        stocked: level.stocked_quantity,
+        reserved: level.reserved_quantity,
+        available: level.available_quantity,
+      };
     },
     async restock(inventoryItemId, locationId, stocked) {
       await admin(

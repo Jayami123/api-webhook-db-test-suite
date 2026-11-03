@@ -12,7 +12,6 @@ import {
   type LevelModel,
   type Op,
 } from "../../../src/lanes/med/inventory-model.ts";
-import { inventoryLevelsForItem } from "../../../src/lanes/med/oracle.ts";
 
 /**
  * Model-based check of one inventory item over a seeded sequence of 12 operations. Live mapping:
@@ -77,14 +76,16 @@ test.describe("medusa inventory model", () => {
         }
         model = apply(model, op);
 
-        const row = (await inventoryLevelsForItem(itemId)).find((r) => r.location === locationId);
-        expect(row, `${detail}: level exists`).toBeDefined();
-        expect(row?.stocked, `${detail}: stocked`).toBe(model.stocked);
-        expect(row?.reserved, `${detail}: reserved`).toBe(model.reserved);
-        expect(
-          identityHolds(model, (row?.stocked ?? NaN) - (row?.reserved ?? NaN)),
-          `${detail}: identity`,
-        ).toBe(true);
+        // The product's own figures (admin location-levels: available_quantity, probe P-MED-20). Compared with
+        // the model. The available value is the product's, not stocked minus reserved from the database.
+        const level = await lane.levelFromProduct(itemId, locationId);
+        expect(level, `${detail}: level exists`).toBeDefined();
+        expect(level?.stocked, `${detail}: product stocked`).toBe(model.stocked);
+        expect(level?.reserved, `${detail}: product reserved`).toBe(model.reserved);
+        expect(level?.available, `${detail}: product available`).toBe(
+          model.stocked - model.reserved,
+        );
+        expect(identityHolds(model, level?.available ?? NaN), `${detail}: identity`).toBe(true);
       }
     } finally {
       // Live orders hold reservations: cancel them first, or the product cannot be removed.
