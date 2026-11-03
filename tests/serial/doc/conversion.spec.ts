@@ -107,7 +107,14 @@ test("P2-DOC-CONV-003 Gotenberg restarts: DOCX create succeeds once the service 
     // The service really recovered: its health answers 200 (the readiness of the restart is observed, not assumed).
     await expect
       .poll(
-        async () => (await request.fetch(GOTENBERG_HEALTH, { failOnStatusCode: false })).status(),
+        async () => {
+          // A connection reset while the container is still starting is "not ready yet", not a failure.
+          try {
+            return (await request.fetch(GOTENBERG_HEALTH, { failOnStatusCode: false })).status();
+          } catch {
+            return undefined;
+          }
+        },
         {
           timeout: SLO.docConvertHealth.ms,
           intervals: POLL_INTERVALS,
