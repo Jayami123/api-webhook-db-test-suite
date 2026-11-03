@@ -108,11 +108,13 @@ test("P2-DOC-CONV-003 Gotenberg restarts: DOCX create succeeds once the service 
     await expect
       .poll(
         async () => {
-          // A connection reset while the container is still starting is "not ready yet", not a failure.
+          // Only a refused or reset connection while the container starts is "not ready yet". Anything else rethrows.
           try {
             return (await request.fetch(GOTENBERG_HEALTH, { failOnStatusCode: false })).status();
-          } catch {
-            return undefined;
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (/ECONNREFUSED|ECONNRESET/.test(message)) return undefined;
+            throw error;
           }
         },
         {
