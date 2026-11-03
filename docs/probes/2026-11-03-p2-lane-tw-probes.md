@@ -221,3 +221,8 @@ returned no violations (`npx playwright test` exit 0).
   receiver (4 s) gets one request", "(6 s) ... and no retry"). The "closes the call at 5 000 ms" wording is removed. The
   delays are derived in code from `CALL_TIMEOUT_MS = 5_000` (`delivery.spec.ts`). Each case asserts `mode === "slow"`.
 - The timeout claim is recorded here as UNPROBED-by-test (measured in the worker log, not asserted in the lane).
+
+**A4 (WH-007, nonce).**
+- Header name at the pin: `X-Twenty-Webhook-Nonce`, set at `packages/twenty-server/src/engine/metadata-modules/webhook/jobs/call-webhook.job.ts:98`, value `crypto.randomBytes(16).toString('hex')` (32 hex characters). The name is also in `computeWebhooks.utils.ts:55`. `TWENTY_NONCE_HEADER` (`src/webhooks/sign.ts:51`) matches.
+- Timestamp and signature headers: `call-webhook.job.ts:92-96` (`X-Twenty-Webhook-Timestamp`, `X-Twenty-Webhook-Signature`).
+- Case: setup asserts the original carries a 32-hex nonce and the replacement (each hex digit rotated) differs. The rotated nonce verifies. Control: a timestamp changed by 1 ms fails verification. WH-001 byte-flip is kept.
