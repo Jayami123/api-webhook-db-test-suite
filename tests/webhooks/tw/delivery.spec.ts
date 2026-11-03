@@ -175,6 +175,25 @@ test("P2-TW-WH-006: the delivered body carries the created webhook id, the event
         message: "P2-TW-WH-006 delivery",
       })
       .toBe(1);
+    // One request per event: the count holds at exactly one for the whole quiet window (not only at this instant).
+    const startedMs = Date.now();
+    await expect
+      .poll(
+        () =>
+          quietState({
+            count: deliveriesOf(receiver, key, realId).length,
+            expected: 1,
+            startedMs,
+            nowMs: Date.now(),
+            windowMs: TW_QUIET_WINDOW_MS,
+          }),
+        {
+          timeout: TW_QUIET_TIMEOUT_MS,
+          intervals: POLL_INTERVALS,
+          message: "no second request in the quiet window",
+        },
+      )
+      .toBe("quiet");
     const delivery = deliveriesOf(receiver, key, realId)[0];
     if (delivery === undefined) throw new Error("TEST BUG: delivery vanished after the poll");
     const body = JSON.parse(delivery.rawBody.toString("utf8")) as {
@@ -199,7 +218,6 @@ test("P2-TW-WH-006: the delivered body carries the created webhook id, the event
       ]),
     );
     expect(bodyErrors(body)).toEqual([]);
-    expect(deliveriesOf(receiver, key, realId)).toHaveLength(1);
   } finally {
     try {
       for (const id of created) await tw.people.remove(id);
