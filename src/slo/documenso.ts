@@ -27,6 +27,20 @@ export const documensoSlo = {
     basis:
       "mails and seal jobs are retried by the same immediate local job retry (local.ts:386; maxRetries 3, schema.prisma:1129), not by the cron",
   },
+  docConvertFail: {
+    ms: 5_000,
+    basis:
+      "a refused attempt returns at once (connection refused on a stopped container); the conversion timeout is 30 s (packages/lib/constants/document-conversion.ts:6), so 5 s separates the refusal from the timeout path",
+  },
+  docConvertHealth: {
+    ms: 120_000,
+    basis: "Gotenberg start and health answer; measured in the probe (B-38), with headroom",
+  },
+  docConvertRecover: {
+    ms: 90_000,
+    basis:
+      "circuit cooldown 30 s (circuit-breaker.ts:14) + 60 s margin for the half-open upload and poll interval",
+  },
   docCronTick: {
     ms: 17 * 60_000,
     basis: "*/15 cron (seal-document-sweep.ts:18) + 2 min margin",
