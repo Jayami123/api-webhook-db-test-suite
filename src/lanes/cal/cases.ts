@@ -137,7 +137,13 @@ export async function slotInstantsBetween(
     headers: { "cal-api-version": "2024-09-04", authorization: auth.headerValue.reveal() },
     failOnStatusCode: false,
   });
-  const body = JSON.parse(await res.text()) as { data?: Record<string, { start: string }[]> };
+  const text = await res.text();
+  if (res.status() !== 200) {
+    throw new Error(
+      `slots answered ${String(res.status())} for ${startUtc}..${endUtc} (${timeZone}); body ${String(text.length)} chars`,
+    );
+  }
+  const body = JSON.parse(text) as { data?: Record<string, { start: string }[]> };
   return Object.values(body.data ?? {})
     .flat()
     .map((s) => new Date(s.start).toISOString())

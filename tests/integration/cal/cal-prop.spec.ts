@@ -130,15 +130,18 @@ test.describe("P2-CAL-PROP slot properties", () => {
     expect(baseline?.length ?? 0).toBeGreaterThan(0);
     // Property: every viewer zone returns the same UTC instants as the baseline (same instants, not only the same count).
     for (const set of sets) expect(set).toEqual(baseline);
-    // Negative control: moving one bound by an hour changes the set, so the equality above can fail.
+    // Deterministic control, derived from the baseline. A start that is not midnight is an instant (slots-input.service.ts:126-133
+    // at c2b7ac4), so starting one minute after the first baseline instant must drop exactly that instant.
+    const firstInstant = baseline?.[0] ?? "";
+    const shiftedStart = new Date(Date.parse(firstInstant) + 60_000).toISOString();
     const shifted = await slotInstantsBetween(
       request,
       calAuth,
       eventTypeId,
-      startUtc,
-      `${day(6)}T01:00:00Z`,
+      shiftedStart,
+      endUtc,
       "UTC",
     );
-    expect(shifted).not.toEqual(baseline);
+    expect(shifted).toEqual((baseline ?? []).slice(1));
   });
 });
