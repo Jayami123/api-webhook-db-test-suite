@@ -299,6 +299,9 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
     try {
       expect(await runTaskerOnce(request, webBase(), cronSecret())).toBe(200);
       expect(receiverHandle.receiver.deliveries(made.key)).toHaveLength(1);
+      expect(receiverHandle.receiver.deliveries(made.key)[0]?.mode, "receiver answered 500").toBe(
+        "500",
+      );
       const rows = await taskRowsFor(db(), `${currentRunPrefix()}/${testId}`);
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ attempts: 1, succeeded: true, lastError: null });
@@ -323,6 +326,9 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
       // Setup, asserted before the expected failure: the first run made exactly one attempt.
       expect(await runTaskerOnce(request, webBase(), cronSecret())).toBe(200);
       expect(receiverHandle.receiver.deliveries(made.key)).toHaveLength(1);
+      expect(receiverHandle.receiver.deliveries(made.key)[0]?.mode, "receiver answered 500").toBe(
+        "500",
+      );
       expect(await runTaskerOnce(request, webBase(), cronSecret())).toBe(200);
       // Finding B2 (proven: plan P4; probe record L5): the 500 is acknowledged as success and never retried.
       test.fail();
