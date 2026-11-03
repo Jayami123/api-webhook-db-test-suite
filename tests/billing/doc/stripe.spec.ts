@@ -87,11 +87,14 @@ test("P2-DOC-STR-001 a correctly signed event that is not synced is accepted (20
 test.describe("STR-002 and STR-003 against the run's Stripe fixture", () => {
   test.describe.configure({ mode: "serial" });
   // Named skip: without the test-mode key these two cases do not run in this stack (OD-2).
-  // In CI a missing or wrong key throws here (requireDocKey), so the job goes red and never skips silently.
-  test.skip(
-    !requireDocKey("STRIPE_API_KEY", /^sk_test_/),
-    "P2-DOC-STR-002/003 need STRIPE_API_KEY (test mode): none in this run",
-  );
+  // Run per test, not at collection: `playwright test --list` in the api check has no Stripe key and must still list.
+  // In CI a missing or wrong key throws here (requireDocKey), so the job goes red; locally the case skips by name.
+  // eslint-disable-next-line no-empty-pattern -- Playwright requires the destructuring pattern
+  test.beforeEach(({}, testInfo) => {
+    if (!requireDocKey("STRIPE_API_KEY", /^sk_test_/)) {
+      testInfo.skip(true, "P2-DOC-STR-002/003 need STRIPE_API_KEY (test mode): none in this run");
+    }
+  });
 
   stripeTest(
     "P2-DOC-STR-002 a validly signed synced event is processed once against the run's subscription",
