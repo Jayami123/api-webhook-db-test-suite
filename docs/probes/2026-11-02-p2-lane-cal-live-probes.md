@@ -196,6 +196,32 @@ warm `up cal` 28 s, `down cal` 2 s (plan section 2 timings reproduced).
 - Crawled operations (31): GET /v2/bookings, GET /v2/bookings/{bookingUid}, GET /v2/bookings/{bookingUid}/attendees, GET /v2/bookings/{bookingUid}/calendar-links, GET /v2/bookings/{bookingUid}/conferencing-sessions, GET /v2/bookings/{bookingUid}/recordings, GET /v2/bookings/{bookingUid}/references, GET /v2/bookings/{bookingUid}/transcripts, GET /v2/calendars, GET /v2/calendars/busy-times, GET /v2/calendars/connections, GET /v2/calendars/ics-feed/check, GET /v2/conferencing, GET /v2/conferencing/default, GET /v2/event-types, GET /v2/event-types/{eventTypeId}, GET /v2/event-types/{eventTypeId}/private-links, GET /v2/event-types/{eventTypeId}/webhooks, GET /v2/event-types/{eventTypeId}/webhooks/{webhookId}, GET /v2/me, GET /v2/oauth-clients, GET /v2/schedules, GET /v2/schedules/default, GET /v2/slots, GET /v2/stripe/check, GET /v2/stripe/connect, GET /v2/stripe/save, GET /v2/verified-resources/emails, GET /v2/verified-resources/phones, GET /v2/webhooks, GET /v2/webhooks/{webhookId}.
 - No-path-value operations (24): GET /v2/auth/oauth2/clients/{clientId}, GET /v2/bookings/by-seat/{seatUid}, GET /v2/bookings/{bookingUid}/attendees/{attendeeId}, GET /v2/calendars/connections/{connectionId}/events, GET /v2/calendars/connections/{connectionId}/events/{eventId}, GET /v2/calendars/connections/{connectionId}/freebusy, GET /v2/calendars/{calendar}/check, GET /v2/calendars/{calendar}/connect, GET /v2/calendars/{calendar}/event/{eventUid}, GET /v2/calendars/{calendar}/events, GET /v2/calendars/{calendar}/events/{eventUid}, GET /v2/calendars/{calendar}/freebusy, GET /v2/calendars/{calendar}/save, GET /v2/conferencing/{app}/oauth/auth-url, GET /v2/conferencing/{app}/oauth/callback, GET /v2/oauth-clients/{clientId}, GET /v2/oauth-clients/{clientId}/users, GET /v2/oauth-clients/{clientId}/users/{userId}, GET /v2/oauth-clients/{clientId}/webhooks, GET /v2/oauth-clients/{clientId}/webhooks/{webhookId}, GET /v2/schedules/{scheduleId}, GET /v2/slots/reservations/{uid}, GET /v2/verified-resources/emails/{id}, GET /v2/verified-resources/phones/{id}.
 
+## L17 quiet window: basis and per-test budget (decision 6, revised; review A8)
+
+- Window: `CAL_QUIET_WINDOW_MS` = one cron tick (`CAL_CRON_TICK_MS` = 60 s, the webhook-triggers cron is `* * * * *` at the pin
+  c2b7ac4, `.github/workflows/cron-webhooks-triggers.yml` line 8) plus a margin (`CAL_TICK_MARGIN_MS` = 10 s, the scheduled-delivery
+  budget `SLO.calWebhookDelivery`). Total 70 s, in `src/lanes/cal/quiet.ts`.
+- Tick jitter: NOT MEASURED. The product cron runs on GitHub's schedulers, not on the lane stack, and the sandbox cannot reach
+  them. The margin therefore rests on the stated policy bound, not a measured jitter. UNVERIFIED; the owner should decide whether
+  a measured jitter (for example from the cron workflow's run history on the product fork) is required.
+- Per-test budget: `CAL_QUIET_TEST_BUDGET_MS` = window (70 s) + setup bound (`CAL_SETUP_BUDGET_MS`, 15 s; the measured setup is
+  about 2 s). 85 s, applied with `test.setTimeout` only to the three tests that hold a quiet window (SCH-002 control, SCH-003
+  control, SCH-003 purge). The shared 60 s timeout in `playwright.config.ts` is unchanged.
+- Why not 60 s + margin under the shared timeout: 70 s exceeds it, so the window needs the per-test budget above.
+- Local live runs: Docker is down in this sandbox (`containerd` failed to start, see the dockerd log), so the quiet tests were
+  verified in CI on the pushed head, not locally.
+
+## L18 lane leak check in CI (review addendum)
+
+- `src/lanes/cal/leak-check.ts` runs the cal leak rules (`rulesFor("cal")`, includeLeaks) for the run prefix and exits 1 on any
+  violation, printing rule ids and counts only. CI sets `P2_RUN_ID` once (generate step) so the tests and the check share the prefix,
+  and runs the check after the tests under `if: always()`, before the harness teardown.
+
+## Open items (for the discovery round)
+
+- Deterministic SCH-002 repro (not attempted this round, by decision).
+- Measured cron tick jitter (UNVERIFIED; see L17).
+
 ## Escalation (review addendum)
 
 - Plan meaning changed, CON-005: the plan's "every non-200 status is documented" was a tautology (review R1). It is replaced by
