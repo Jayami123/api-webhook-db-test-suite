@@ -76,7 +76,7 @@ async function cleanup(ctx: Ctx, track: { hookId?: string; uids: string[] }): Pr
   if (track.hookId !== undefined) await ctx.cal.webhooks.remove(track.hookId);
 }
 
-const rowsOf = (testId: string) => taskRowsFor(db(), `${currentRunPrefix()}/${testId}`);
+const rowsOf = (testId: string) => taskRowsFor(db(), currentRunPrefix(), testId);
 
 test.describe("P2-CAL-TASK tasker (serial)", () => {
   test("P2-CAL-TASK-001 a thrown delivery is retried once per tasker run up to maxAttempts, then stops", async ({
@@ -219,10 +219,17 @@ test.describe("P2-CAL-TASK tasker (serial)", () => {
           runTaskerOnce(request, webBase(), cronSecret()),
         ]);
         expect(statuses).toEqual([200, 200]);
-        // Positive control (setup): every task was delivered at least once.
-        expect(receiverHandle.receiver.deliveries(key).length).toBeGreaterThanOrEqual(5);
+        // Per task, from each delivered body (the booking uid is in the payload): the positive control is that every
+        // booked task was delivered at least once, and the delivered uids are exactly these bookings (not 5 copies of one).
+        const perUid = new Map<string, number>();
+        for (const d of receiverHandle.receiver.deliveries(key)) {
+          const body = JSON.parse(d.rawBody.toString("utf8")) as { payload: { uid: string } };
+          perUid.set(body.payload.uid, (perUid.get(body.payload.uid) ?? 0) + 1);
+        }
+        expect([...perUid.keys()].sort()).toEqual([...track.uids].sort());
+        // Finding B4 (per task): each booked task is delivered exactly once.
         test.fail();
-        expect(receiverHandle.receiver.deliveries(key)).toHaveLength(5);
+        expect([...track.uids].map((uid) => perUid.get(uid) ?? 0)).toEqual([1, 1, 1, 1, 1]);
       } finally {
         receiverHandle.receiver.setMode(key, { kind: "ok" });
         await cleanup(ctx, track);

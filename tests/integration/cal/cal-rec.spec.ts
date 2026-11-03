@@ -66,7 +66,7 @@ test.describe("P2-CAL-REC recurring bookings", () => {
         "cancelled",
         ...Array.from({ length: 11 }, () => "accepted"),
       ]);
-      expect(await taskRowsFor(db(), `${currentRunPrefix()}/${testId}`)).toHaveLength(1);
+      expect(await taskRowsFor(db(), currentRunPrefix(), testId)).toHaveLength(1);
     } finally {
       for (const r of await bookingRowsForEmail(db(), email)) {
         if (r.status === "accepted") await api.cancel(r.uid, "P2 lane cleanup");

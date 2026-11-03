@@ -302,7 +302,7 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
       expect(receiverHandle.receiver.deliveries(made.key)[0]?.mode, "receiver answered 500").toBe(
         "500",
       );
-      const rows = await taskRowsFor(db(), `${currentRunPrefix()}/${testId}`);
+      const rows = await taskRowsFor(db(), currentRunPrefix(), testId);
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ attempts: 1, succeeded: true, lastError: null });
     } finally {
