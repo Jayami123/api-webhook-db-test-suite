@@ -5,6 +5,7 @@ import { apiBaseUrl } from "../../../src/env.ts";
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
 import { completedEnvelope } from "../../fixtures/doc/completed-envelope.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
+import { holdQuiet } from "../../fixtures/doc/quiet-window.ts";
 
 test("P2-DOC-JOB-001 a completed envelope has exactly one seal job", async ({
   doc,
@@ -23,11 +24,22 @@ test("P2-DOC-JOB-001 a completed envelope has exactly one seal job", async ({
     runPrefix,
   });
   try {
-    const rows = await db.select<{ n: number }>(
-      `SELECT COUNT(*)::int AS n FROM "BackgroundJob" WHERE "jobId" = 'internal.seal-document' AND "payload"->>'documentId' = $1`,
-      [String(done.prepared.documentId)],
-    );
-    expect(rows[0]?.n).toBe(1);
+    const sealJobs = async () =>
+      (
+        await db.select<{ n: number }>(
+          `SELECT COUNT(*)::int AS n FROM "BackgroundJob" WHERE "jobId" = 'internal.seal-document' AND "payload"->>'documentId' = $1`,
+          [String(done.prepared.documentId)],
+        )
+      )[0]?.n ?? -1;
+    await expect
+      .poll(sealJobs, {
+        timeout: SLO.docWebhookDelivery.ms,
+        intervals: POLL_INTERVALS,
+        message: "one seal job",
+      })
+      .toBe(1);
+    await holdQuiet(sealJobs, 1, SLO.docJobQuiet.ms, "no second seal job");
+    expect(await sealJobs()).toBe(1);
   } finally {
     await doc.envelopes.remove(done.envelopeId);
   }

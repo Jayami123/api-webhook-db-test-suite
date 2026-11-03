@@ -4,6 +4,7 @@ import { bodyOf, listMail, mailboxOf, signingTokenIn } from "../../../src/lanes/
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 import { distributedEnvelope } from "../../fixtures/doc/distributed-envelope.ts";
+import { holdQuiet } from "../../fixtures/doc/quiet-window.ts";
 
 test("P2-DOC-MAIL-001 each recipient gets exactly one signing mail carrying its own token", async ({
   doc,
@@ -32,6 +33,12 @@ test("P2-DOC-MAIL-001 each recipient gets exactly one signing mail carrying its 
           message: "one signing mail",
         })
         .toBe(1);
+      await holdQuiet(
+        async () => (await listMail(mailbox)).length,
+        1,
+        SLO.docJobQuiet.ms,
+        "no second signing mail",
+      );
       const [mail] = await listMail(mailbox);
       if (mail === undefined) throw new Error("TEST BUG: mail listed then missing");
       const text = await bodyOf(mailbox, mail.id);

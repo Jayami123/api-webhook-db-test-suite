@@ -10,6 +10,7 @@ import { trpcPost, v2Post } from "../../../src/lanes/doc/envelope.ts";
 import { completedEnvelope } from "../../fixtures/doc/completed-envelope.ts";
 import { distributedEnvelope } from "../../fixtures/doc/distributed-envelope.ts";
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
+import { holdQuiet } from "../../fixtures/doc/quiet-window.ts";
 
 const examplePdf = (): Buffer =>
   readFileSync(path.join(productsRoot(), "documenso", "assets", "example.pdf"));
@@ -45,6 +46,12 @@ test("P2-DOC-WH-001 the secret header equals the configured secret; a loopback w
         message: "one delivery",
       })
       .toBe(1);
+    await holdQuiet(
+      () => receiverHandle.receiver.deliveries(key).length,
+      1,
+      SLO.docWebhookQuiet.ms,
+      "no second delivery",
+    );
     const [delivery] = receiverHandle.receiver.deliveries(key);
     if (delivery === undefined) throw new Error("TEST BUG: no delivery recorded");
     expect(verifyDocumenso({ secret, headers: delivery.headers })).toEqual({ ok: true });
@@ -91,7 +98,23 @@ test("P2-DOC-WH-002 one event makes 1 + 3 attempts with no back-off, and created
         message: "four attempts",
       })
       .toBe(4);
+    await holdQuiet(
+      () => receiverHandle.receiver.deliveries(key).length,
+      4,
+      SLO.docWebhookQuiet.ms,
+      "no fifth attempt",
+    );
     const ds = receiverHandle.receiver.deliveries(key);
+    expect(ds.every((d) => d.mode === "500")).toBe(true); // the receiver answered every attempt 500
+    // No back-off (local.ts:386): each attempt follows the previous one within the cited bound.
+    for (let i = 1; i < ds.length; i += 1) {
+      const cur = ds[i];
+      const prev = ds[i - 1];
+      if (cur === undefined || prev === undefined) throw new Error("TEST BUG: missing delivery");
+      expect(Date.parse(cur.receivedAt) - Date.parse(prev.receivedAt)).toBeLessThan(
+        SLO.docWebhookRetryGap.ms,
+      );
+    }
     expect(new Set(ds.map((d) => bodyOf(d.rawBody).createdAt)).size).toBe(4); // P-DOC-2
     expect(new Set(ds.map((d) => JSON.stringify(bodyOf(d.rawBody).payload.id))).size).toBe(1);
     for (const d of ds)
@@ -124,6 +147,12 @@ test("P2-DOC-WH-003 a 9 s receiver is delivered once", async ({ doc, receiverHan
         message: "one delivery at 9 s",
       })
       .toBe(1);
+    await holdQuiet(
+      () => receiverHandle.receiver.deliveries(key).length,
+      1,
+      SLO.docWebhookQuiet.ms,
+      "no retry after a 9 s answer",
+    );
     expect(receiverHandle.receiver.deliveries(key)).toHaveLength(1); // no retry after a 9 s answer
   } finally {
     if (envelopeId) await doc.envelopes.remove(envelopeId);
@@ -156,6 +185,12 @@ test("P2-DOC-WH-003 an 11 s receiver is aborted at the 10 s timeout and retried 
         message: "four attempts at 11 s",
       })
       .toBe(4);
+    await holdQuiet(
+      () => receiverHandle.receiver.deliveries(key).length,
+      4,
+      SLO.docWebhookQuiet.ms,
+      "no fifth attempt at 11 s",
+    );
     const ds = receiverHandle.receiver.deliveries(key);
     // Each attempt is aborted at WEBHOOK_TIMEOUT_MS (10 000 ms), so consecutive arrivals are at least 9.5 s apart.
     for (let i = 1; i < ds.length; i += 1) {
@@ -196,7 +231,14 @@ test("P2-DOC-WH-006 no per-delivery identifier exists (only payload.id is stable
         message: "four attempts",
       })
       .toBe(4);
+    await holdQuiet(
+      () => receiverHandle.receiver.deliveries(key).length,
+      4,
+      SLO.docWebhookQuiet.ms,
+      "no fifth attempt",
+    );
     const ds = receiverHandle.receiver.deliveries(key);
+    expect(ds.every((d) => d.mode === "500")).toBe(true);
     const headerNames = new Set(ds.flatMap((d) => Object.keys(d.headers)));
     expect([...headerNames].filter((h) => /delivery|event-id|idempotenc/i.test(h))).toEqual([]);
     // Body fields other than createdAt are identical across the four attempts.
@@ -237,7 +279,14 @@ test("P2-DOC-WH-007 a 302 receiver is not followed (no delivery on /redirected)"
         message: "four attempts on the original path",
       })
       .toBe(4);
+    await holdQuiet(
+      () => receiverHandle.receiver.deliveries(key).length,
+      4,
+      SLO.docWebhookQuiet.ms,
+      "no fifth attempt",
+    );
     const ds = receiverHandle.receiver.deliveries(key);
+    expect(ds.every((d) => d.mode === "redirect")).toBe(true); // every attempt was answered with the 302
     expect(ds.every((d) => !d.path.endsWith("/redirected"))).toBe(true);
   } finally {
     if (envelopeId) await doc.envelopes.remove(envelopeId);
@@ -343,6 +392,12 @@ test("P2-DOC-WH-004 each event of the trigger matrix is delivered exactly once p
         message: "all matrix events delivered",
       })
       .toBe(total);
+    await holdQuiet(
+      () => receiverHandle.receiver.deliveries(key).length,
+      total,
+      SLO.docWebhookQuiet.ms,
+      "no extra matrix delivery",
+    );
     const counts: Record<string, number> = {};
     for (const d of receiverHandle.receiver.deliveries(key)) {
       const event = (JSON.parse(d.rawBody.toString("utf8")) as { event: string }).event;

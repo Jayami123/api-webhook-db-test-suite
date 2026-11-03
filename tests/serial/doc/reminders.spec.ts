@@ -9,6 +9,8 @@ import {
 import { tickDeadlineMs } from "../../../src/lanes/doc/cron.ts";
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
 import { distributedEnvelope } from "../../fixtures/doc/distributed-envelope.ts";
+import { holdQuiet } from "../../fixtures/doc/quiet-window.ts";
+import { SLO } from "../../../src/slo.ts";
 
 /** Poll interval for the cron wait: a 15-minute sweep needs a coarse poll, not a fixed sleep. */
 const TICK_POLL_MS = 5_000;
@@ -51,6 +53,14 @@ test("P2-DOC-REM-001 one reminder per interval (one cron tick)", async ({
     const next = await db.select<{ nextReminderAt: Date | null }>(
       `SELECT "nextReminderAt" AS "nextReminderAt" FROM "Recipient" WHERE "id" = $1`,
       [target.recipientId],
+    );
+    // A6: hold a quiet window after the one reminder. A second tick is 15 min away and cannot fit this test's
+    // 25 min budget, so this window only catches an immediate extra send (see the report, REM-001 limit).
+    await holdQuiet(
+      async () => (await listMail(mailbox)).length,
+      before + 1,
+      SLO.docJobQuiet.ms,
+      "no second reminder",
     );
     expect(next[0]?.nextReminderAt).not.toBeNull();
     expect((next[0]?.nextReminderAt?.getTime() ?? 0) > due.getTime()).toBe(true);
