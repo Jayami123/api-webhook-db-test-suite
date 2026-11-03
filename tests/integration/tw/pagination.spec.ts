@@ -76,12 +76,22 @@ test("P2-TW-PAG-001: cursor pages return every created id once while new records
     for (let i = 1; i <= 5; i++) originals.push(await tw.people.create(runScopedName(`pag1-${i}`)));
     const first = await page(request, twAuth, tag);
     expect(first.ids).toHaveLength(2);
+    expect(
+      first.ids.filter((id) => !originals.includes(id)),
+      "first page: every id is one of this test's originals",
+    ).toEqual([]);
 
     // New records arrive between the first and the later fetches (same prefix: they can appear in later pages).
     for (let i = 1; i <= 2; i++) late.push(await tw.people.create(runScopedName(`pag1-late-${i}`)));
 
     const rest = await restOf(request, twAuth, tag, first);
     const seen = [...first.ids, ...rest];
+    // The filter held: every id any page returned is one of this test's records (a filter the API ignored would fail).
+    const ownSet = new Set([...originals, ...late]);
+    expect(
+      seen.filter((id) => !ownSet.has(id)),
+      "every paged id is one of this test's records",
+    ).toEqual([]);
     // Every original id exactly once; no id twice anywhere in the walk.
     expect(new Set(seen).size, "no id appears twice across pages").toBe(seen.length);
     expect(
@@ -105,6 +115,10 @@ test("P2-TW-PAG-002: a record deleted between two page fetches neither duplicate
     for (let i = 1; i <= 5; i++) originals.push(await tw.people.create(runScopedName(`pag2-${i}`)));
     const first = await page(request, twAuth, tag);
     expect(first.ids).toHaveLength(2);
+    expect(
+      first.ids.filter((id) => !originals.includes(id)),
+      "first page: every id is one of this test's originals",
+    ).toEqual([]);
 
     // Delete a record that has not been fetched yet (the one a skip would hide).
     victim = originals.find((id) => !first.ids.includes(id));
@@ -114,6 +128,11 @@ test("P2-TW-PAG-002: a record deleted between two page fetches neither duplicate
     const rest = await restOf(request, twAuth, tag, first);
     const seen = [...first.ids, ...rest];
     const survivors = originals.filter((id) => id !== victim);
+    // The filter held: no id outside the surviving originals appears, and the deleted record never does.
+    expect(
+      seen.filter((id) => !survivors.includes(id)),
+      "every paged id is a surviving record of this test",
+    ).toEqual([]);
     expect(new Set(seen).size, "no id appears twice across pages").toBe(seen.length);
     expect(
       seen.filter((id) => originals.includes(id)).sort(),
