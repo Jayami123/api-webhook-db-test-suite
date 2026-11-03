@@ -9,7 +9,7 @@ import { distributedEnvelope } from "../../fixtures/doc/distributed-envelope.ts"
 // EXP-003 (a recipient moved back into its window) uses the Recipient.expiresAt allow-list entry in
 // src/db/fixture-allowlist.ts (merged with #16). Master plan row: P2-DOC-EXP-003, scope OD-10.
 
-test("P2-DOC-EXP-001 signing 1 s before expiry succeeds", async ({ doc, request, docAuth }) => {
+test("P2-DOC-EXP-001 signing before expiry succeeds", async ({ doc, request, docAuth }) => {
   const runPrefix = currentRunPrefix();
   const db = readOnlyDb("documenso");
   const w = documensoFixtureWriter(runPrefix);
@@ -26,7 +26,10 @@ test("P2-DOC-EXP-001 signing 1 s before expiry succeeds", async ({ doc, request,
     const signer = env.prepared.signers[0];
     if (signer === undefined || signer.fieldId === undefined)
       throw new Error("TEST BUG: no signer field");
-    const at = new Date(Date.now() + 2_000);
+    // A5: the window is set from the DB clock plus a named budget, so a slow run is a setup error, not a product one.
+    const dbNow = async (): Promise<Date> =>
+      (await db.select<{ now: Date }>(`SELECT now() AS now`))[0]?.now ?? new Date(0);
+    const at = new Date((await dbNow()).getTime() + SLO.docSignWindow.ms);
     await setRecipientExpiresAt(w, signer.recipientId, at, "P2-DOC-EXP-001");
     const row = await db.select<{ expiresAt: Date }>(
       `SELECT "expiresAt" AS "expiresAt" FROM "Recipient" WHERE "id" = $1`,
@@ -39,6 +42,11 @@ test("P2-DOC-EXP-001 signing 1 s before expiry succeeds", async ({ doc, request,
       value: "probe",
     });
     expect(res.status).toBe(200);
+    // Setup assert before completion: the window still holds on the DB clock (else the run was too slow).
+    expect(
+      (await dbNow()).getTime(),
+      "the expiry window elapsed before completion (setup, not a product failure)",
+    ).toBeLessThan(at.getTime());
     // The recipient reaches SIGNED only when it completes (P-DOC-9); the field write alone leaves NOT_SIGNED.
     expect(await completeRecipient(env.http, env.prepared, signer)).toBe(200);
     await expect
