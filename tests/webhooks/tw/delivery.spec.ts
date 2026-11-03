@@ -74,11 +74,22 @@ test("P2-TW-WH-004: a receiver 500 gets exactly one request for the event (no re
   }
 });
 
+/**
+ * The product's outbound timeout (call-webhook.job.ts:117, `timeout: 5_000`). The two cases sit one second either side of it.
+ * Measured on the worker log (`CallWebhookJob processed … in N ms`, probe record section 9, A2): the 4 s delivery took
+ * about 4 010 ms and the 6 s delivery 5 006.85 ms, which is the timeout firing. The test does not assert those durations:
+ * the only place they appear is the container log, which the test cannot read through the harness.
+ */
+const CALL_TIMEOUT_MS = 5_000;
+
 for (const [name, delayMs] of [
-  ["P2-TW-WH-005: a 4 s receiver delay is delivered once", 4_000],
   [
-    "P2-TW-WH-005: a 6 s delay is one request; the 5000 ms timeout closes the call and nothing retries",
-    6_000,
+    `P2-TW-WH-005: a slow receiver (${(CALL_TIMEOUT_MS - 1_000) / 1_000} s) gets one request for the event`,
+    CALL_TIMEOUT_MS - 1_000,
+  ],
+  [
+    `P2-TW-WH-005: a slow receiver (${(CALL_TIMEOUT_MS + 1_000) / 1_000} s) gets one request for the event, and no retry`,
+    CALL_TIMEOUT_MS + 1_000,
   ],
 ] as const) {
   test(name, async ({ tw, receiverHandle }) => {
@@ -106,6 +117,10 @@ for (const [name, delayMs] of [
           message: "the slow request arrived",
         })
         .toBe(1);
+      // Setup, asserted: the receiver took the slow path for this delivery.
+      expect(deliveriesOf(receiver, key, realId)[0]?.mode, "setup: receiver answered slow").toBe(
+        "slow",
+      );
       const startedMs = Date.now();
       await expect
         .poll(

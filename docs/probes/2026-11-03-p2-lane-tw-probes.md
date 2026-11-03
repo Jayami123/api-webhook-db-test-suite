@@ -210,3 +210,14 @@ returned no violations (`npx playwright test` exit 0).
 - Measured: WH-004 receiver answered `500` (`Delivery.mode === "500"`, asserted in the case), one request, quiet window clean.
 - Mutation check: receiver set to `ok` makes the setup assert fail with `Received: "ok"`. Restored.
 - Result: no-retry claim holds at the pin for a 500. Stated basis: a thrown error would retry (3 retries); this path throws none.
+
+**A2 (WH-005, the 5 000 ms timeout).**
+- Timeout at the pin: `call-webhook.job.ts:117`, `timeout: 5_000`. Confirmed.
+- Observable found: the worker log line `BullMQDriver: Job N with name CallWebhookJob processed … in X ms`. Measured:
+  4 s receiver: 4 010.73 ms and 4 008.96 ms (two runs). 6 s receiver: 5 006.85 ms (the timeout firing).
+- Not usable from the test: the harness has no log command (`scripts/` has up, down, smoke, seed only). A test would have to
+  read the container log through `docker logs`, which is outside the lane. So the test does not assert it.
+- Decision (owner default: rename when no observable is reachable): both cases are renamed to what they assert ("a slow
+  receiver (4 s) gets one request", "(6 s) ... and no retry"). The "closes the call at 5 000 ms" wording is removed. The
+  delays are derived in code from `CALL_TIMEOUT_MS = 5_000` (`delivery.spec.ts`). Each case asserts `mode === "slow"`.
+- The timeout claim is recorded here as UNPROBED-by-test (measured in the worker log, not asserted in the lane).
