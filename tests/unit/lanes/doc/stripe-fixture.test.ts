@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type Stripe from "stripe";
-import { assertTestModeKey, teardownRunStripe } from "../../../../src/lanes/doc/stripe-fixture.ts";
+import {
+  assertTestModeKey,
+  attachRunSubscription,
+  teardownRunStripe,
+} from "../../../../src/lanes/doc/stripe-fixture.ts";
 
 describe("assertTestModeKey (FC-6: test-mode guard)", () => {
   test("an unset key is refused with the ENV message", () => {
@@ -65,5 +69,43 @@ describe("teardownRunStripe (every step attempted, codes only)", () => {
         !e.message.includes("sub_FAKE"),
     );
     assert.deepEqual(calls, ["subscription.cancel", "customer.del", "product.update"]);
+  });
+});
+
+describe("attachRunSubscription (every object carries run_id and case_id)", () => {
+  test("the product, price, customer update and subscription are all tagged with the run and the case", async () => {
+    const writes: { call: string; metadata: Record<string, string> | undefined }[] = [];
+    const fake = {
+      products: {
+        create: (args: { metadata?: Record<string, string> }) => {
+          writes.push({ call: "product.create", metadata: args.metadata });
+          return Promise.resolve({ id: "prod_FAKE" });
+        },
+      },
+      prices: {
+        create: (args: { metadata?: Record<string, string> }) => {
+          writes.push({ call: "price.create", metadata: args.metadata });
+          return Promise.resolve({ id: "price_FAKE" });
+        },
+      },
+      customers: {
+        update: (_id: string, args: { metadata?: Record<string, string> }) => {
+          writes.push({ call: "customer.update", metadata: args.metadata });
+          return Promise.resolve({});
+        },
+      },
+      subscriptions: {
+        create: (args: { metadata?: Record<string, string> }) => {
+          writes.push({ call: "subscription.create", metadata: args.metadata });
+          return Promise.resolve({ id: "sub_FAKE" });
+        },
+      },
+    } as unknown as Stripe;
+    const out = await attachRunSubscription(fake, "p2-qa-unit", "cus_FAKE", "P2-DOC-STR-002");
+    assert.deepEqual(out, { productId: "prod_FAKE", subscriptionId: "sub_FAKE" });
+    assert.equal(writes.length, 4);
+    for (const w of writes) {
+      assert.deepEqual(w.metadata, { run_id: "p2-qa-unit", case_id: "P2-DOC-STR-002" }, w.call);
+    }
   });
 });

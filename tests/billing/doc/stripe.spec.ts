@@ -82,6 +82,7 @@ test("P2-DOC-STR-001 a correctly signed event that is not synced is accepted (20
 });
 
 test.describe("STR-002 and STR-003 against the run's Stripe fixture", () => {
+  test.describe.configure({ mode: "serial" });
   // Named skip: without the test-mode key these two cases do not run in this stack (OD-2).
   test.skip(
     !hasStripeKey(process.env),
