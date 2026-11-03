@@ -150,6 +150,16 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Stripe test-mode key is set (the billing cases cannot run without it)
+        timeout-minutes: 2
+        env:
+          STRIPE_KEY: ${{ secrets.STRIPE_API_KEY }}
+        run: |
+          if [ -z "$STRIPE_KEY" ]; then
+            echo "::error::STRIPE_API_KEY is not set; the billing cases need a test-mode key"
+            exit 1
+          fi
+
       - name: Node 22 for the repository (install, tests)
         timeout-minutes: 5
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

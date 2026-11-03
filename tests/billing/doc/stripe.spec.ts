@@ -3,11 +3,8 @@ import Stripe from "stripe";
 import { test, expect } from "../../../src/fixtures/index.ts";
 import { readOnlyDb } from "../../../src/db/pg.ts";
 import { apiBaseUrl } from "../../../src/env.ts";
-import {
-  hasStripeKey,
-  signedStripeHeaders,
-  stripeWebhookSecret,
-} from "../../../src/lanes/doc/stripe.ts";
+import { requireDocKey } from "../../../src/lanes/doc/env-gate.ts";
+import { signedStripeHeaders, stripeWebhookSecret } from "../../../src/lanes/doc/stripe.ts";
 import {
   assertTestModeKey,
   productStatusFor,
@@ -88,8 +85,9 @@ test("P2-DOC-STR-001 a correctly signed event that is not synced is accepted (20
 test.describe("STR-002 and STR-003 against the run's Stripe fixture", () => {
   test.describe.configure({ mode: "serial" });
   // Named skip: without the test-mode key these two cases do not run in this stack (OD-2).
+  // In CI a missing or wrong key throws here (requireDocKey), so the job goes red and never skips silently.
   test.skip(
-    !hasStripeKey(process.env),
+    !requireDocKey("STRIPE_API_KEY", /^sk_test_/),
     "P2-DOC-STR-002/003 need STRIPE_API_KEY (test mode): none in this run",
   );
 
