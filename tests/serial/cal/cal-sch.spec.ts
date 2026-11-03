@@ -28,15 +28,17 @@ import type { CalAuth } from "../../../src/auth/cal.ts";
 import type { ApiRequestLike } from "../../../src/clients/base.ts";
 import type { CalClient } from "../../../src/clients/cal.ts";
 
-const db = readOnlyDb("cal");
-const writer = createFixtureWriter({
-  product: "cal",
-  logFile: defaultFixtureLogFile(currentRunPrefix()),
-});
+const db = (): ReturnType<typeof readOnlyDb> => readOnlyDb("cal");
+let writerHandle: ReturnType<typeof createFixtureWriter> | undefined;
+const writer = (): ReturnType<typeof createFixtureWriter> =>
+  (writerHandle ??= createFixtureWriter({
+    product: "cal",
+    logFile: defaultFixtureLogFile(currentRunPrefix()),
+  }));
 const cronKey = (): string => process.env["CRON_API_KEY"] ?? "";
 
 test.afterAll(async () => {
-  await writer.close();
+  await writerHandle?.close();
 });
 
 interface Ctx {
@@ -60,7 +62,7 @@ async function hookAndBooking(
     secret: randomSecret(),
   });
   const api = calBookingApi({ request: ctx.request, apiBaseUrl: apiBase(), auth: ctx.calAuth });
-  const eventTypeId = await eventTypeIdBySlug(db, PRO_EMAIL, PRO_SLUG_30);
+  const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
   const starts = await slotStartsAhead(ctx.request, ctx.calAuth, eventTypeId);
   const booked: BookingResult = await api.create({
     eventTypeId,
@@ -70,7 +72,7 @@ async function hookAndBooking(
   });
   expect(booked.status).toBe(201);
   track.uid = booked.uids[0] ?? "";
-  const rows = await scheduledRowsForHook(db, track.uid, url);
+  const rows = await scheduledRowsForHook(db(), track.uid, url);
   expect(rows).toHaveLength(1);
   return { rowIds: rows.map((r) => r.id), url, api };
 }
@@ -94,7 +96,7 @@ test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
       const made = await hookAndBooking(ctx, "cal-sch-001", 6, track);
       expect(await made.api.cancel(track.uid ?? "", "P2 lane cancel")).toBe(200);
       await expect
-        .poll(async () => (await scheduledRowsForBooking(db, track.uid ?? "")).length, {
+        .poll(async () => (await scheduledRowsForBooking(db(), track.uid ?? "")).length, {
           timeout: SLO.calWebhookDelivery.ms,
           intervals: POLL_INTERVALS,
           message: "scheduled row after cancel",
@@ -118,8 +120,8 @@ test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
     try {
       const made = await hookAndBooking(ctx, testId, 7, track);
       await moveStartAfter(
-        writer,
-        must((await scheduledRowsForHook(db, track.uid ?? "", made.url))[0], "scheduled row").id,
+        writer(),
+        must((await scheduledRowsForHook(db(), track.uid ?? "", made.url))[0], "scheduled row").id,
         60_000,
         "P2-CAL-SCH-002",
       );
@@ -131,7 +133,7 @@ test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
         })
         .toBe(1);
       await expect
-        .poll(async () => (await scheduledRowsForHook(db, track.uid ?? "", made.url)).length, {
+        .poll(async () => (await scheduledRowsForHook(db(), track.uid ?? "", made.url)).length, {
           timeout: SLO.calWebhookDelivery.ms,
           intervals: POLL_INTERVALS,
         })
@@ -154,8 +156,8 @@ test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
     try {
       const made = await hookAndBooking(ctx, testId, 9, track);
       await moveStartAfter(
-        writer,
-        must((await scheduledRowsForHook(db, track.uid ?? "", made.url))[0], "scheduled row").id,
+        writer(),
+        must((await scheduledRowsForHook(db(), track.uid ?? "", made.url))[0], "scheduled row").id,
         60_000,
         "P2-CAL-SCH-003",
       );
@@ -184,14 +186,14 @@ test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
     try {
       const made = await hookAndBooking(ctx, testId, 10, track);
       await moveStartAfter(
-        writer,
-        must((await scheduledRowsForHook(db, track.uid ?? "", made.url))[0], "scheduled row").id,
+        writer(),
+        must((await scheduledRowsForHook(db(), track.uid ?? "", made.url))[0], "scheduled row").id,
         2 * 864e5,
         "P2-CAL-SCH-003",
       );
       expect(await fireScheduledTriggersOnce(ctx.request, webBase(), cronKey())).toBe(200);
       await expect
-        .poll(async () => (await scheduledRowsForHook(db, track.uid ?? "", made.url)).length, {
+        .poll(async () => (await scheduledRowsForHook(db(), track.uid ?? "", made.url)).length, {
           timeout: SLO.calWebhookDelivery.ms,
           intervals: POLL_INTERVALS,
           message: "stale row purged",

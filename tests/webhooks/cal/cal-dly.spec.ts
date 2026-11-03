@@ -3,7 +3,7 @@ import { readOnlyDb } from "../../../src/db/pg.ts";
 import { DAILY_TEST_BODY, signedDailyRequest } from "../../../src/lanes/cal/daily.ts";
 import { webBase } from "../../../src/lanes/cal/cases.ts";
 
-const db = readOnlyDb("cal");
+const db = (): ReturnType<typeof readOnlyDb> => readOnlyDb("cal");
 
 /** The Daily signing secret is a per-run value from the environment; the test refuses to run without it. */
 function dailySecret(): string {
@@ -85,7 +85,7 @@ test.describe("P2-CAL-DLY recorded-daily-video route", () => {
     request,
   }) => {
     const countsSql = `SELECT (SELECT count(*)::int FROM "Booking") AS bookings, (SELECT count(*)::int FROM "Task") AS tasks, (SELECT count(*)::int FROM "WebhookScheduledTriggers") AS scheduled`;
-    const before = (await db.select<Record<string, number>>(countsSql))[0];
+    const before = (await db().select<Record<string, number>>(countsSql))[0];
     const res = await request.fetch(route(), {
       method: "POST",
       headers: json,
@@ -94,6 +94,6 @@ test.describe("P2-CAL-DLY recorded-daily-video route", () => {
     });
     expect(res.status()).toBe(200);
     expect(JSON.parse(await res.text())).toEqual({ message: "Test request successful" });
-    expect((await db.select<Record<string, number>>(countsSql))[0]).toEqual(before);
+    expect((await db().select<Record<string, number>>(countsSql))[0]).toEqual(before);
   });
 });

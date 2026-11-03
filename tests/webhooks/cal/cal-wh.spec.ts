@@ -23,7 +23,7 @@ import { bookingWebhookErrors } from "../../../src/lanes/cal/webhook-schema.ts";
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 
-const db = readOnlyDb("cal");
+const db = (): ReturnType<typeof readOnlyDb> => readOnlyDb("cal");
 const cronSecret = (): string => process.env["CRON_SECRET"] ?? "";
 
 test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
@@ -42,7 +42,7 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
       secret,
     });
     const api = calBookingApi({ request, apiBaseUrl: apiBase(), auth: calAuth });
-    const eventTypeId = await eventTypeIdBySlug(db, PRO_EMAIL, PRO_SLUG_30);
+    const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
     const starts = await slotStartsAhead(request, calAuth, eventTypeId);
     const booked = await api.create({
       eventTypeId,
@@ -85,7 +85,7 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
       secret,
     });
     const api = calBookingApi({ request, apiBaseUrl: apiBase(), auth: calAuth });
-    const eventTypeId = await eventTypeIdBySlug(db, PRO_EMAIL, PRO_SLUG_30);
+    const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
     const starts = await slotStartsAhead(request, calAuth, eventTypeId);
     const booked = await api.create({
       eventTypeId,
@@ -129,7 +129,7 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
       secret: randomSecret(),
     });
     const api = calBookingApi({ request, apiBaseUrl: apiBase(), auth: calAuth });
-    const eventTypeId = await eventTypeIdBySlug(db, PRO_EMAIL, PRO_SLUG_30);
+    const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
     const starts = await slotStartsAhead(request, calAuth, eventTypeId);
     const booked = await api.create({
       eventTypeId,
@@ -171,7 +171,7 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
       secret: randomSecret(),
     });
     const api = calBookingApi({ request, apiBaseUrl: apiBase(), auth: calAuth });
-    const eventTypeId = await eventTypeIdBySlug(db, PRO_EMAIL, PRO_SLUG_30);
+    const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
     const starts = await slotStartsAhead(request, calAuth, eventTypeId);
     const booked = await api.create({
       eventTypeId,
@@ -226,7 +226,7 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
       secret: randomSecret(),
     });
     const api = calBookingApi({ request, apiBaseUrl: apiBase(), auth: calAuth });
-    const eventTypeId = await eventTypeIdBySlug(db, PRO_EMAIL, PRO_SLUG_30);
+    const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
     const starts = await slotStartsAhead(request, calAuth, eventTypeId);
     const booked = await api.create({
       eventTypeId,
@@ -273,7 +273,7 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
       secret: randomSecret(),
     });
     const api = calBookingApi({ request: ctx.request, apiBaseUrl: apiBase(), auth: ctx.calAuth });
-    const eventTypeId = await eventTypeIdBySlug(db, PRO_EMAIL, PRO_SLUG_30);
+    const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
     const starts = await slotStartsAhead(ctx.request, ctx.calAuth, eventTypeId);
     ctx.receiverHandle.receiver.setMode(key, { kind: "500" });
     const booked = await api.create({
@@ -299,7 +299,7 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
     try {
       expect(await runTaskerOnce(request, webBase(), cronSecret())).toBe(200);
       expect(receiverHandle.receiver.deliveries(made.key)).toHaveLength(1);
-      const rows = await taskRowsFor(db, `${currentRunPrefix()}/${testId}`);
+      const rows = await taskRowsFor(db(), `${currentRunPrefix()}/${testId}`);
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ attempts: 1, succeeded: true, lastError: null });
     } finally {

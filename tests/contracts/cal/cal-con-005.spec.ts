@@ -18,7 +18,7 @@ import { currentRunPrefix, runScopedName } from "../../../src/run/prefix.ts";
 import { readFileSync } from "node:fs";
 
 const CONTRACT = "contracts/cal/openapi-v2.json";
-const db = readOnlyDb("cal");
+const db = (): ReturnType<typeof readOnlyDb> => readOnlyDb("cal");
 
 interface Crawl {
   readonly op: GetOperation;
@@ -48,11 +48,13 @@ test("P2-CAL-CON-005 every GET operation in the committed OAS answers a document
     name: (label) => runScopedName(`con005-${label}`),
     keyId: async (note) =>
       (
-        await db.select<{ id: string }>(`SELECT "id" AS id FROM "ApiKey" WHERE "note" = $1`, [note])
+        await db().select<{ id: string }>(`SELECT "id" AS id FROM "ApiKey" WHERE "note" = $1`, [
+          note,
+        ])
       )[0]?.id,
   });
   // One booking so that {bookingUid} has a real value; cancelled in finally.
-  const eventTypeId = await eventTypeIdBySlug(db, PRO_EMAIL, PRO_SLUG_30);
+  const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
   const starts = await slotStartsAhead(request, calAuth, eventTypeId);
   const api = calBookingApi({ request, apiBaseUrl: apiBase(), auth: calAuth });
   const booked = await api.create({

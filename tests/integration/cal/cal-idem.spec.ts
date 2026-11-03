@@ -11,14 +11,14 @@ import {
 } from "../../../src/lanes/cal/cases.ts";
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
 
-const db = readOnlyDb("cal");
+const db = (): ReturnType<typeof readOnlyDb> => readOnlyDb("cal");
 
 test.describe("P2-CAL-IDEM booking idempotency", () => {
   test("P2-CAL-IDEM-001 an identical ACCEPTED booking is refused by the unique key (positive control)", async ({
     request,
     calAuth,
   }) => {
-    const eventTypeId = await eventTypeIdBySlug(db, PRO_EMAIL, PRO_SLUG_30);
+    const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
     const starts = await slotStartsAhead(request, calAuth, eventTypeId);
     const api = calBookingApi({ request, apiBaseUrl: apiBase(), auth: calAuth });
     const email = attendeeEmailFor(currentRunPrefix(), "idem-1");
@@ -38,7 +38,7 @@ test.describe("P2-CAL-IDEM booking idempotency", () => {
       });
       // Measured (docs/probes/2026-11-02-p2-lane-cal-live-probes.md L1): 400 BadRequest; the unique idempotency key refuses the duplicate (not 409).
       expect(second.status).toBe(400);
-      const rows = await bookingRowsForEmail(db, email);
+      const rows = await bookingRowsForEmail(db(), email);
       expect(rows.map((r) => r.uid)).toEqual(first.uids);
       expect(rows.map((r) => r.status)).toEqual(["accepted"]);
     } finally {

@@ -15,12 +15,12 @@ import { attendeeEmailFor } from "../../../src/lanes/cal/booking.ts";
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
 
 const CONTRACT = "contracts/cal/openapi-v2.json";
-const db = readOnlyDb("cal");
+const db = (): ReturnType<typeof readOnlyDb> => readOnlyDb("cal");
 
 test.describe("P2-CAL-CON contract cases", () => {
   test("P2-CAL-CON-001 GET /v2/slots matches the OAS schema", async ({ request, calAuth }) => {
     const spec = await loadSpec("cal-v2", CONTRACT);
-    const eventTypeId = await eventTypeIdBySlug(db, PRO_EMAIL, PRO_SLUG_30);
+    const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
     const starts = await slotStartsAhead(request, calAuth, eventTypeId);
     expect(starts.length).toBeGreaterThan(0);
     const res = await request.fetch(
@@ -54,7 +54,7 @@ test.describe("P2-CAL-CON contract cases", () => {
     calAuth,
   }) => {
     const spec = await loadSpec("cal-v2", CONTRACT);
-    const eventTypeId = await eventTypeIdBySlug(db, PRO_EMAIL, PRO_SLUG_30);
+    const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
     const starts = await slotStartsAhead(request, calAuth, eventTypeId);
     const email = attendeeEmailFor(currentRunPrefix(), "con-002");
     const api = calBookingApi({ request, apiBaseUrl: apiBase(), auth: calAuth });
@@ -76,7 +76,7 @@ test.describe("P2-CAL-CON contract cases", () => {
     const uid = (JSON.parse(text) as { data?: { uid?: string } }).data?.uid ?? "";
     try {
       expect(res.status()).toBe(201);
-      const rows = await bookingRowsForEmail(db, email);
+      const rows = await bookingRowsForEmail(db(), email);
       expect(rows.map((r) => r.uid)).toEqual([uid]);
       // PB-CAL-OAS-1 (product documentation, proven): the committed 201 schema requires strings and numbers
       // where the live body has null (rescheduledByEmail, rating) and requires attendee seatUid and
@@ -92,9 +92,9 @@ test.describe("P2-CAL-CON contract cases", () => {
     request,
     calAuth,
   }) => {
-    const eventTypeId = await eventTypeIdBySlug(db, PRO_EMAIL, PRO_SLUG_30);
+    const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
     const starts = await slotStartsAhead(request, calAuth, eventTypeId);
-    const before = await bookingCountForEventType(db, eventTypeId);
+    const before = await bookingCountForEventType(db(), eventTypeId);
     const res = await request.fetch(`${apiBase()}/v2/bookings`, {
       method: "POST",
       headers: {
@@ -115,14 +115,14 @@ test.describe("P2-CAL-CON contract cases", () => {
     expect(Object.keys(body).sort()).toEqual(["error", "path", "status", "timestamp"]);
     expect(body["status"]).toBe("error");
     expect(body["path"]).toBe("/v2/bookings");
-    expect(await bookingCountForEventType(db, eventTypeId)).toBe(before);
+    expect(await bookingCountForEventType(db(), eventTypeId)).toBe(before);
   });
 
   test("P2-CAL-CON-003 unauthenticated GET /v2/bookings: 403 and no Booking row", async ({
     request,
   }) => {
-    const eventTypeId = await eventTypeIdBySlug(db, PRO_EMAIL, PRO_SLUG_30);
-    const before = await bookingCountForEventType(db, eventTypeId);
+    const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
+    const before = await bookingCountForEventType(db(), eventTypeId);
     const res = await request.fetch(`${apiBase()}/v2/bookings`, {
       headers: { "cal-api-version": BOOKINGS_VERSION },
       failOnStatusCode: false,
@@ -130,15 +130,15 @@ test.describe("P2-CAL-CON contract cases", () => {
     expect(res.status()).toBe(403);
     const body = JSON.parse(await res.text()) as { error: { code: string } };
     expect(body.error.code).toBe("ForbiddenException");
-    expect(await bookingCountForEventType(db, eventTypeId)).toBe(before);
+    expect(await bookingCountForEventType(db(), eventTypeId)).toBe(before);
   });
 
   test("P2-CAL-CON-003 unknown booking uid: 404 and no Booking row", async ({
     request,
     calAuth,
   }) => {
-    const eventTypeId = await eventTypeIdBySlug(db, PRO_EMAIL, PRO_SLUG_30);
-    const before = await bookingCountForEventType(db, eventTypeId);
+    const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
+    const before = await bookingCountForEventType(db(), eventTypeId);
     const res = await request.fetch(`${apiBase()}/v2/bookings/${currentRunPrefix()}-missing`, {
       headers: apiHeaders(calAuth, BOOKINGS_VERSION),
       failOnStatusCode: false,
@@ -146,6 +146,6 @@ test.describe("P2-CAL-CON contract cases", () => {
     expect(res.status()).toBe(404);
     const body = JSON.parse(await res.text()) as { error: { code: string } };
     expect(body.error.code).toBe("NotFoundException");
-    expect(await bookingCountForEventType(db, eventTypeId)).toBe(before);
+    expect(await bookingCountForEventType(db(), eventTypeId)).toBe(before);
   });
 });

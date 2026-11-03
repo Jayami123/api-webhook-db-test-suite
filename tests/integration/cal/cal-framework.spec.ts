@@ -14,7 +14,7 @@ import {
 import { eventTypeIdBySlug } from "../../../src/lanes/cal/event-types.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
 
-const db = readOnlyDb("cal");
+const db = (): ReturnType<typeof readOnlyDb> => readOnlyDb("cal");
 
 test.describe("P2-CAL framework checks", () => {
   test("FC-1 cron routes refuse a wrong key (401) and accept the right one (200)", async ({
@@ -42,8 +42,8 @@ test.describe("P2-CAL framework checks", () => {
   });
 
   test("FC-3 a 429 creates no Booking row (dedicated key, 121 GET /v2/me)", async ({ request }) => {
-    const eventTypeId = await eventTypeIdBySlug(db, PRO_EMAIL, PRO_SLUG_30);
-    const before = await bookingCountForEventType(db, eventTypeId);
+    const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
+    const before = await bookingCountForEventType(db(), eventTypeId);
     const env = loadAuthEnv();
     const key = await mintCal({
       baseUrl: webBase(),
@@ -52,7 +52,7 @@ test.describe("P2-CAL framework checks", () => {
       name: (label) => runScopedName(`fc3-${label}`),
       keyId: async (note) =>
         (
-          await db.select<{ id: string }>(`SELECT "id" AS id FROM "ApiKey" WHERE "note" = $1`, [
+          await db().select<{ id: string }>(`SELECT "id" AS id FROM "ApiKey" WHERE "note" = $1`, [
             note,
           ])
         )[0]?.id,
@@ -68,7 +68,7 @@ test.describe("P2-CAL framework checks", () => {
         codes[code] = (codes[code] ?? 0) + 1;
       }
       expect(codes["429"] ?? 0).toBeGreaterThanOrEqual(1);
-      expect(await bookingCountForEventType(db, eventTypeId)).toBe(before);
+      expect(await bookingCountForEventType(db(), eventTypeId)).toBe(before);
     } finally {
       await revokeAndVerify(key, () => key.isPresent());
     }

@@ -13,7 +13,7 @@ import {
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
 import { POLL_INTERVALS } from "../../../src/slo.ts";
 
-const db = readOnlyDb("cal");
+const db = (): ReturnType<typeof readOnlyDb> => readOnlyDb("cal");
 const SLOT_MS = 30 * 60_000;
 
 /** Availability windows of the pro user's schedules (Availability.scheduleId -> Schedule.userId; schema checked: docs/probes/2026-11-02-p2-lane-cal-live-probes.md L11). */
@@ -23,7 +23,7 @@ type Window = {
   endTime: string;
 };
 async function availabilityWindows(): Promise<Window[]> {
-  return db.select<Window>(
+  return db().select<Window>(
     `SELECT a."days" AS days, to_char(a."startTime", 'HH24:MI') AS "startTime", to_char(a."endTime", 'HH24:MI') AS "endTime" FROM "Availability" a JOIN "Schedule" s ON s."id" = a."scheduleId" JOIN "users" u ON u."id" = s."userId" WHERE u."email" = $1`,
     [PRO_EMAIL],
   );
@@ -52,7 +52,7 @@ test.describe("P2-CAL-PROP slot properties", () => {
     request,
     calAuth,
   }) => {
-    const eventTypeId = await eventTypeIdBySlug(db, PRO_EMAIL, PRO_SLUG_30);
+    const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
     const windows = await availabilityWindows();
     expect(windows.length).toBeGreaterThan(0);
     const starts = await slotStartsAhead(request, calAuth, eventTypeId, "Europe/London");
@@ -75,7 +75,7 @@ test.describe("P2-CAL-PROP slot properties", () => {
     request,
     calAuth,
   }) => {
-    const eventTypeId = await eventTypeIdBySlug(db, PRO_EMAIL, PRO_SLUG_30);
+    const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
     const starts = await slotStartsAhead(request, calAuth, eventTypeId);
     const api = calBookingApi({ request, apiBaseUrl: apiBase(), auth: calAuth });
     const email = attendeeEmailFor(currentRunPrefix(), "prop-2");
@@ -106,7 +106,7 @@ test.describe("P2-CAL-PROP slot properties", () => {
         const overlaps = t < bookedStart + SLOT_MS && t + SLOT_MS > bookedStart;
         expect(overlaps, `slot ${s} overlaps the booking`).toBe(false);
       }
-      expect((await bookingRowsForEmail(db, email)).map((r) => r.status)).toEqual(["accepted"]);
+      expect((await bookingRowsForEmail(db(), email)).map((r) => r.status)).toEqual(["accepted"]);
     } finally {
       for (const uid of booked.uids) await api.cancel(uid, "P2 lane cleanup");
     }

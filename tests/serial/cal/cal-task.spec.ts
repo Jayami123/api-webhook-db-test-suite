@@ -19,15 +19,17 @@ import type { CalAuth } from "../../../src/auth/cal.ts";
 import type { ApiRequestLike } from "../../../src/clients/base.ts";
 import type { CalClient } from "../../../src/clients/cal.ts";
 
-const db = readOnlyDb("cal");
-const writer = createFixtureWriter({
-  product: "cal",
-  logFile: defaultFixtureLogFile(currentRunPrefix()),
-});
+const db = (): ReturnType<typeof readOnlyDb> => readOnlyDb("cal");
+let writerHandle: ReturnType<typeof createFixtureWriter> | undefined;
+const writer = (): ReturnType<typeof createFixtureWriter> =>
+  (writerHandle ??= createFixtureWriter({
+    product: "cal",
+    logFile: defaultFixtureLogFile(currentRunPrefix()),
+  }));
 const cronSecret = (): string => process.env["CRON_SECRET"] ?? "";
 
 test.afterAll(async () => {
-  await writer.close();
+  await writerHandle?.close();
 });
 
 interface Ctx {
@@ -51,7 +53,7 @@ async function webhookAndBookings(
     secret: randomSecret(),
   });
   const api = calBookingApi({ request: ctx.request, apiBaseUrl: apiBase(), auth: ctx.calAuth });
-  const eventTypeId = await eventTypeIdBySlug(db, PRO_EMAIL, PRO_SLUG_30);
+  const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
   const starts = await slotStartsAhead(ctx.request, ctx.calAuth, eventTypeId);
   for (let i = from; i < from + count; i += 1) {
     const booked = await api.create({
@@ -74,7 +76,7 @@ async function cleanup(ctx: Ctx, track: { hookId?: string; uids: string[] }): Pr
   if (track.hookId !== undefined) await ctx.cal.webhooks.remove(track.hookId);
 }
 
-const rowsOf = (testId: string) => taskRowsFor(db, `${currentRunPrefix()}/${testId}`);
+const rowsOf = (testId: string) => taskRowsFor(db(), `${currentRunPrefix()}/${testId}`);
 
 test.describe("P2-CAL-TASK tasker (serial)", () => {
   test("P2-CAL-TASK-001 a thrown delivery is retried once per tasker run up to maxAttempts, then stops", async ({
@@ -121,7 +123,7 @@ test.describe("P2-CAL-TASK tasker (serial)", () => {
       await webhookAndBookings(ctx, testId, 1, 1, track);
       const [task] = await rowsOf(testId);
       expect(task).toMatchObject({ attempts: 0, succeeded: false });
-      await writer.update({
+      await writer().update({
         table: "Task",
         column: "scheduledAt",
         pk: must(task, "task row").id,
@@ -131,7 +133,7 @@ test.describe("P2-CAL-TASK tasker (serial)", () => {
       expect(await runTaskerOnce(request, webBase(), cronSecret())).toBe(200);
       expect(receiverHandle.receiver.deliveries(key)).toHaveLength(0);
       expect(await rowsOf(testId)).toMatchObject([{ attempts: 0, succeeded: false, due: false }]);
-      await writer.update({
+      await writer().update({
         table: "Task",
         column: "scheduledAt",
         pk: must(task, "task row").id,
