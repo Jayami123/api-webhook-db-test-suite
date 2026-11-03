@@ -1408,3 +1408,15 @@ This section writes back the values the plan marked UNPROBED. The measured recor
 | CACHE-001 | built (HR-4 is in 0.3.1; `medusa-env.ts:282-300`); the warm read writes keys, the price change is visible |
 | Unit anchor | B0 = 288 on `fcc4654` (plan: 285 on `aa10ec1`; PR #10 added 3) |
 | Cold up | 146 s on the first stack, 60 to 62 s later (cached image build) |
+
+## Addendum decisions (2026-11-03, Asia/Colombo time)
+
+The original text above is kept as written. These decisions change its meaning and are listed here, each with the probe that supports it (probe record, section 8).
+
+- **C8 and RD-3 corrected.** The text said the payment is "never captured". The session status never reads `captured` (the payment module authorizes sessions), but the payment row is captured: a `succeeded` event captures it, and the `capture` table holds one row (P-MED-19). Specs assert the capture on the payment (`captured_at` and capture rows).
+- **WH-008 meaning.** The 20 runs are titled "completion before the delayed webhook (product webhook_delay 5000 ms)". With the 5 s emit delay, the completion lands first, so the runs do not measure a simultaneous race. WH-008b (webhook first, then the client completes the same cart) is the deterministic case. The true simultaneous race is UNPROBED.
+- **D6 (contract source).** The lane-written subset is removed. The contract is the upstream store OpenAPI at tag v2.21.2, verified by sha256 (PROVENANCE.md). Its validation runs through the deviation register: SPEC entries (the spec omits nullable; the 401 documentation is text/plain) and PRODUCT entries (a required key is absent from the response). PRODUCT entries are asserted red by a test.fail.
+- **D7 (zero terms).** The order identity asserts shipping and live tax lines are zero from the database before it is applied. Tax lines store a rate, not an amount, so a tax term cannot be read; zero is the precondition.
+- **Tolerance (WH-006).** The accepted receipt age is derived (300 - 5 - 25 = 270 s), not chosen. Receipt age 299 s is a separate rejected case: a design finding for P5 (no test.fail; no published contract is broken).
+- **Environment gate.** A missing or wrong `STRIPE_API_KEY` (and a wrong `MEDUSA_FF_CACHING`) skips locally with the reason and throws in CI. The count of conditional skips is six on the key and one on the cache flag (seven files), not eight.
+- **CSV deadline.** `medCsvImport` = 20 s, derived from the workflow margin of `medWebhookProcessing`; cited in `src/slo/medusa.ts`.

@@ -249,3 +249,46 @@ The async-chain layer (EB-002, PL-001, CSV-001, CACHE-001) passed 4 of 4 on a fr
 | CACHE-001 | cache-keys positive control removed | **not red** | expected: a never-filling cache would pass without the control, which is why the control stays |
 
 Not run as live mutations: WH-001 (second delivery signed by another secret; the count assertion is the proof, covered by WH-002's count mutation), WH-006 tampered body (covered by the product's answer, which is asserted green), and CACHE-001 with the control removed (shown above as green, the reason the control exists).
+
+## 8. Addendum probes (2026-11-03, Asia/Colombo time; fork f677db4, harness 0.3.1, Medusa 2.21.2)
+
+### P-MED-19. Capture: where a capture is recorded (corrects C8 and RD-3)
+- Earlier text said the payment is "never captured" (C8, RD-3). That was wrong about the payment. A session status never reads `captured` (the payment module authorizes sessions), but the payment row is captured.
+- Code (@medusajs/core-flows dist/payment/workflows/process-payment.js): `succeeded` with payment data captures (lines 94-97, `capturePaymentWorkflow`); `succeeded` without payment data autocaptures (lines 110-114). A completed cart is created by the webhook when none exists (lines 180-190, `completeCartAfterPaymentStep`).
+- Measured on one fresh stack (WH-001 flow, and the sequences below). Oracle: `payment.captured_at` and rows of the `capture` table (`payment_id`, `amount`, `deleted_at`).
+
+| Sequence | Session status | Payments | captured_at | Capture rows (amount) |
+|---|---|---|---|---|
+| `succeeded` alone (autocapture) | authorized | 1 | set | 1 (10) |
+| `amount_capturable_updated` alone | authorized | 1 | null | 0 |
+| `amount_capturable_updated`, then `succeeded` | authorized | 1 | set | 1 (10) |
+| five parallel `succeeded` (WH-002) | authorized | 1 | set | 1 (10) |
+| webhook plus completion, one round (WH-008) | authorized | 1 | set | 1 (10); 1 live order |
+
+- The failed set stayed empty throughout (no parked job). So no capture failure was observed; the capture is recorded as expected.
+- Status: CONFIRMED (live). Specs now assert the capture on the payment rows (WH-001, WH-002, WH-003 both orders, WH-008, WH-008b).
+
+### P-MED-20. Inventory availability field
+- `GET /admin/inventory-items/{id}/location-levels` returns `stocked_quantity`, `reserved_quantity` and `available_quantity` per level (keys listed; stocked 9, reserved 0, available 9 on the probe). The lane compares the product's own `available_quantity` with the model.
+- Status: CONFIRMED.
+
+### P-MED-21. Shipping and tax tables (zero terms)
+- Tables (information_schema via qa_ro): `order_shipping` (order_id, version, shipping_method_id), `order_shipping_method` (amount), `order_line_item_tax_line` (item_id, rate; no amount column), `order_shipping_method_tax_line` (shipping_method_id, rate; no amount column).
+- Tax lines store a rate, not an amount, so a tax term cannot be read; the identity relies on the live tax-line count being zero. The probe orders have no shipping method and no tax lines (ORD-001 asserts both zero before the identity).
+- Status: CONFIRMED (schema and probe orders).
+
+### P-MED-WH-008b. Webhook first, then the client completes the same cart
+- Webhook 200; the webhook created the order within 5340 ms (`completeCartAfterPaymentStep`); the client completion then answered 200, `type: order`, and returned the SAME order id; live orders 1; payments 1; captured 1; capture rows 1.
+- UNPROBED: a true simultaneous race (a client completion landing during webhook processing, not after it). The product's emit delay (`dist/api/hooks/payment/[provider]/route.js:21`) makes the simultaneous case land the completion first, so it is not what WH-008 measures.
+
+### P-MED-WH-006 (tolerance, by receipt age). Design finding, routed to P5
+- Accepted case: receipt age 270 s = 300 - 5 (route delay) - 25 (medWebhookProcessing budget, rounded up). Rejected: 299 s (processing age 304 s, observed rejected on the earlier probe P-MED-2), 300 s, and a tampered body.
+- Finding: the route answers 200 before it verifies (route.js:16-29); the subscriber verifies later with the SDK's 300 s tolerance (stripe@23.0.1 cjs/Webhooks.js:15, 23). A valid event that waits in the queue past about 295 s is dropped for good. Medusa's three retries reuse the same stale signature (F1). Stripe does not redeliver after a 2xx, and its retries get a fresh signature and timestamp.
+- Cited Stripe guidance (fetched 2026-11-03, https://docs.stripe.com/webhooks): "Quickly returns a successful status code (2xx) before any complex logic that might cause a timeout"; "If Stripe retries an event ... we generate a new signature and timestamp for the new delivery attempt"; "a 2xx status code" stops automatic retries. No published contract is broken, so no test.fail.
+
+### P-MED-CONTRACT. Upstream store OpenAPI at v2.21.2
+- Fetched `https://raw.githubusercontent.com/medusajs/medusa/v2.21.2/www/apps/api-reference/specs/store/openapi.full.yaml`; sha256 `cc4af9d7b00fead80c8ab75bd3b2ab97fec0397086bc0d0eccc2f7cb12b7032a` (matches). OpenAPI 3.0.0, 52 `/store` paths; `info.version` reads 2.21.1 (noted in PROVENANCE.md).
+- Validation of the lane's responses (raw Ajv errors, all branches): 526 errors in 238 signatures: 406 `type` (null where the spec declares a non-null type) and 137 signatures SPEC; 117 `required` misses and 1 derived `oneOf` (101 signatures PRODUCT). The 401 operations (`/store/customers/me`, `/store/orders`) are documented as text/plain; the shared validator throws on a non-JSON schema (src/contracts/oas.ts, "has no application/json schema"), so those two are asserted by hand and recorded as SPEC.
+- Shared-code note (not edited): `ContractSpec.validate()` truncates its errors ("... and N more") and the lane reads Ajv's raw errors instead.
+- Register: `contracts/med/upstream/deviations.json` (generated from these runs; counts are informational; the lane compares signatures per operation and status).
+- Status: CONFIRMED.
