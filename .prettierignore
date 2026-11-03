@@ -8,3 +8,6 @@ receiver-logs/
 # GIT_AUTHOR__ in AGENTS.md (probe 2026-10-20), which changes its meaning.
 AGENTS.md
 docs/
+
+# vendored upstream OpenAPI, kept byte-identical (sha256 checked)
+contracts/med/upstream/
