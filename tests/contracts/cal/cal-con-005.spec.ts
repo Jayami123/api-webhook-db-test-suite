@@ -8,6 +8,13 @@ import { attendeeEmailFor, calBookingApi } from "../../../src/lanes/cal/booking.
 import { fillPath, listGetOperations, type GetOperation } from "../../../src/lanes/cal/oas-walk.ts";
 import { eventTypeIdBySlug } from "../../../src/lanes/cal/event-types.ts";
 import {
+  CRAWLED_OPERATIONS,
+  KNOWN_INVALID,
+  KNOWN_UNDOCUMENTED,
+  NO_VALUE_OPERATIONS,
+  type UncrawledReason,
+} from "../../../src/lanes/cal/contract-pins.ts";
+import {
   apiBase,
   PRO_EMAIL,
   PRO_SLUG_30,
@@ -25,18 +32,23 @@ interface Crawl {
   readonly status: number | undefined;
   readonly documented: boolean;
   readonly validBody: boolean | undefined;
-  readonly uncrawledReason: string | undefined;
+  readonly uncrawledReason: UncrawledReason | undefined;
 }
 
-test("P2-CAL-CON-005 every GET operation in the committed OAS answers a documented status", async ({
+const identity = (r: Crawl): string => `${r.op.method.toUpperCase()} ${r.op.path}`;
+const sorted = (xs: readonly string[]): string[] => [...xs].sort();
+
+test("P2-CAL-CON-005 the crawl pins every operation, undocumented status and invalid 200 by identity", async ({
   request,
   calAuth,
+  cal,
 }) => {
   const doc = JSON.parse(readFileSync(CONTRACT, "utf8")) as {
     paths: Record<string, Record<string, { responses?: Record<string, unknown> }>>;
   };
   const spec = await loadSpec("cal-v2", CONTRACT);
   const ops = listGetOperations(doc);
+  // Structural: the committed document has 55 GET operations (not a seed value).
   expect(ops).toHaveLength(55);
 
   // Own key for the crawl (the budget of 120 per minute per key is not shared with other cases).
@@ -53,7 +65,8 @@ test("P2-CAL-CON-005 every GET operation in the committed OAS answers a document
         ])
       )[0]?.id,
   });
-  // One booking so that {bookingUid} has a real value; cancelled in finally.
+  // The crawl seeds its own data so that every identity is measured against the same state:
+  // one booking (for {bookingUid}) and one webhook (for {webhookId}). Both are removed in finally.
   const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
   const starts = await slotStartsAhead(request, calAuth, eventTypeId);
   const api = calBookingApi({ request, apiBaseUrl: apiBase(), auth: calAuth });
@@ -64,9 +77,15 @@ test("P2-CAL-CON-005 every GET operation in the committed OAS answers a document
     attendeeName: "crawl",
   });
   expect(booked.status).toBe(201);
+  const webhookId = await cal.webhooks.create({
+    subscriberUrl: `http://127.0.0.1:9/r/${currentRunPrefix()}/con-005`,
+    eventTriggers: ["BOOKING_CREATED"],
+    secret: `con005-${currentRunPrefix()}`,
+  });
   const values: Record<string, string> = {
     bookingUid: booked.uids[0] ?? "",
     eventTypeId: String(eventTypeId),
+    webhookId,
   };
   const results: Crawl[] = [];
   try {
@@ -77,7 +96,7 @@ test("P2-CAL-CON-005 every GET operation in the committed OAS answers a document
           status: undefined,
           documented: false,
           validBody: undefined,
-          uncrawledReason: `no value for ${op.params.filter((p) => values[p] === undefined).join(",")}`,
+          uncrawledReason: "no-path-value",
         });
         continue;
       }
@@ -93,38 +112,34 @@ test("P2-CAL-CON-005 every GET operation in the committed OAS answers a document
         const body = JSON.parse(await res.text()) as unknown;
         validBody = spec.validate({ method: "get", path: op.path }, { status: 200 }, body).valid;
       }
-      results.push({
-        op,
-        status,
-        documented,
-        validBody,
-        uncrawledReason:
-          documented || status === 200 ? undefined : `status ${String(status)} undocumented`,
-      });
+      results.push({ op, status, documented, validBody, uncrawledReason: undefined });
     }
   } finally {
     await api.cancel(booked.uids[0] ?? "", "P2 lane cleanup");
+    await cal.webhooks.remove(webhookId);
     await revokeAndVerify(key, () => key.isPresent());
   }
+
+  // Identity asserts. No counts: a seed change moves no identity here.
   const crawled = results.filter((r) => r.status !== undefined);
-  const uncrawled = results.filter((r) => r.uncrawledReason !== undefined);
-  // Setup: every operation was accounted for, and the crawl produced 200 responses to validate.
-  expect(crawled.length + results.filter((r) => r.status === undefined).length).toBe(55);
-  expect(crawled.filter((r) => r.status === 200).length).toBeGreaterThan(0);
-  // Measured coverage (docs/probes/2026-11-02-p2-lane-cal-live-probes.md L12): 29 crawled, 12 answered 200, 43 UNCRAWLED (26 with no value for a path parameter, 17 with an undocumented status).
-  expect(crawled).toHaveLength(29);
-  expect(crawled.filter((r) => r.status === 200)).toHaveLength(12);
-  expect(uncrawled).toHaveLength(43);
-  expect(uncrawled.filter((u) => u.status === undefined)).toHaveLength(26);
-  // Every non-200 status must be documented, else the operation is UNCRAWLED with its reason (listed above).
-  for (const r of crawled) {
-    if (r.status !== 200)
-      expect(
-        r.documented || r.uncrawledReason !== undefined,
-        `${r.op.path} ${String(r.status)}`,
-      ).toBe(true);
-  }
-  // PB-CAL-OAS-1 (product documentation, proven): 200 bodies of the committed OAS do not validate (see CON-001/002).
+  const noValue = results.filter((r) => r.status === undefined);
+  expect(sorted(crawled.map(identity))).toEqual(sorted(CRAWLED_OPERATIONS));
+  expect(sorted(noValue.map(identity))).toEqual(sorted(NO_VALUE_OPERATIONS));
+  for (const r of noValue) expect(r.uncrawledReason, identity(r)).toBe("no-path-value");
+
+  // Every non-200 answer the committed spec does not list is a pinned finding (SPEC-CAL-UNDOC); none is filtered.
+  const undocumented = crawled
+    .filter((r) => r.status !== 200 && !r.documented)
+    .map((r) => `${identity(r)} ${String(r.status)}`);
+  expect(sorted(undocumented)).toEqual(
+    sorted(KNOWN_UNDOCUMENTED.map((u) => `${u.operation} ${String(u.status)}`)),
+  );
+
+  // Invalid 200 bodies: the set must equal the pin before the known-bug marker, so a new invalid route turns red here.
+  const invalid = crawled.filter((r) => r.validBody === false).map(identity);
+  expect(sorted(invalid)).toEqual(sorted(KNOWN_INVALID));
+
+  // PB-CAL-OAS-1 (product documentation, proven): the 200 bodies of the listed routes do not validate against the committed spec.
   test.fail();
-  for (const r of results) if (r.validBody !== undefined) expect(r.validBody, r.op.path).toBe(true);
+  expect(invalid, "every 200 body validates against the committed spec").toEqual([]);
 });
