@@ -57,7 +57,7 @@ Naming: the brief's short forms (`TW-WH-001`) are written as the index writes th
 | Harness | `qa-portfolio-harness` `0.3.0` (`be86e0e`), installed by `npm ci` (P0-r2) |
 | Build branches | `feat/<builder date>-p2-twenty-l<n>-<topic>`, `<builder date>` = `date -u +%F` at task start. L0 is cut from `origin/main`. Each later task is cut from the **previous task's branch head** while that PR is open, and its PR targets that branch. After the previous PR merges, re-cut from `origin/main`; the PR targets `main`. |
 | Unit baseline | **285** on `aa10ec1` (P0-r2; per-file record P0-r2b). Measured again at each task start (`npm run unit 2>&1 \| grep -E '^# (tests\|pass\|fail)'`). The plan's counts are **deltas**: "base + N". (The 277 in the index is out of date: the foundation build added tests.) |
-| Lane deltas | Unit **+21** (L0 +19; L5 +2), unchanged. Normal lane: **17** new `tw` tests (L1 7, L2 8, L3 2). Measurement: **50** study cases (P2-TW-WH-010), run by their own workflow (section 8.8), not by the lane job. BLOCKED, not built: RT-001. Deferred: CACHE-001, WH-009, STR-002. `tw-api` listing = 5 readiness + 17 = **22**. |
+| Lane deltas | Unit **+22** on B0 **299** (main `839b532`): L0 +18 helpers, L5 +4 workflow (2 original, plus the same-repo guard test and the `pull_request_target` negative case added in fix step 2). The earlier **+21** counted the `people.update` test (`tests/unit/clients/clients.test.ts:179`), which already landed in B0 through PR #10 (PC-7), so it is not a lane delta. At the merge of `main` `4142642`, PR #16 adds 2 fixture tests to main, so the check reads 323 = 299 + 2 + 22. Normal lane: **17** new `tw` tests (L1 7, L2 8, L3 2). Measurement: **50** study cases (P2-TW-WH-010), run by their own workflow (section 8.8), not by the lane job. BLOCKED, not built: RT-001. Deferred: CACHE-001, WH-009, STR-002. `tw-api` listing = 5 readiness + 17 = **22**. |
 | Ownership | P5 owns the security verdict (TW-WH-009, deferred); P6 owns user-action races; P2 keeps worker, cron and queue concurrency (TW-STR-001). |
 
 ---
@@ -750,7 +750,7 @@ for (const c of STUDY_CASES) {
 | `src/clients/twenty.ts` `people.update` (OD-12) | `tests/unit/clients/clients.test.ts` (+1) | 1 |
 | **L0 total** | | **19** |
 | CI workflow (L5) | `tests/unit/ci/workflow.test.ts` (+2) | 2 |
-| **Unit delta** | | **+21** (base 285 → 306) |
+| **Unit delta** | | **+22** (B0 299 → 321; the earlier +21 included `people.update`, which is in B0 through PR #10, PC-7; L5 gained 2 tests in fix step 2) |
 
 ---
 
