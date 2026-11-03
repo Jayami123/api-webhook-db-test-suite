@@ -84,9 +84,18 @@ log shows those paths receiving two deliveries each (their own, and the next cas
   load `GET /rest/open-api/core` (authenticated) and validate one `GET /rest/people?limit=1` response. Result: the listed
   violations. Expected: `nullable` (or `type: [..., "null"]`) on those fields, or no null values.
 
-### P2-TW-BUG-003: a deleted webhook keeps receiving events for up to one memo window (PRODUCT BUG, SUSPECTED)
+### P2-TW-BUG-003: a deleted webhook keeps receiving events for up to one memo window (PRODUCT BUG, PROVEN: 5 of 5)
 
-- Evidence: section 3. Case N's event is posted to case N-1's deleted webhook URL in 14 of 16 undelivered cases, and the
+- Deterministic repro, one stack, 5 repetitions (all 5 agree): canary to A (A receives it), delete A (200), create B (201),
+  create one person within about 100 ms of the delete. Each repetition: **B received 0; A's URL received 2 (canary and the
+  real event)**. Repro timing: the canary is the warm-up; repetitions 2 to 5 needed two canary triggers because the
+  worker still held the previous repetition's map (`awaitCanary`).
+- Root cause at the pin: `MEMOIZER_TTL_MS = 10_000` (`workspace-cache.service.ts:56`), the memoizer is built with it
+  (`:105-106`). `invalidateAndRecompute` (`:301`) clears the memo with `clearKeys` on the calling process's instance only
+  (`:313`, `:322`, `:364`). The worker job reads `flatWebhookMaps` through `getOrRecompute`
+  (`call-webhook-jobs.job.ts:46-53`), so it can use a map up to 10 s old.
+- Regression case: P2-TW-WH-010 in `tests/webhooks/tw/b1-drop.spec.ts` (`test.fail()` after the setup asserts).
+- Evidence (earlier): section 3. Case N's event is posted to case N-1's deleted webhook URL in 14 of 16 undelivered cases, and the
   receiver logs confirm deliveries to that deleted path. Case N's own webhook then receives nothing.
 - Scope: this is the mechanism behind the B1 drop (P2-TW-WH-010). The study measures it and asserts only run validity.
 - Upstream draft: title "Workspace webhook cache dispatches events to a deleted webhook and misses a webhook created within
