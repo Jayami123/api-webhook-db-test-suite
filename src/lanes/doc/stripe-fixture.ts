@@ -48,7 +48,9 @@ export async function attachRunSubscription(
     currency: "usd",
     unit_amount: 100,
     recurring: { interval: "month" },
-    metadata: tags,
+    // The sync reads the claim from the price (sync-stripe-customer-subscription.ts:259) and rejects a price
+    // without one ("Subscription claim on price ... not found"). "individual" is a real claim (types/subscription.ts:169-176).
+    metadata: { ...tags, claimId: "individual" },
   });
   await stripe.customers.update(customerId, { metadata: tags });
   const sub = await stripe.subscriptions.create({

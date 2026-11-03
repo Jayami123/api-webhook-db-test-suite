@@ -104,8 +104,10 @@ describe("attachRunSubscription (every object carries run_id and case_id)", () =
     const out = await attachRunSubscription(fake, "p2-qa-unit", "cus_FAKE", "P2-DOC-STR-002");
     assert.deepEqual(out, { productId: "prod_FAKE", subscriptionId: "sub_FAKE" });
     assert.equal(writes.length, 4);
+    const tagged = { run_id: "p2-qa-unit", case_id: "P2-DOC-STR-002" };
     for (const w of writes) {
-      assert.deepEqual(w.metadata, { run_id: "p2-qa-unit", case_id: "P2-DOC-STR-002" }, w.call);
+      const expected = w.call === "price.create" ? { ...tagged, claimId: "individual" } : tagged;
+      assert.deepEqual(w.metadata, expected, w.call);
     }
   });
 });
