@@ -8,6 +8,7 @@ import { createFixtureWriter } from "../../src/db/fixture.ts";
 import { FIXTURE_ALLOWLIST } from "../../src/db/fixture-allowlist.ts";
 import { createReadOnlyDb, DbQueryError, type ReadOnlyDb } from "../../src/db/pg.ts";
 import { checkRoleGrants, provisionRoles, teardownRoles } from "../../src/db/roles-admin.ts";
+import { rulesFor } from "../../src/invariants/rules.ts";
 import { runSweep, RetainRegistry, type Rule } from "../../src/invariants/engine.ts";
 import { makeRunPrefix } from "../../src/run/prefix.ts";
 
@@ -379,6 +380,152 @@ describe("P2-X-DB-001 sweep against a real postgres:15", () => {
     await assert.rejects(
       runSweep(ro, [broken], { runPrefix: PREFIX, includeLeaks: true }),
       (e: unknown) => e instanceof DbQueryError && e.sqlstate === "42P01",
+    );
+  });
+});
+
+describe("twenty leak rules against twenty-shaped tables", () => {
+  const TWENTY_IDS = [
+    "tw-leak-opportunity-name",
+    "tw-leak-workflow-name",
+    "tw-leak-field-label",
+    "tw-leak-workspace-name",
+  ];
+  const twentyRules = rulesFor("twenty").filter((r) => TWENTY_IDS.includes(r.id));
+  const WORKSPACES = ["workspace_aaa", "workspace_bbb"];
+  const ROW_DDL = (schema: string, table: string): string =>
+    `CREATE TABLE "${schema}"."${table}" (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text, "deletedAt" timestamptz)`;
+  const OTHER = `${makeRunPrefix(new Date(Date.now() - 7_200_000), "ffffffff")}-cur001`;
+  const LIVE = `${PREFIX}-cur001`;
+  const GONE = `${PREFIX}-gone`;
+  const SEED = "Acme pipeline";
+  const created: string[] = [];
+  const negativeIds: string[] = [];
+  let ro: ReadOnlyDb;
+
+  async function insertId(sql: string, params: readonly unknown[]): Promise<string> {
+    const { rows } = await admin.query<{ id: string }>(sql, [...params]);
+    const id = rows[0]?.id;
+    assert.ok(id, "an insert returned an id");
+    return id;
+  }
+  const insertWorkspaceRow = (schema: string, table: string, name: string, deleted: boolean) =>
+    insertId(
+      `INSERT INTO "${schema}"."${table}"(name, "deletedAt") VALUES ($1, ${deleted ? "now()" : "NULL"}) RETURNING id::text AS id`,
+      [name],
+    );
+  const insertFieldRow = (label: string) =>
+    insertId(`INSERT INTO core."fieldMetadata"(label) VALUES ($1) RETURNING id::text AS id`, [
+      label,
+    ]);
+  const insertWorkspaceCoreRow = (name: string, deleted: boolean) =>
+    insertId(
+      `INSERT INTO core."workspace"("displayName", "deletedAt") VALUES ($1, ${deleted ? "now()" : "NULL"}) RETURNING id::text AS id`,
+      [name],
+    );
+
+  before(async () => {
+    ro = createReadOnlyDb("db-guard", {
+      connectionString: url("qa_ro", RO_PW),
+      statementTimeoutMs: 2000,
+    });
+    await admin.query(`
+      CREATE SCHEMA core;
+      CREATE TABLE core."fieldMetadata" (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), label text NOT NULL);
+      CREATE TABLE core."workspace" (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "displayName" text, "deletedAt" timestamptz);
+      CREATE SCHEMA workspace_aaa;
+      CREATE SCHEMA workspace_bbb;`);
+    for (const schema of WORKSPACES) {
+      for (const table of ["opportunity", "workflow"]) {
+        await admin.query(ROW_DDL(schema, table));
+      }
+    }
+    // Every workspace schema that already exists (workspace_x from an earlier test) gets the same two tables.
+    const { rows } = await admin.query<{ nspname: string }>(
+      `SELECT nspname FROM pg_namespace WHERE nspname LIKE 'workspace\\_%' AND nspname NOT IN ('workspace_aaa', 'workspace_bbb')`,
+    );
+    for (const { nspname } of rows) {
+      for (const table of ["opportunity", "workflow"]) {
+        const { rows: missing } = await admin.query<{ missing: boolean }>(
+          `SELECT to_regclass($1) IS NULL AS missing`,
+          [`"${nspname}"."${table}"`],
+        );
+        if (missing[0]?.missing) {
+          await admin.query(ROW_DDL(nspname, table));
+          created.push(`${nspname}.${table}`);
+        }
+      }
+    }
+  });
+
+  after(async () => {
+    await ro.close();
+    for (const pair of created) {
+      const [schema, table] = pair.split(".");
+      await admin.query(`DROP TABLE IF EXISTS "${schema}"."${table}"`);
+    }
+    await admin.query(
+      `DROP SCHEMA IF EXISTS workspace_aaa CASCADE; DROP SCHEMA IF EXISTS workspace_bbb CASCADE; DROP SCHEMA IF EXISTS core CASCADE;`,
+    );
+  });
+
+  test("passes when only seed rows, other-run rows and soft-deleted run rows exist", async () => {
+    for (const schema of WORKSPACES) {
+      for (const table of ["opportunity", "workflow"]) {
+        negativeIds.push(await insertWorkspaceRow(schema, table, SEED, false));
+        negativeIds.push(await insertWorkspaceRow(schema, table, OTHER, false));
+        negativeIds.push(await insertWorkspaceRow(schema, table, GONE, true));
+      }
+    }
+    negativeIds.push(await insertFieldRow(SEED), await insertFieldRow(OTHER));
+    negativeIds.push(
+      await insertWorkspaceCoreRow(SEED, false),
+      await insertWorkspaceCoreRow(OTHER, false),
+      await insertWorkspaceCoreRow(GONE, true),
+    );
+    assert.deepEqual(
+      await runSweep(ro, twentyRules, { runPrefix: PREFIX, includeLeaks: true }),
+      [],
+    );
+  });
+
+  test("a live row of this run is found in every table and every workspace schema", async () => {
+    const opp: string[] = [];
+    const wf: string[] = [];
+    for (const schema of WORKSPACES) {
+      opp.push(await insertWorkspaceRow(schema, "opportunity", LIVE, false));
+      wf.push(await insertWorkspaceRow(schema, "workflow", LIVE, false));
+    }
+    const field = [await insertFieldRow(LIVE)];
+    const ws = [await insertWorkspaceCoreRow(LIVE, false)];
+
+    const found = await runSweep(ro, twentyRules, { runPrefix: PREFIX, includeLeaks: true });
+    const actual: Record<string, string[]> = {};
+    for (const v of found) {
+      actual[v.ruleId] = [...(actual[v.ruleId] ?? []), ...v.rows.map((r) => r.id)].sort();
+    }
+    assert.deepEqual(actual, {
+      "tw-leak-opportunity-name": [...opp].sort(),
+      "tw-leak-workflow-name": [...wf].sort(),
+      "tw-leak-field-label": [...field].sort(),
+      "tw-leak-workspace-name": [...ws].sort(),
+    });
+    const reported = Object.values(actual).flat();
+    for (const id of negativeIds)
+      assert.ok(!reported.includes(id), `seed or other-run row ${id} is not reported`);
+  });
+
+  test("the sweep is clean again once the live rows are deleted", async () => {
+    for (const schema of WORKSPACES) {
+      for (const table of ["opportunity", "workflow"]) {
+        await admin.query(`DELETE FROM "${schema}"."${table}" WHERE name = $1`, [LIVE]);
+      }
+    }
+    await admin.query(`DELETE FROM core."fieldMetadata" WHERE label = $1`, [LIVE]);
+    await admin.query(`DELETE FROM core."workspace" WHERE "displayName" = $1`, [LIVE]);
+    assert.deepEqual(
+      await runSweep(ro, twentyRules, { runPrefix: PREFIX, includeLeaks: true }),
+      [],
     );
   });
 });
