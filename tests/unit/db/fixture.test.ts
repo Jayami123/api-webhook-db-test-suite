@@ -73,6 +73,34 @@ describe("fixture writer: client-side refusals", () => {
     assert.equal(findAllowed(FIXTURE_ALLOWLIST.cal, base).column, "scheduledAt");
   });
 
+  test("accepts Recipient.expiresAt for P2-DOC-EXP-003 from the real allow-list", () => {
+    const update = {
+      table: "Recipient",
+      column: "expiresAt",
+      pk: 7,
+      value: WHEN,
+      caseId: "P2-DOC-EXP-003",
+    };
+    assert.equal(findAllowed(FIXTURE_ALLOWLIST.documenso, update).column, "expiresAt");
+  });
+
+  test("refuses Recipient.expiresAt for P2-DOC-EXP-004 before anything reaches the database", async () => {
+    const { writer, fake } = writerFor("documenso");
+    await assert.rejects(
+      writer.update({
+        table: "Recipient",
+        column: "expiresAt",
+        pk: 7,
+        value: WHEN,
+        caseId: "P2-DOC-EXP-004",
+      }),
+      (e: unknown) =>
+        e instanceof FixtureRefusedError &&
+        /P2-DOC-EXP-004 is not a case for Recipient\.expiresAt/.test(e.message),
+    );
+    assert.equal(fake.calls.length, 0, "nothing reached the database");
+  });
+
   test("refuses a table or column that is not in the allow-list", async () => {
     const { writer, fake, lines } = writerFor("cal");
     for (const bad of [
