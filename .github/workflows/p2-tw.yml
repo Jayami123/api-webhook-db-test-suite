@@ -1,13 +1,15 @@
 # P2 Twenty lane workflow (owned by the twenty lane; see docs/lane-ownership.md).
-# Two jobs on pull_request, each with its own Twenty stack (harness v0.3.1): tw-api (the default stack, everything
-# except @multiws) and tw-multiws (STR-002 on a multi-workspace stack). The gate in the
-# ownership map (workflow_run on api) fires only for workflows on the default branch, so it cannot run for a PR head;
-# the job therefore checks that the head repository is this repository. The B1 drop study is NOT in this file:
-# it is tw-study.yml, a scheduled measurement and never a required check.
+# Two jobs, each with its own Twenty stack (harness v0.3.1): tw-api (the default stack, every case without the
+# @multiws tag) and tw-multiws (the @multiws cases, on a multi-workspace stack).
+# Gate (docs/lane-ownership.md, "Gate for lane workflows"): the workflow runs on pull_request and workflow_dispatch.
+# Each job is guarded by the same-repo check, so a fork PR never starts a stack or receives secrets.
+# tests/unit/ci/workflow.test.ts enforces this shape for every lane workflow.
+# The B1 drop study is NOT in this file: it is tw-study.yml, a scheduled measurement and never a required check.
 name: p2-tw
 
 on:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -27,7 +29,7 @@ env:
 jobs:
   tw-api:
     name: tw-api
-    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -87,12 +89,13 @@ jobs:
         timeout-minutes: 5
         run: node node_modules/qa-portfolio-harness/scripts/down.mjs twenty
 
-  # STR-002 (workspace create and delete) needs a multi-workspace stack. Its own job: a fresh database for the run
+  # tw-multiws runs the @multiws cases (today: the workspace create, activate and soft-delete flow in
+  # tests/integration/tw/workspace.spec.ts). It needs a multi-workspace stack: a fresh database for the run
   # (TWENTY_DOWN_VOLUMES=1 down before up), IS_MULTIWORKSPACE_ENABLED=true, and TWENTY_BASE_URL on a hostname. An IP
   # base URL resolves no workspace on sign-in (WORKSPACE_NOT_FOUND, measured); see the probe record for the evidence.
   tw-multiws:
     name: tw-multiws
-    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:

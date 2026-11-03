@@ -21,6 +21,50 @@ function steps(text: string): string[] {
   return parts.slice(1).map((p) => `- name: ${p}`);
 }
 
+/** The trigger names under the top-level `on:` key (two-space keys). Empty when `on:` is absent. */
+function triggersIn(text: string): string[] {
+  const lines = text.split("\n");
+  const start = lines.indexOf("on:");
+  if (start < 0) return [];
+  const names: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (line.trim() !== "" && !/^\s/.test(line)) break;
+    const name = /^ {2}([a-z_]+):\s*$/.exec(line)?.[1];
+    if (name !== undefined) names.push(name);
+  }
+  return names;
+}
+
+/** The trigger rule for a lane workflow: only the allowed triggers, and never pull_request_target or workflow_run. */
+function triggerViolations(text: string, allowed: readonly string[]): string[] {
+  const bad = triggersIn(text).filter((name) => !allowed.includes(name));
+  if (/pull_request_target|workflow_run/.test(text))
+    bad.push("pull_request_target or workflow_run");
+  return bad;
+}
+
+/** The `if:` line of each job under `jobs:` (job id to its condition, or undefined when it has none). */
+function jobIfs(text: string): Map<string, string | undefined> {
+  const lines = text.split("\n");
+  const start = lines.indexOf("jobs:");
+  const jobs = new Map<string, string | undefined>();
+  let current: string | null = null;
+  for (const line of lines.slice(start + 1)) {
+    const header = /^ {2}([a-z][a-z0-9-]*):\s*$/.exec(line);
+    if (header?.[1] !== undefined) {
+      current = header[1];
+      jobs.set(current, undefined);
+    } else if (current !== null && /^ {4}if: /.test(line)) {
+      jobs.set(current, line.replace(/^ {4}if: /, ""));
+    }
+  }
+  return jobs;
+}
+
+const SAME_REPO = "github.event.pull_request.head.repo.full_name == github.repository";
+const DISPATCH = "github.event_name == 'workflow_dispatch'";
+const LANE_TRIGGERS = ["pull_request", "workflow_dispatch"] as const;
+
 describe("twenty lane workflows", () => {
   test("every step has a timeout, every action is pinned to a 40-hex commit, and each job has a 30 minute limit", () => {
     for (const file of LANE_FILES) {
@@ -55,13 +99,40 @@ describe("twenty lane workflows", () => {
       assert.match(last, /^ {8}if: always\(\)\s*$/m, "down runs even after a failure");
       assert.match(last, /node node_modules\/qa-portfolio-harness\/scripts\/down\.mjs twenty/);
     }
-    assert.match(lane, /^on:\n {2}pull_request:\s*\n/m, "the lane job runs on pull_request only");
-    assert.doesNotMatch(
-      lane,
-      /schedule:|workflow_dispatch:|push:/,
-      "no schedule, dispatch or push trigger on the lane",
+    assert.deepEqual(
+      triggersIn(lane),
+      [...LANE_TRIGGERS],
+      "the lane allows exactly pull_request and workflow_dispatch",
+    );
+    assert.deepEqual(
+      triggerViolations(lane, LANE_TRIGGERS),
+      [],
+      "no schedule, push or workflow_run",
     );
     assert.match(study, /^ {2}schedule:\n {4}- cron: /m, "the study is scheduled");
     assert.doesNotMatch(study, /pull_request:/, "the study is never a pull request check");
+  });
+
+  test("every lane job carries the same-repo guard, and dispatch is allowed by event name", () => {
+    const jobs = jobIfs(live(".github/workflows/p2-tw.yml"));
+    assert.deepEqual([...jobs.keys()].sort(), ["tw-api", "tw-multiws"], "the two lane jobs");
+    for (const [id, condition] of jobs) {
+      assert.ok(condition?.includes(SAME_REPO), `${id}: the same-repo guard in if:`);
+      assert.ok(condition?.includes(DISPATCH), `${id}: manual runs allowed in if:`);
+    }
+  });
+
+  test("the trigger rule rejects pull_request_target, even inline", () => {
+    const inline =
+      "on: { pull_request: {}, pull_request_target: {} }\njobs:\n  x:\n    runs-on: ubuntu-24.04\n";
+    assert.ok(
+      triggerViolations(inline, LANE_TRIGGERS).length > 0,
+      "inline pull_request_target must fail",
+    );
+    const block = "on:\n  pull_request:\n  pull_request_target:\n";
+    assert.ok(
+      triggerViolations(block, LANE_TRIGGERS).includes("pull_request_target"),
+      "block form fails too",
+    );
   });
 });
