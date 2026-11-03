@@ -8,7 +8,11 @@ import {
   signedStripeHeaders,
   stripeWebhookSecret,
 } from "../../../src/lanes/doc/stripe.ts";
-import { assertTestModeKey, subscriptionEvent } from "../../../src/lanes/doc/stripe-fixture.ts";
+import {
+  assertTestModeKey,
+  productStatusFor,
+  subscriptionEvent,
+} from "../../../src/lanes/doc/stripe-fixture.ts";
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
 import { stripeTest } from "../../fixtures/doc/stripe-run.ts";
 
@@ -151,7 +155,7 @@ test.describe("STR-002 and STR-003 against the run's Stripe fixture", () => {
         `SELECT "status" AS status FROM "Subscription" WHERE "customerId" = $1`,
         [stripeRun.customerId],
       );
-      expect(rows.map((r) => r.status)).toEqual([live]);
+      expect(rows.map((r) => r.status)).toEqual([productStatusFor(live)]);
     },
   );
 });

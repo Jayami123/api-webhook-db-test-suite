@@ -4,6 +4,7 @@ import type Stripe from "stripe";
 import {
   assertTestModeKey,
   attachRunSubscription,
+  productStatusFor,
   teardownRunStripe,
 } from "../../../../src/lanes/doc/stripe-fixture.ts";
 
@@ -109,5 +110,15 @@ describe("attachRunSubscription (every object carries run_id and case_id)", () =
       const expected = w.call === "price.create" ? { ...tagged, claimId: "individual" } : tagged;
       assert.deepEqual(w.metadata, expected, w.call);
     }
+  });
+});
+
+describe("productStatusFor (the product's status mapping, sync-stripe-customer-subscription.ts:166-169)", () => {
+  test("active and trialing map to ACTIVE, past_due to PAST_DUE, every other status to INACTIVE", () => {
+    assert.equal(productStatusFor("active"), "ACTIVE");
+    assert.equal(productStatusFor("trialing"), "ACTIVE");
+    assert.equal(productStatusFor("past_due"), "PAST_DUE");
+    assert.equal(productStatusFor("canceled"), "INACTIVE");
+    assert.equal(productStatusFor("incomplete"), "INACTIVE");
   });
 });

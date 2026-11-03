@@ -122,3 +122,13 @@ export function subscriptionEvent(input: {
     },
   });
 }
+
+/**
+ * The product's Subscription.status for a live Stripe status (sync-stripe-customer-subscription.ts:166-169):
+ * active and trialing are ACTIVE, past_due is PAST_DUE, anything else is INACTIVE.
+ */
+export function productStatusFor(stripeStatus: string): "ACTIVE" | "PAST_DUE" | "INACTIVE" {
+  if (stripeStatus === "active" || stripeStatus === "trialing") return "ACTIVE";
+  if (stripeStatus === "past_due") return "PAST_DUE";
+  return "INACTIVE";
+}
