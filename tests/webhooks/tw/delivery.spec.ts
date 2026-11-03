@@ -40,6 +40,13 @@ test("P2-TW-WH-004: a receiver 500 gets exactly one request for the event (no re
         message: "one request arrived",
       })
       .toBe(1);
+    // Setup, asserted: the receiver really answered 500 (a mis-keyed mode would answer 200 and still pass the count).
+    expect(deliveriesOf(receiver, key, realId)[0]?.mode, "setup: receiver answered 500").toBe(
+      "500",
+    );
+    // No retry: the call job catches the HTTP error and returns normally (call-webhook.job.ts:137-154, no rethrow), so
+    // BullMQ does not retry it. The enqueue sets retryLimit 3 (call-webhook-jobs.job.ts:102-106), which applies only to a
+    // thrown error (bullmq.driver.ts:417). The quiet window is therefore the same as the other cases (TW_QUIET_WINDOW_MS).
     const startedMs = Date.now();
     await expect
       .poll(

@@ -199,3 +199,14 @@ returned no violations (`npx playwright test` exit 0).
   first CI run; the job's `up` step fails fast with the harness error if they differ.
 - The scheduled study's real wall clock on the hosted runner: UNPROBED until the first scheduled run.
 - CACHE-001 (two replicas) and WH-009 (multi-workspace verdict): see the PR body, open decision.
+
+## 9. Review addendum probes (findings R1 to R9)
+
+**A1 (WH-004, no retry), measured and cited at the pin 7cbdfec.**
+- The HTTP call: `packages/twenty-server/src/engine/metadata-modules/webhook/jobs/call-webhook.job.ts:112-117` (axios `post`, `timeout: 5_000` at `:117`).
+- The catch: `call-webhook.job.ts:137-154`. It returns `success: false` with the response status when there is one. It does **not** rethrow.
+- The enqueue: `call-webhook-jobs.job.ts:102-106`, `messageQueueService.add(CallWebhookJob.name, chunk, { retryLimit: 3 })`.
+- The retry mechanism: `bullmq.driver.ts:417`, `attempts: 1 + (options?.retryLimit || 0)`. BullMQ retries only a thrown error. The catch swallows the HTTP error, so a 500 is not retried.
+- Measured: WH-004 receiver answered `500` (`Delivery.mode === "500"`, asserted in the case), one request, quiet window clean.
+- Mutation check: receiver set to `ok` makes the setup assert fail with `Received: "ok"`. Restored.
+- Result: no-retry claim holds at the pin for a 500. Stated basis: a thrown error would retry (3 retries); this path throws none.
