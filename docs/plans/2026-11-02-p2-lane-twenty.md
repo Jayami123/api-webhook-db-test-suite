@@ -33,7 +33,7 @@ Naming: the brief's short forms (`TW-WH-001`) are written as the index writes th
 > | L4 P2-TW-WH-010 study | built; 50 cases, 34 delivered, run valid; tied to P2-TW-BUG-003 (section 3 of the probe record) |
 > | L5 CI | `p2-tw.yml` (`tw-api` and `tw-multiws` jobs), `tw-study.yml`, workflow tests in `tests/unit/lanes/tw/` (PC-6) |
 > | STR-002 (moved here from v0.3.1) | built on a multi-workspace stack (`@multiws`); root cause and fix in section 6 of the probe record |
-> | RT-001 | BLOCKED, not built. Plan P-TW-13 stands; the driver setting is not a harness pass-through name (harness change needed) |
+> | RT-001 | DEFERRED, not built. The master-plan row is a workflow route trigger (`POST /webhooks/workflows/:ws/:wf`). Fix step 4 (B-P21): the API key cannot create or activate a workflow version, so no run can start. The earlier P-TW-13 (logic-function route) stands as separate evidence. |
 > | CACHE-001, WH-009 | not built: the harness now supplies the knob (HR-4, HR-5 resolved in v0.3.1), but the plan defines no test for either case. Open decision |
 >
 > **UNPROBED values, measured (section 14.4 and the appendix):**
