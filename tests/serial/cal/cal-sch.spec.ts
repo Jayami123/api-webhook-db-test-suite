@@ -17,6 +17,7 @@ import {
 } from "../../../src/lanes/cal/booking.ts";
 import { eventTypeIdBySlug } from "../../../src/lanes/cal/event-types.ts";
 import { fireScheduledTriggersOnce } from "../../../src/lanes/cal/cron.ts";
+import { CAL_QUIET_WINDOW_MS, quietState } from "../../../src/lanes/cal/quiet.ts";
 import {
   moveStartAfter,
   scheduledRowsForBooking,
@@ -125,6 +126,7 @@ test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
         60_000,
         "P2-CAL-SCH-002",
       );
+      const firedAt = Date.now();
       expect(await fireScheduledTriggersOnce(ctx.request, webBase(), cronKey())).toBe(200);
       await expect
         .poll(() => ctx.receiverHandle.receiver.deliveries(key).length, {
@@ -132,6 +134,23 @@ test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
           intervals: POLL_INTERVALS,
         })
         .toBe(1);
+      await expect
+        .poll(
+          () =>
+            quietState(
+              ctx.receiverHandle.receiver.deliveries(key).length,
+              1,
+              firedAt,
+              Date.now(),
+              CAL_QUIET_WINDOW_MS,
+            ),
+          {
+            timeout: CAL_QUIET_WINDOW_MS + 2_000,
+            intervals: POLL_INTERVALS,
+            message: "exactly one delivery, held through the quiet window",
+          },
+        )
+        .toBe("quiet");
       await expect
         .poll(async () => (await scheduledRowsForHook(db(), track.uid ?? "", made.url)).length, {
           timeout: SLO.calWebhookDelivery.ms,
@@ -161,6 +180,7 @@ test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
         60_000,
         "P2-CAL-SCH-003",
       );
+      const firedAt = Date.now();
       expect(await fireScheduledTriggersOnce(ctx.request, webBase(), cronKey())).toBe(200);
       await expect
         .poll(() => ctx.receiverHandle.receiver.deliveries(key).length, {
@@ -168,6 +188,23 @@ test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
           intervals: POLL_INTERVALS,
         })
         .toBe(1);
+      await expect
+        .poll(
+          () =>
+            quietState(
+              ctx.receiverHandle.receiver.deliveries(key).length,
+              1,
+              firedAt,
+              Date.now(),
+              CAL_QUIET_WINDOW_MS,
+            ),
+          {
+            timeout: CAL_QUIET_WINDOW_MS + 2_000,
+            intervals: POLL_INTERVALS,
+            message: "exactly one delivery, held through the quiet window",
+          },
+        )
+        .toBe("quiet");
     } finally {
       await cleanup(ctx, track);
     }
@@ -191,6 +228,7 @@ test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
         2 * 864e5,
         "P2-CAL-SCH-003",
       );
+      const firedAt = Date.now();
       expect(await fireScheduledTriggersOnce(ctx.request, webBase(), cronKey())).toBe(200);
       await expect
         .poll(async () => (await scheduledRowsForHook(db(), track.uid ?? "", made.url)).length, {
@@ -199,7 +237,23 @@ test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
           message: "stale row purged",
         })
         .toBe(0);
-      expect(ctx.receiverHandle.receiver.deliveries(key)).toHaveLength(0);
+      await expect
+        .poll(
+          () =>
+            quietState(
+              ctx.receiverHandle.receiver.deliveries(key).length,
+              0,
+              firedAt,
+              Date.now(),
+              CAL_QUIET_WINDOW_MS,
+            ),
+          {
+            timeout: CAL_QUIET_WINDOW_MS + 2_000,
+            intervals: POLL_INTERVALS,
+            message: "no delivery, held through the quiet window",
+          },
+        )
+        .toBe("quiet");
     } finally {
       await cleanup(ctx, track);
     }
