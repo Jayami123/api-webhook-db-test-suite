@@ -9,9 +9,20 @@ import { paymentSession } from "../../../src/lanes/med/oracle.ts";
 import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 
-// Processing-time window (observed 2026-11-02, P-MED-2b): the product verifies five seconds after
-// receipt, so receipt age 290 s is processing age 295 s (accepted) and receipt age 300 s is
-// processing age 305 s (rejected). The SDK tolerance is 300 s (stripe-base.js:511-519).
+/*
+ * Tolerance, stated by receipt age. Processing age is INFERRED, never observed: the verify time is the
+ * subscriber run, which is the receipt time + the route's emit delay + queue lag.
+ * - The route emits with delay webhook_delay || 5000 ms (@medusajs/medusa dist/api/hooks/payment/[provider]/route.js:21).
+ * - The SDK verifies with tolerance 300 s by default (stripe@23.0.1 cjs/Webhooks.js:15, 23): an event whose
+ *   age exceeds 300 s at verification is rejected.
+ * - The accepted case's receipt age is derived from the processing budget, not chosen: 300 - 5 - ceil(budget),
+ *   so the queue lag may use the whole budget (SLO.medWebhookProcessing) before the event goes stale.
+ */
+const EMIT_DELAY_S = 5;
+const TOLERANCE_S = 300;
+const ACCEPT_RECEIPT_AGE_S =
+  TOLERANCE_S - EMIT_DELAY_S - Math.ceil(SLO.medWebhookProcessing.ms / 1000); // 270
+
 const hasKey = Boolean(process.env["STRIPE_API_KEY"]);
 test.skip(
   !hasKey,
@@ -19,19 +30,22 @@ test.skip(
 );
 
 test.describe("medusa webhook tolerance", () => {
-  test("P2-MED-WH-006 processing age 295 s is accepted", async ({ request, medAuth, med }) => {
+  test(`P2-MED-WH-006 receipt age ${String(ACCEPT_RECEIPT_AGE_S)} s is accepted (margin = the processing budget)`, async ({
+    request,
+    medAuth,
+    med,
+  }) => {
     const label = "wh006a";
     const lane = laneOf({ request, medAuth });
     try {
       const { sessionId } = await openSessionFor(lane, label);
-      // Receipt age 290 s, verified 5 s later: processing age 295 s.
-      const event = buildPaymentEvent({ label, sessionId, ageAtReceiptSec: 290 });
+      const event = buildPaymentEvent({ label, sessionId, ageAtReceiptSec: ACCEPT_RECEIPT_AGE_S });
       expect(await sendEvent(med, event)).toBe(200);
       await expect
         .poll(async () => (await paymentSession(sessionId))?.status, {
           timeout: SLO.medWebhookProcessing.ms,
           intervals: POLL_INTERVALS,
-          message: "accepted at processing age 295 s",
+          message: "accepted within the processing budget",
         })
         .toBe("authorized");
     } finally {
@@ -39,12 +53,53 @@ test.describe("medusa webhook tolerance", () => {
     }
   });
 
-  test("P2-MED-WH-006 processing age 305 s is rejected", async ({ request, medAuth, med }) => {
+  // DESIGN FINDING (route to P5; no test.fail: no published contract is broken). Receipt age 299 s is
+  // processing age 304 s: the subscriber verifies after the SDK tolerance, so a valid event that waits in
+  // the queue past about 295 s is dropped for good (the route answered 200 before verifying, and Medusa's
+  // retries replay the same stale signature; Stripe itself would send a fresh one on a retry).
+  // Observed on the pin: probe P-MED-2 (299 s rejected, control authorized).
+  test("P2-MED-WH-006 receipt age 299 s is rejected (design finding: route to P5)", async ({
+    request,
+    medAuth,
+    med,
+  }) => {
+    const label = "wh006f";
+    const lane = laneOf({ request, medAuth });
+    try {
+      const stale = await openSessionFor(lane, label);
+      expect(
+        await sendEvent(
+          med,
+          buildPaymentEvent({ label, sessionId: stale.sessionId, ageAtReceiptSec: 299 }),
+        ),
+      ).toBe(200);
+      const control = await openSessionFor(lane, `${label}c`);
+      expect(
+        await sendEvent(
+          med,
+          buildPaymentEvent({ label: `${label}c`, sessionId: control.sessionId }),
+        ),
+      ).toBe(200);
+      await expect
+        .poll(async () => (await paymentSession(control.sessionId))?.status, {
+          timeout: SLO.medWebhookProcessing.ms,
+          intervals: POLL_INTERVALS,
+          message: "control processed after the 299 s event",
+        })
+        .toBe("authorized");
+      expect((await paymentSession(stale.sessionId))?.status, "299 s receipt rejected").toBe(
+        "pending",
+      );
+    } finally {
+      await cleanupLabel(lane, med, label);
+    }
+  });
+
+  test("P2-MED-WH-006 receipt age 300 s is rejected", async ({ request, medAuth, med }) => {
     const label = "wh006r";
     const lane = laneOf({ request, medAuth });
     try {
       const rejected = await openSessionFor(lane, label);
-      // Receipt age 300 s, verified 5 s later: processing age 305 s, outside the 300 s tolerance.
       const stale = buildPaymentEvent({
         label,
         sessionId: rejected.sessionId,
@@ -75,7 +130,11 @@ test.describe("medusa webhook tolerance", () => {
     }
   });
 
-  test("P2-MED-WH-006 a tampered body is rejected", async ({ request, medAuth, med }) => {
+  test("P2-MED-WH-006 tampered body is rejected (receipt age 0)", async ({
+    request,
+    medAuth,
+    med,
+  }) => {
     const label = "wh006t";
     const lane = laneOf({ request, medAuth });
     try {
