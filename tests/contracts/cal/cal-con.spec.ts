@@ -38,15 +38,33 @@ test.describe("P2-CAL-CON contract cases", () => {
     );
   });
 
-  test("P2-CAL-CON-001 the version header is a parameter: without it /v2/slots answers 404", async ({
+  test("P2-CAL-CON-001 the version header is a parameter: the same /v2/slots URL is 200 with it and 404 without it", async ({
     request,
     calAuth,
   }) => {
-    const res = await request.fetch(
-      `${apiBase()}/v2/slots?eventTypeId=1&start=2030-01-01&end=2030-01-02&timeZone=UTC`,
-      { headers: { authorization: calAuth.headerValue.reveal() }, failOnStatusCode: false },
-    );
-    expect(res.status()).toBe(404);
+    const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
+    const day = (n: number) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+    // The lane's real event type and a window inside its availability (the same days as slotStartsAhead).
+    const url = `${apiBase()}/v2/slots?eventTypeId=${String(eventTypeId)}&start=${day(3)}&end=${day(12)}&timeZone=Europe%2FLondon`;
+    // Positive control: with the header the route answers and returns slots, so a 404 below can only be the missing header.
+    const withHeader = await request.fetch(url, {
+      headers: apiHeaders(calAuth, "2024-09-04"),
+      failOnStatusCode: false,
+    });
+    expect(withHeader.status()).toBe(200);
+    const body = JSON.parse(await withHeader.text()) as { data?: Record<string, unknown> };
+    expect(Object.keys(body.data ?? {}).length).toBeGreaterThan(0);
+    // Without the header the same URL is refused, and the refusal names the route it refused.
+    const withoutHeader = await request.fetch(url, {
+      headers: { authorization: calAuth.headerValue.reveal() },
+      failOnStatusCode: false,
+    });
+    expect(withoutHeader.status()).toBe(404);
+    // The envelope names the refused request exactly: path plus query.
+    expect(JSON.parse(await withoutHeader.text())).toMatchObject({
+      status: "error",
+      path: url.replace(apiBase(), ""),
+    });
   });
 
   test("P2-CAL-CON-002 POST /v2/bookings matches the OAS schema and the Booking row has that uid", async ({
