@@ -5,7 +5,7 @@ import {
   openSessionFor,
   sendEvent,
 } from "../../../src/lanes/med/webhook-flow.ts";
-import { paymentRowCount, paymentSession } from "../../../src/lanes/med/oracle.ts";
+import { captureRowCount, paymentRowCount, paymentSession } from "../../../src/lanes/med/oracle.ts";
 import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 
@@ -53,6 +53,7 @@ test.describe("medusa parallel duplicate deliveries", () => {
 
       expect(await paymentRowCount(sessionId), "payments after five deliveries").toBe(1);
       expect((await paymentSession(sessionId))?.status).toBe("authorized");
+      expect(await captureRowCount(sessionId), "capture rows after five deliveries").toBe(1);
     } finally {
       await cleanupLabel(lane, med, label);
     }

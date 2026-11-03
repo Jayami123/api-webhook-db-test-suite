@@ -5,7 +5,12 @@ import {
   openSessionFor,
   sendEvent,
 } from "../../../src/lanes/med/webhook-flow.ts";
-import { paymentRowCount, paymentSession } from "../../../src/lanes/med/oracle.ts";
+import {
+  captureRowCount,
+  paymentCapturedAt,
+  paymentRowCount,
+  paymentSession,
+} from "../../../src/lanes/med/oracle.ts";
 import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 
@@ -36,6 +41,15 @@ test.describe("medusa signed payment event", () => {
         })
         .toBe("authorized");
 
+      // The payment is captured (process-payment.js:110-114, autocapture on succeeded; probe P-MED-19).
+      await expect
+        .poll(() => paymentCapturedAt(sessionId), {
+          timeout: SLO.medWebhookProcessing.ms,
+          intervals: POLL_INTERVALS,
+          message: "the payment is captured",
+        })
+        .toEqual(expect.any(String));
+
       // Repeat delivery: the same signed bytes.
       expect(await sendEvent(med, event), "repeat delivery answers").toBe(200);
 
@@ -53,6 +67,10 @@ test.describe("medusa signed payment event", () => {
         .toBe("authorized");
 
       expect(await paymentRowCount(sessionId), "payments after the repeat").toBe(1);
+      expect(await captureRowCount(sessionId), "capture rows after the repeat").toBe(1);
+      expect(await paymentCapturedAt(sessionId), "captured_at after the repeat").toEqual(
+        expect.any(String),
+      );
       expect((await paymentSession(sessionId))?.status).toBe("authorized");
     } finally {
       await cleanupLabel(lane, med, label);

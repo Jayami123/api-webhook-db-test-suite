@@ -5,7 +5,7 @@ import {
   openSessionFor,
   sendEvent,
 } from "../../../src/lanes/med/webhook-flow.ts";
-import { paymentRowCount, paymentSession } from "../../../src/lanes/med/oracle.ts";
+import { captureRowCount, paymentRowCount, paymentSession } from "../../../src/lanes/med/oracle.ts";
 import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 
@@ -72,6 +72,10 @@ test.describe("medusa out-of-order payment events", () => {
         "after succeeded then capturable",
       ).toBe("authorized");
       expect(await paymentRowCount(first.sessionId)).toBe(1);
+      expect(
+        await captureRowCount(first.sessionId),
+        "captures after succeeded then capturable",
+      ).toBe(1);
 
       // Sub-step 2: the reverse order, amount_capturable_updated first.
       const second = await openSessionFor(lane, `${label}b`);
@@ -121,6 +125,10 @@ test.describe("medusa out-of-order payment events", () => {
         "after capturable then succeeded",
       ).toBe("authorized");
       expect(await paymentRowCount(second.sessionId)).toBe(1);
+      expect(
+        await captureRowCount(second.sessionId),
+        "captures after capturable then succeeded",
+      ).toBe(1);
     } finally {
       await cleanupLabel(lane, med, label);
     }

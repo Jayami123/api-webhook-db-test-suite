@@ -26,6 +26,8 @@ export const ORACLE_QUERIES = {
   productsWithTitlePrefix: `SELECT COUNT(*)::text AS n FROM "product" WHERE "title" LIKE $1 ESCAPE '\\' AND "deleted_at" IS NULL`,
   paymentSessionAmount: `SELECT "amount"::text AS amount FROM "payment_session" WHERE "id" = $1`,
   orderDiscountText: `SELECT COALESCE(SUM(a."amount"), 0)::text AS amt FROM "order_line_item_adjustment" a JOIN "order_item" oi ON oi."item_id" = a."item_id" JOIN (SELECT DISTINCT ON ("order_id") "order_id", "version" AS v FROM "order_summary" WHERE "deleted_at" IS NULL ORDER BY "order_id", "version" DESC) latest ON latest."order_id" = oi."order_id" AND oi."version" = latest.v AND a."version" = latest.v WHERE oi."order_id" = $1 AND a."deleted_at" IS NULL`,
+  paymentCapturedAt: `SELECT p."captured_at"::text AS captured_at FROM "payment" p WHERE p."payment_session_id" = $1 AND p."deleted_at" IS NULL`,
+  captureRowCount: `SELECT COUNT(*)::text AS n FROM "capture" c JOIN "payment" p ON p."id" = c."payment_id" WHERE p."payment_session_id" = $1 AND c."deleted_at" IS NULL`,
   reservationLiveCount: `SELECT COUNT(*)::text AS n FROM "reservation_item" WHERE "inventory_item_id" = $1 AND "deleted_at" IS NULL`,
   orderLineSum: `SELECT COALESCE(SUM(oi."quantity" * li."unit_price"), 0)::text AS items FROM "order_item" oi JOIN "order_line_item" li ON li."id" = oi."item_id" JOIN LATERAL (SELECT MAX("version") AS v FROM "order_summary" os WHERE os."order_id" = oi."order_id" AND os."deleted_at" IS NULL) latest ON oi."version" = latest.v WHERE oi."order_id" = $1 AND oi."deleted_at" IS NULL`,
 } as const;
@@ -163,4 +165,23 @@ export async function paymentSessionAmountText(sessionId: string): Promise<strin
 export async function orderItemDiscountText(orderId: string): Promise<string> {
   const rows = await db().select<{ amt: string }>(ORACLE_QUERIES.orderDiscountText, [orderId]);
   return rows[0]?.amt ?? "0";
+}
+
+/**
+ * The payment's captured_at for a session: a timestamp text when captured, null when not, undefined when
+ * the session has no live payment. The session status never reads "captured" (the payment module
+ * authorizes sessions), so capture is asserted here (probe P-MED-19, 2026-11-03).
+ */
+export async function paymentCapturedAt(sessionId: string): Promise<string | null | undefined> {
+  const rows = await db().select<{ captured_at: string | null }>(ORACLE_QUERIES.paymentCapturedAt, [
+    sessionId,
+  ]);
+  if (rows.length === 0) return undefined;
+  return rows[0]?.captured_at ?? null;
+}
+
+/** Live capture rows for the payments of one session (a capture is a row in "capture", amount in major units). */
+export async function captureRowCount(sessionId: string): Promise<number> {
+  const rows = await db().select<{ n: string }>(ORACLE_QUERIES.captureRowCount, [sessionId]);
+  return Number(rows[0]?.n ?? "0");
 }

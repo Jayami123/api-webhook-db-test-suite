@@ -23,3 +23,18 @@ describe("medusa oracle SQL (medusa lane)", () => {
     }
   });
 });
+
+describe("capture oracle (medusa lane)", () => {
+  test("the capture queries read captured_at from the payment and count live capture rows joined to it", () => {
+    assert.match(ORACLE_QUERIES.paymentCapturedAt, /"captured_at"/);
+    assert.match(ORACLE_QUERIES.paymentCapturedAt, /"payment_session_id" = \$1/);
+    assert.match(
+      ORACLE_QUERIES.captureRowCount,
+      /FROM "capture" c JOIN "payment" p ON p\."id" = c\."payment_id"/,
+    );
+    assert.match(ORACLE_QUERIES.captureRowCount, /c\."deleted_at" IS NULL/);
+    assert.doesNotThrow(() => {
+      assertSelectOnly(ORACLE_QUERIES.captureRowCount);
+    });
+  });
+});
