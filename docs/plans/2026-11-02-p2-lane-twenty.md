@@ -1221,3 +1221,5 @@ Other lanes plan in parallel from the same base. This plan names no file or ID o
 - **B1 (P2-TW-WH-010):** SUSPECTED intermittent PRODUCT BUG. One drop in six first-event attempts so far (P-TW-2n). The study records delivered vs sent per case in its own scheduled workflow; no `test.fail()`.
 - **Established by code only (file:line):** the cache invalidation on webhook change (R7, corrected), the billing ordering path (upsert, no ordering check), the rate-limit warn and metric.
 - **Open (UNPROBED):** the billing ordering result (schema absent); the CI runner's allow-list address and `PRODUCTS_ROOT`; the `/graphql` bearer path (CON-002); the currency column name (CUR-001); the soft-delete REST filter syntax (DEL-002). RT-001 executor: blocked by the disabled driver (P-TW-13).
+
+> Review fix step 8 (probe record sections 4 and 7a): BUG-001 PROVEN for REST and GraphQL; BUG-002 PROVEN on 3 objects; BUG-004 PROVEN 2 of 2 (off-plan, no test). CUR-001 gained the GraphQL half; CON-001 gained the one-id check and the MAX_ERRORS count guard.

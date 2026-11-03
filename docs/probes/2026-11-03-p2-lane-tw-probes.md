@@ -74,7 +74,15 @@ replica A (`createOneField`, `:3002`), poll replica B (`field(id)`, `:3003`) eve
 
 ## 4. Product bugs
 
-### P2-TW-BUG-001: amounts above 2^53-1 are rounded silently (PRODUCT BUG, SUSPECTED)
+### P2-TW-BUG-001: amounts above 2^53-1 are rounded silently (PRODUCT BUG, PROVEN: REST and GraphQL)
+
+- Deterministic: REST (`B-P8`, and the currency spec run twice, `--repeat-each=2`, 8 of 8 passed) and GraphQL (probe
+  `createOpportunity`, review fix step 8): `9007199254740993` sent as a literal and as a string is stored, read back and
+  stored as `9007199254740992`. DB row (`qa_ro`, `amountAmountMicros`): `9007199254740992` for all three forms (REST,
+  GraphQL literal, GraphQL string). `9007199254740991` round-trips exactly through both.
+- So BUG-001 is **REST and GraphQL**, not "REST only".
+- Cases: `tests/integration/tw/currency.spec.ts` (REST and GraphQL exact cases pass; the over-range cases carry
+  `test.fail()` after their setup asserts).
 
 - Evidence: B-P8. The request body carries `"amountMicros":9007199254740993`; the response is 201 with
   `9007199254740992`; the database column holds `9007199254740992`. Reproduced twice (two runs, same result).
@@ -84,7 +92,14 @@ replica A (`createOneField`, `:3002`), poll replica B (`field(id)`, `:3003`) eve
   `POST /rest/opportunities` with `{"amount":{"amountMicros":9007199254740993,"currencyCode":"USD"}}` (raw JSON digits). Result:
   201; stored and returned as `9007199254740992`. Expected: a 400 validation error, or exact storage. Environment: v2.44.0 image.
 
-### P2-TW-BUG-002: the published OAS disagrees with live list responses (PRODUCT BUG, SUSPECTED)
+### P2-TW-BUG-002: the published OAS disagrees with live list responses (PRODUCT BUG, PROVEN: 3 of 3 objects)
+
+- Deterministic on people, companies and opportunities (`tests/contracts/tw/rest-oas.spec.ts`, list and one-id): every
+  violation is a `null` value on a field the OAS declares non-nullable (the `(got null)` violations). The known-null
+  filter passes; the non-null check fails, so the test.fail() marker holds.
+- Generator at the pin (UNVERIFIED location for the type declaration): `components.utils.ts:179` (`getRequiredFields`:
+  a field is required when `!isNullable && defaultValue === null`) and `:55` (the example generator uses the same rule).
+  The emission of the non-null record types was not located in this module; the live evidence stands.
 
 - Evidence: B-P12. `GET /rest/people?limit=1` returns `null` for `deletedAt`, `avatarFile` and `performanceRating`;
   `companies` returns `null` for the same fields; `opportunities` returns `null` for `deletedAt`. The OAS 3.1.1 document declares these fields
@@ -112,7 +127,13 @@ replica A (`createOneField`, `:3002`), poll replica B (`field(id)`, `:3003`) eve
   the memo window". Repro: create webhook A (`person.created`), delete A, create webhook B within 10 s, create a person.
   Result: the outbound request targets A's URL; B receives nothing. Expected: events go to the live webhooks only.
 
-### P2-TW-BUG-004: deleting a pending workspace returns an internal error (PRODUCT BUG, SUSPECTED; not a planned case)
+### P2-TW-BUG-004: deleting a pending workspace returns an internal error (PRODUCT BUG, PROVEN 2 of 2; not a planned case)
+
+- Fresh multi-workspace stack, two repetitions: `deleteCurrentWorkspace` on a PENDING_CREATION workspace returns HTTP 200 with
+  `INTERNAL_SERVER_ERROR`: `new row for relation "workspace" violates check constraint "onboarded_workspace_requires_default_role"`.
+- Off-plan: no test, no marker. Note for P5: the raw constraint name in the error text is information exposure (CWE-209).
+- Cleanup of the two repetition workspaces: through the product (sign in, `activateWorkspace`, `deleteCurrentWorkspace`), not
+  SQL. Both `p2-qa-` rows now have `deletedAt` set and are SUSPENDED. See the incident note in section 7.
 
 - Evidence: B-P16. `deleteCurrentWorkspace` on a `PENDING_CREATION` workspace returns `INTERNAL_SERVER_ERROR`, and the
   error message carries the raw database constraint name. Activation first makes the delete succeed (B-P15).
@@ -162,6 +183,15 @@ Queried on S-B after the STR-002 run, before `down`, for any `p2-qa-` prefix:
 
 On S-A the sweep (`src/invariants/after-test.ts`, rules `tw-leak-*`) ran after every test and the study's `afterAll` sweep
 returned no violations (`npx playwright test` exit 0).
+
+## 7a. Incident: a seeded workspace was soft-deleted by a cleanup probe (review fix step 8)
+
+- The cleanup probe signed in, then looped over every workspace in the sign-in list and called `activateWorkspace` and
+  `deleteCurrentWorkspace` on each, not only on `p2-qa-` rows. The seeded workspace **Apple** (`20202020`) was soft-deleted
+  (now SUSPENDED, `deletedAt` set). YCombinator (`3b8e6458`) returned a permission error and is still ACTIVE.
+- The two `p2-qa-` leftovers were deleted correctly (`deletedAt` set).
+- Recovery: the seeded state comes back with the volume wipe the step requires (`TWENTY_DOWN_VOLUMES=1 down`, then `up`). No
+  rows were removed by SQL. Lesson recorded: a cleanup must filter by the run's name before it calls any mutation.
 
 ## 8. Items this record does not settle
 
