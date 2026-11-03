@@ -152,6 +152,25 @@ test("P2-DOC-SM-002 distributing a PENDING envelope a second time changes no row
           [env.envelopeId],
         ),
       });
+    // The first distribute's send status is written asynchronously: wait for it, so the "before" snapshot is not raced.
+    await expect
+      .poll(
+        async () =>
+          (
+            await db.select<{ s: string }>(
+              `SELECT r."sendStatus" AS s FROM "Recipient" r WHERE r."envelopeId" = $1`,
+              [env.envelopeId],
+            )
+          )
+            .map((r) => r.s)
+            .every((s) => s === "SENT"),
+        {
+          timeout: SLO.docWebhookDelivery.ms,
+          intervals: POLL_INTERVALS,
+          message: "first distribute sent",
+        },
+      )
+      .toBe(true);
     const before = await snapshot();
     // Observed 2026-11-03 (B-34): a second distribute of a PENDING envelope answers 200 and changes no row.
     // EMAIL_SENT and each signer's mail count are read at the same points (no quiet window; see the report).
