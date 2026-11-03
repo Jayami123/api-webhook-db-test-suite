@@ -61,7 +61,7 @@ warm `up cal` 28 s, `down cal` 2 s (plan section 2 timings reproduced).
 | TASK-002, reset then ok | run 1 attempts 1; run 2 attempts 2, `succeeded` true; run 3 unchanged |
 | TASK-003 control, 5 bookings, one run | 5 deliveries; each Task attempts 1, succeeded |
 | TASK-003 finding, two concurrent runs, receiver slow 1500 ms | 10 deliveries for 5 tasks in each of three rounds (B4) |
-| SCH-002 finding, two concurrent cron fires (three rounds, suite) | round 1: 2 deliveries; round 2: 2 deliveries; round 3: 1 delivery. Not reproducible: see the STOP below |
+| SCH-002, two concurrent cron fires (three rounds, suite run) | round 1: 2 deliveries; round 2: 2 deliveries; round 3: 1 delivery. Intermittent: 2 of 3 rounds in the suite, 9 of 9 iterations in plan probe P6. PRODUCT BUG (intermittent race, D7), see the upstream drafts |
 
 ## L6 scheduled triggers (runs "probe-c" and suite)
 
@@ -165,5 +165,14 @@ the Cal maintainers and quotes only the evidence above. Labels follow the lane r
 - `getNextBatch` has no lock or claim (`packages/features/tasker/repository.ts:65-75`). Two runs started together deliver every task
   twice: 10 deliveries for 5 tasks, attempts `[1,1,2,2,2,2,2,1]`.
 - Evidence: L5 (TASK-003 finding, three rounds, 10 deliveries each); `tests/serial/cal/cal-task.spec.ts` (control passes).
-- Not committed as a finding: the scheduled-trigger race (SCH-002) was not reproducible (2, 2, 1 deliveries across three rounds), so
-  it is a hard stop and has no `test.fail` marker.
+- SCH-002 is recorded in the drafts below, with no `test.fail` marker: it reproduces in 2 of 3 suite rounds (and 9 of 9 plan probes),
+  so a marker would be flaky. The deterministic repro is an open item for the owner.
+
+### SCH-002: concurrent cron fires deliver one due row twice (PRODUCT BUG, intermittent race, code and repro evidence)
+
+- `handleWebhookScheduledTriggers.ts` reads the due rows with `findMany` (no claim), then for each row starts `fetch(...)` without
+  awaiting it, and only then runs `webhookScheduledTriggers.delete({ where: { id } })` (lines 17 to 79). Two fires that read the same
+  row both send it. The losing `delete` throws `P2025` (record not found) after its request was already sent (the same mechanism as
+  plan D7, `getServerErrorFromUnknown.ts:207-208`).
+- Repro evidence: suite rounds 1 and 2 (2 deliveries each), round 3 (1 delivery); plan probe P6 (9 of 9 iterations, 2 deliveries).
+- Open item for the owner: a deterministic repro (none found: the race depends on the two fires' timing).

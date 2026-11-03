@@ -173,7 +173,7 @@ test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
     }
   });
 
-  test("P2-CAL-SCH-003 a row whose startAfter is older than one day is purged with no delivery (silent purge, finding)", async ({
+  test("P2-CAL-SCH-003 a row whose startAfter is older than one day is purged with no delivery (silent purge, observed contract)", async ({
     request,
     calAuth,
     cal,
