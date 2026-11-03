@@ -75,21 +75,157 @@ describe("api.yml foundation shape", () => {
   });
 });
 
+/** Secret names a lane workflow may reference. Any other name fails the checker. */
+export const ALLOWED_LANE_SECRETS: readonly string[] = ["STRIPE_API_KEY"];
+
+const SAME_REPO_GUARD = "github.event.pull_request.head.repo.full_name == github.repository";
+const PINNED_USES = /uses: [\w.-]+\/[\w.-]+@[0-9a-f]{40} # v\d+\.\d+\.\d+\s*$/;
+
+/** The indented lines under a top-level key (e.g. `on:`), or null when the key is absent. */
+function blockUnder(lines: readonly string[], key: string): string[] | null {
+  const start = lines.findIndex((line) => line === `${key}:`);
+  if (start < 0) return null;
+  const out: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (line.trim() !== "" && !/^\s/.test(line)) break;
+    out.push(line);
+  }
+  return out;
+}
+
+/** Trigger names: the two-space keys under `on:`. Null when `on:` is absent or not a block. */
+function triggersOf(lines: readonly string[]): string[] | null {
+  const on = blockUnder(lines, "on");
+  if (on === null) return null;
+  return on
+    .map((line) => /^ {2}([a-z_]+):\s*$/.exec(line)?.[1])
+    .filter((name): name is string => name !== undefined);
+}
+
+function splitJobs(lines: readonly string[]): { id: string; lines: string[] }[] {
+  const jobs: { id: string; lines: string[] }[] = [];
+  for (const line of lines) {
+    const header = /^ {2}([a-z][a-z0-9-]*):\s*$/.exec(line);
+    if (header) jobs.push({ id: header[1] ?? "", lines: [] });
+    else jobs[jobs.length - 1]?.lines.push(line);
+  }
+  return jobs;
+}
+
+function splitSteps(jobLines: readonly string[]): string[][] {
+  const steps: string[][] = [];
+  for (const line of jobLines) {
+    if (/^ {6}- /.test(line)) steps.push([line]);
+    else steps[steps.length - 1]?.push(line);
+  }
+  return steps;
+}
+
+function stepName(step: readonly string[]): string {
+  return /^ {6}- name: (.*)$/.exec(step[0] ?? "")?.[1] ?? "(unnamed)";
+}
+
 /**
- * Each lane owns one workflow file (docs/lane-ownership.md). The stubs stay inert: manual trigger
- * only, every job skipped, no secrets. A lane replaces its own file; api.yml never gains lane jobs.
+ * Checks one lane workflow file and returns its violations (empty = pass). A file is either an
+ * inert stub (manual trigger only, every job `if: ${{ false }}`, no secrets) or a live lane with
+ * the safe shape below. Pure: takes the file name and the text, reads nothing.
  */
-describe("per-lane workflow stubs", () => {
+export function checkLaneWorkflow(file: string, text: string): string[] {
+  const violations: string[] = [];
+  const fail = (message: string): void => {
+    violations.push(`${file}: ${message}`);
+  };
+  const live = text.split("\n").filter((line) => !line.trimStart().startsWith("#"));
+  const body = live.join("\n");
+
+  const triggers = triggersOf(live);
+  if (triggers === null) {
+    fail("has no `on:` block (inline triggers are not accepted)");
+    return violations;
+  }
+  const inert = triggers.length === 1 && triggers[0] === "workflow_dispatch";
+  const allowed = new Set([
+    "pull_request",
+    "workflow_dispatch",
+    ...(file === "tw-study.yml" ? ["schedule"] : []),
+  ]);
+  for (const trigger of triggers) {
+    if (!allowed.has(trigger)) fail(`trigger "${trigger}" is not allowed in this file`);
+  }
+  if (/pull_request_target|workflow_run/.test(body))
+    fail("mentions pull_request_target or workflow_run");
+
+  const permissions = (blockUnder(live, "permissions") ?? []).filter((line) => line.trim() !== "");
+  if (permissions.join("\n") !== "  contents: read")
+    fail("top-level permissions must be exactly `contents: read`");
+
+  if (/continue-on-error/.test(body)) fail("continue-on-error is not allowed");
+
+  for (const line of live) {
+    if (/^\s*-?\s*uses:/.test(line) && !PINNED_USES.test(line)) {
+      fail(`action is not pinned to a full commit SHA with a version comment: ${line.trim()}`);
+    }
+  }
+
+  for (const match of body.matchAll(/\bsecrets\.([A-Za-z0-9_]+)/g)) {
+    const name = match[1] ?? "";
+    if (inert) fail(`references secret "${name}"; an inert stub may not reference secrets`);
+    else if (!ALLOWED_LANE_SECRETS.includes(name)) {
+      fail(
+        `references secret "${name}", which is not in the allowlist (${ALLOWED_LANE_SECRETS.join(", ")})`,
+      );
+    }
+  }
+
+  const jobs = splitJobs(blockUnder(live, "jobs") ?? []);
+  if (jobs.length === 0) fail("defines no jobs");
+  for (const job of jobs) {
+    const ifLine = job.lines
+      .map((line) => /^ {4}if: (.*)$/.exec(line)?.[1])
+      .find((value) => value !== undefined);
+    if (!job.lines.some((line) => /^ {4}timeout-minutes: \d+\s*$/.test(line))) {
+      fail(`job ${job.id} has no timeout-minutes`);
+    }
+    if (inert) {
+      if (ifLine !== "${{ false }}") fail(`job ${job.id} is not skipped (if: \${{ false }})`);
+      continue;
+    }
+    if (triggers.includes("pull_request") && !(ifLine ?? "").includes(SAME_REPO_GUARD)) {
+      fail(`job ${job.id} runs on pull_request without the same-repo guard in its if:`);
+    }
+    const steps = splitSteps(job.lines);
+    for (const step of steps) {
+      if (!step.some((line) => /^ {8}timeout-minutes: \d+\s*$/.test(line))) {
+        fail(`job ${job.id}: step "${stepName(step)}" has no timeout-minutes`);
+      }
+    }
+    if (job.lines.some((line) => line.includes("scripts/up.mjs"))) {
+      const downSteps = steps.filter((step) =>
+        step.some((line) => line.includes("scripts/down.mjs")),
+      );
+      const alwaysDown = downSteps.some((step) =>
+        step.some((line) => /^ {8}if: (\$\{\{ always\(\) \}\}|always\(\))\s*$/.test(line)),
+      );
+      if (!alwaysDown)
+        fail(
+          `job ${job.id} runs scripts/up.mjs without an always() step that runs scripts/down.mjs`,
+        );
+    }
+  }
+  return violations;
+}
+
+/**
+ * Each lane owns one workflow file (docs/lane-ownership.md). A file is an inert stub until its lane
+ * goes live; a live lane must pass the checker. api.yml never gains lane jobs.
+ */
+describe("per-lane workflows", () => {
   const lanes = ["p2-cal.yml", "p2-med.yml", "p2-doc.yml", "p2-tw.yml", "tw-study.yml"];
 
-  test("each lane has exactly one inert workflow file", () => {
+  test("each lane workflow is either an inert stub or a safe live lane", () => {
     for (const file of lanes) {
       const text = readFileSync(`.github/workflows/${file}`, "utf8");
-      assert.match(text, /^on:\n {2}workflow_dispatch:\s*$/m, file);
-      assert.match(text, /^ {4}if: \$\{\{ false \}\}\s*$/m, file);
-      assert.match(text, /^permissions:\n {2}contents: read\s*$/m, file);
-      assert.ok(!/\bsecrets\./.test(text), file);
-      assert.ok(!/pull_request_target/.test(text), file);
+      assert.deepEqual(checkLaneWorkflow(file, text), [], file);
     }
   });
 
@@ -97,4 +233,127 @@ describe("per-lane workflow stubs", () => {
     assert.deepEqual([...jobs().keys()], ["check", "unit", "db-guard", "specs", "foundation"]);
     for (const file of lanes) assert.ok(!live.includes(`/${file}`), file);
   });
+});
+
+describe("lane workflow checker: fixtures", () => {
+  const safeLive = [
+    "name: p2-fixture",
+    "on:",
+    "  pull_request:",
+    "permissions:",
+    "  contents: read",
+    "jobs:",
+    "  lane-api:",
+    "    name: lane-api",
+    "    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}",
+    "    runs-on: ubuntu-24.04",
+    "    timeout-minutes: 30",
+    "    steps:",
+    "      - name: Checkout",
+    "        timeout-minutes: 5",
+    "        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",
+    "        with:",
+    "          persist-credentials: false",
+    "      - name: Harness up",
+    "        timeout-minutes: 16",
+    "        run: node node_modules/qa-portfolio-harness/scripts/up.mjs cal",
+    "      - name: Harness down",
+    "        if: always()",
+    "        timeout-minutes: 5",
+    "        run: node node_modules/qa-portfolio-harness/scripts/down.mjs cal",
+    "",
+  ].join("\n");
+  const inertStub = [
+    "name: p2-fixture",
+    "on:",
+    "  workflow_dispatch:",
+    "permissions:",
+    "  contents: read",
+    "jobs:",
+    "  lane-api:",
+    "    name: lane-api",
+    "    if: ${{ false }}",
+    "    runs-on: ubuntu-24.04",
+    "    timeout-minutes: 30",
+    "    steps:",
+    "      - name: Stub",
+    '        run: echo "stub"',
+    "",
+  ].join("\n");
+
+  test("a safe live lane passes", () => {
+    assert.deepEqual(checkLaneWorkflow("fixture.yml", safeLive), []);
+  });
+
+  test("an inert stub passes", () => {
+    assert.deepEqual(checkLaneWorkflow("fixture.yml", inertStub), []);
+  });
+
+  // Each mutation of the safe live lane must fail, with the named reason.
+  const mutations: [name: string, from: string, to: string, reason: string][] = [
+    [
+      "pull_request_target trigger",
+      "  pull_request:",
+      "  pull_request_target:",
+      'trigger "pull_request_target"',
+    ],
+    [
+      "workflow_run trigger",
+      "  pull_request:",
+      "  workflow_run:\n    workflows: [api]\n    types: [completed]",
+      'trigger "workflow_run"',
+    ],
+    [
+      "missing job timeout",
+      "    runs-on: ubuntu-24.04\n    timeout-minutes: 30\n",
+      "    runs-on: ubuntu-24.04\n",
+      "has no timeout-minutes",
+    ],
+    [
+      "missing same-repo guard",
+      "    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}\n",
+      "",
+      "same-repo guard",
+    ],
+    [
+      "unknown secret",
+      "    runs-on: ubuntu-24.04\n",
+      "    runs-on: ubuntu-24.04\n    env:\n      TOKEN: ${{ secrets.OTHER_TOKEN }}\n",
+      'secret "OTHER_TOKEN"',
+    ],
+    [
+      "continue-on-error",
+      "    runs-on: ubuntu-24.04\n",
+      "    runs-on: ubuntu-24.04\n    continue-on-error: true\n",
+      "continue-on-error",
+    ],
+    [
+      "step without timeout",
+      "      - name: Checkout\n        timeout-minutes: 5\n",
+      "      - name: Checkout\n",
+      'step "Checkout" has no timeout-minutes',
+    ],
+    [
+      "down step without always()",
+      "        if: always()\n        timeout-minutes: 5\n        run: node node_modules/qa-portfolio-harness/scripts/down.mjs cal",
+      "        timeout-minutes: 5\n        run: node node_modules/qa-portfolio-harness/scripts/down.mjs cal",
+      "without an always() step",
+    ],
+    [
+      "no down step at all",
+      "      - name: Harness down\n        if: always()\n        timeout-minutes: 5\n        run: node node_modules/qa-portfolio-harness/scripts/down.mjs cal\n",
+      "",
+      "without an always() step",
+    ],
+  ];
+  for (const [name, from, to, reason] of mutations) {
+    test(`fails: ${name}`, () => {
+      assert.ok(safeLive.includes(from), `fixture contains ${JSON.stringify(from)}`);
+      const violations = checkLaneWorkflow("fixture.yml", safeLive.replace(from, to));
+      assert.ok(
+        violations.some((violation) => violation.includes(reason)),
+        JSON.stringify(violations),
+      );
+    });
+  }
 });
