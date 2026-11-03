@@ -19,7 +19,7 @@ export const twentyBodySchema = {
   additionalProperties: true,
   properties: {
     targetUrl: { type: "string" },
-    eventName: { type: "string", pattern: "^person\\.(created|updated|destroyed)$" },
+    eventName: { type: "string", pattern: "^person\\.(created|updated|deleted)$" },
     objectMetadata: {
       type: "object",
       required: ["id", "nameSingular"],

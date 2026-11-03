@@ -3,6 +3,7 @@ import { deliveriesOf } from "../../../src/lanes/tw/visible.ts";
 import { awaitCanary } from "../../../src/lanes/tw/waits.ts";
 import { createFreshWebhook } from "../../../src/lanes/tw/webhook-factory.ts";
 import { bodyErrors } from "../../../src/lanes/tw/payload-schema.ts";
+import { softRemovePerson } from "../../../src/lanes/tw/soft-delete.ts";
 import { quietState } from "../../../src/lanes/tw/quiet.ts";
 import {
   POLL_INTERVALS,
@@ -16,7 +17,7 @@ import type { Delivery } from "../../../src/webhooks/receiver.ts";
 const eventOf = (d: Delivery): string =>
   (JSON.parse(d.rawBody.toString("utf8")) as { eventName: string }).eventName;
 
-test("P2-TW-WH-003: person.created, person.updated and person.destroyed each arrive once and match the body schema", async ({
+test("P2-TW-WH-003: person.created, person.updated and person.deleted each arrive once and match the body schema", async ({
   tw,
   receiverHandle,
 }) => {
@@ -27,7 +28,7 @@ test("P2-TW-WH-003: person.created, person.updated and person.destroyed each arr
     tw,
     receiverHandle,
     testId,
-    operations: ["person.created", "person.updated", "person.destroyed"],
+    operations: ["person.created", "person.updated", "person.deleted"],
   });
   const created: string[] = [];
   try {
@@ -55,14 +56,15 @@ test("P2-TW-WH-003: person.created, person.updated and person.destroyed each arr
         message: "updated arrived",
       })
       .toBe(1);
-    // The delete is the test's own action: the record is gone afterwards, so it is not in the cleanup list.
-    created.splice(created.indexOf(realId), 1);
-    await tw.people.remove(realId);
+    // Soft delete (soft_delete=true): the event is person.deleted, and the row stays with deletedAt set. The id stays
+    // in the cleanup list, so the hard delete in finally removes the row.
+    const del = await softRemovePerson(tw, realId);
+    expect(del.status, "soft delete is 200").toBe(200);
     await expect
-      .poll(() => countOf("person.destroyed"), {
+      .poll(() => countOf("person.deleted"), {
         timeout: SLO.twWebhookDelivery.ms,
         intervals: POLL_INTERVALS,
-        message: "destroyed arrived",
+        message: "deleted arrived",
       })
       .toBe(1);
 
@@ -91,7 +93,7 @@ test("P2-TW-WH-003: person.created, person.updated and person.destroyed each arr
     }
     expect(eventsOfReal().map(eventOf).sort()).toEqual([
       "person.created",
-      "person.destroyed",
+      "person.deleted",
       "person.updated",
     ]);
   } finally {
