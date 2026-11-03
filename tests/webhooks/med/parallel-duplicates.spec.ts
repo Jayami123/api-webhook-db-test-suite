@@ -10,12 +10,15 @@ import { captureRowCount, paymentRowCount, paymentSession } from "../../../src/l
 import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 
-const stripeGate = laneEnvGate("STRIPE_API_KEY", {
-  isValid: isStripeTestKey,
-  expectText: "a Stripe test-mode key (sk_test_)",
-  reason: "the Stripe payment provider does not load without it (RD-19)",
+// Evaluated when the tests start, never at collection: `playwright test --list` must not throw.
+test.beforeAll(() => {
+  const stripeGate = laneEnvGate("STRIPE_API_KEY", {
+    isValid: isStripeTestKey,
+    expectText: "a Stripe test-mode key (sk_test_)",
+    reason: "the Stripe payment provider does not load without it (RD-19)",
+  });
+  test.skip(!stripeGate.ready, stripeGate.ready ? "" : stripeGate.reason);
 });
-test.skip(!stripeGate.ready, stripeGate.ready ? "" : stripeGate.reason);
 
 test.describe("medusa parallel duplicate deliveries", () => {
   test("P2-MED-WH-002 five parallel deliveries of one signed event leave the end state of one delivery", async ({

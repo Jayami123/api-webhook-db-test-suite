@@ -7,12 +7,15 @@ import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 
 // The core cache is on only with the exact string "true" (medusa-env.ts:184-186; F4). With the flag
 // off the product does not cache and this case has nothing to observe.
-const cacheGate = laneEnvGate("MEDUSA_FF_CACHING", {
-  isValid: (value) => value === "true",
-  expectText: 'the string "true"',
-  reason: "the core cache is off without it (medusa-env.ts:184-186, F4)",
+// Evaluated when the tests start, never at collection: `playwright test --list` must not throw.
+test.beforeAll(() => {
+  const cacheGate = laneEnvGate("MEDUSA_FF_CACHING", {
+    isValid: (value) => value === "true",
+    expectText: 'the string "true"',
+    reason: "the core cache is off without it (medusa-env.ts:184-186, F4)",
+  });
+  test.skip(!cacheGate.ready, cacheGate.ready ? "" : cacheGate.reason);
 });
-test.skip(!cacheGate.ready, cacheGate.ready ? "" : cacheGate.reason);
 
 test.describe("medusa product cache", () => {
   test("P2-MED-CACHE-001 an admin price change is visible on the next store read while the cache is on", async ({

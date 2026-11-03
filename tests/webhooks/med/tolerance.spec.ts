@@ -24,12 +24,15 @@ const TOLERANCE_S = 300;
 const ACCEPT_RECEIPT_AGE_S =
   TOLERANCE_S - EMIT_DELAY_S - Math.ceil(SLO.medWebhookProcessing.ms / 1000); // 270
 
-const stripeGate = laneEnvGate("STRIPE_API_KEY", {
-  isValid: isStripeTestKey,
-  expectText: "a Stripe test-mode key (sk_test_)",
-  reason: "the Stripe payment provider does not load without it (RD-19)",
+// Evaluated when the tests start, never at collection: `playwright test --list` must not throw.
+test.beforeAll(() => {
+  const stripeGate = laneEnvGate("STRIPE_API_KEY", {
+    isValid: isStripeTestKey,
+    expectText: "a Stripe test-mode key (sk_test_)",
+    reason: "the Stripe payment provider does not load without it (RD-19)",
+  });
+  test.skip(!stripeGate.ready, stripeGate.ready ? "" : stripeGate.reason);
 });
-test.skip(!stripeGate.ready, stripeGate.ready ? "" : stripeGate.reason);
 
 test.describe("medusa webhook tolerance", () => {
   test(`P2-MED-WH-006 receipt age ${String(ACCEPT_RECEIPT_AGE_S)} s is accepted (margin = the processing budget)`, async ({
