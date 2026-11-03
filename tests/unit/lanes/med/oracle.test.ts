@@ -47,3 +47,11 @@ describe("live order oracle (medusa lane)", () => {
     assert.match(sql, /JOIN "order" o ON o\."id" = oc\."order_id"/);
   });
 });
+
+describe("order-through-link oracle (medusa lane)", () => {
+  test("liveOrdersLinkedToCart counts live orders through any link; the soft-deleted variant counts only deleted links", () => {
+    assert.match(ORACLE_QUERIES.liveOrdersLinkedToCart, /o\."deleted_at" IS NULL/);
+    assert.doesNotMatch(ORACLE_QUERIES.liveOrdersLinkedToCart, /oc\."deleted_at"/);
+    assert.match(ORACLE_QUERIES.liveOrdersViaSoftDeletedLinks, /oc\."deleted_at" IS NOT NULL/);
+  });
+});

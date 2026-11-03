@@ -3,6 +3,7 @@ import { test, expect } from "../../../src/fixtures/index.ts";
 import { laneOf } from "../../../src/lanes/med/lane-client.ts";
 import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
 import { openPaidSession } from "../../../src/lanes/med/cart-flow.ts";
+import { liveOrdersLinkedToCart } from "../../../src/lanes/med/oracle.ts";
 import {
   apply,
   EMPTY,
@@ -66,6 +67,10 @@ test.describe("medusa inventory model", () => {
             orderId: (complete.body as { order: { id: string } }).order.id,
             qty: op.qty,
           });
+          expect(
+            await liveOrdersLinkedToCart(cartId),
+            `${detail}: live orders through any link`,
+          ).toBe(1);
         } else {
           const index = liveOrders.map((o) => o.qty).lastIndexOf(op.qty);
           const [order] = liveOrders.splice(index, 1);

@@ -4,7 +4,8 @@ import { openPaidSession } from "../../../src/lanes/med/cart-flow.ts";
 import {
   cartCompleted,
   inventoryLevelsForItem,
-  orderCountForCart,
+  liveOrdersLinkedToCart,
+  liveOrdersViaSoftDeletedLinks,
   reservationLiveCount,
 } from "../../../src/lanes/med/oracle.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
@@ -54,7 +55,11 @@ test.describe("medusa stock location split", () => {
       expect(body.type).toBe("not_allowed");
       expect(body.message).toMatch(/Not enough stock available/);
 
-      expect(await orderCountForCart(cartId), "live orders for the cart").toBe(0);
+      expect(await liveOrdersLinkedToCart(cartId), "live orders through any link").toBe(0);
+      expect(
+        await liveOrdersViaSoftDeletedLinks(cartId),
+        "live orders behind a soft-deleted link",
+      ).toBe(0);
       expect(await cartCompleted(cartId), "cart completed").toBe(false);
       expect(await reservationLiveCount(itemId), "live reservations").toBe(0);
       const after = await inventoryLevelsForItem(itemId);

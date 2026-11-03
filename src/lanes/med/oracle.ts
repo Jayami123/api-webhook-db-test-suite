@@ -31,6 +31,8 @@ export const ORACLE_QUERIES = {
   liveOrderIdsForCart: `SELECT o."id" AS id FROM "order_cart" oc JOIN "order" o ON o."id" = oc."order_id" WHERE oc."cart_id" = $1 AND oc."deleted_at" IS NULL AND o."deleted_at" IS NULL ORDER BY o."id"`,
   orderShippingText: `SELECT COALESCE(SUM(m."amount"), 0)::text AS amt FROM "order_shipping" s JOIN (SELECT DISTINCT ON ("order_id") "order_id", "version" AS v FROM "order_summary" WHERE "deleted_at" IS NULL ORDER BY "order_id", "version" DESC) latest ON latest."order_id" = s."order_id" AND s."version" = latest.v JOIN "order_shipping_method" m ON m."id" = s."shipping_method_id" WHERE s."order_id" = $1 AND s."deleted_at" IS NULL AND m."deleted_at" IS NULL`,
   orderTaxLineCount: `SELECT ((SELECT COUNT(*) FROM "order_line_item_tax_line" t JOIN "order_item" oi ON oi."item_id" = t."item_id" WHERE oi."order_id" = $1 AND t."deleted_at" IS NULL) + (SELECT COUNT(*) FROM "order_shipping_method_tax_line" st JOIN "order_shipping" s ON s."shipping_method_id" = st."shipping_method_id" WHERE s."order_id" = $1 AND st."deleted_at" IS NULL))::text AS n`,
+  liveOrdersLinkedToCart: `SELECT COUNT(*)::text AS n FROM "order" o WHERE o."deleted_at" IS NULL AND EXISTS (SELECT 1 FROM "order_cart" oc WHERE oc."cart_id" = $1 AND oc."order_id" = o."id")`,
+  liveOrdersViaSoftDeletedLinks: `SELECT COUNT(*)::text AS n FROM "order" o WHERE o."deleted_at" IS NULL AND EXISTS (SELECT 1 FROM "order_cart" oc WHERE oc."cart_id" = $1 AND oc."order_id" = o."id" AND oc."deleted_at" IS NOT NULL)`,
   reservationLiveCount: `SELECT COUNT(*)::text AS n FROM "reservation_item" WHERE "inventory_item_id" = $1 AND "deleted_at" IS NULL`,
   orderLineSum: `SELECT COALESCE(SUM(oi."quantity" * li."unit_price"), 0)::text AS items FROM "order_item" oi JOIN "order_line_item" li ON li."id" = oi."item_id" JOIN LATERAL (SELECT MAX("version") AS v FROM "order_summary" os WHERE os."order_id" = oi."order_id" AND os."deleted_at" IS NULL) latest ON oi."version" = latest.v WHERE oi."order_id" = $1 AND oi."deleted_at" IS NULL`,
 } as const;
@@ -207,5 +209,22 @@ export async function orderShippingText(orderId: string): Promise<string> {
  */
 export async function orderTaxLineCount(orderId: string): Promise<number> {
   const rows = await db().select<{ n: string }>(ORACLE_QUERIES.orderTaxLineCount, [orderId]);
+  return Number(rows[0]?.n ?? "0");
+}
+
+/**
+ * Live orders reachable from a cart through ANY link, live or soft-deleted. orderCountForCart counts live links
+ * only; an order whose link was soft-deleted would be invisible there (review R8).
+ */
+export async function liveOrdersLinkedToCart(cartId: string): Promise<number> {
+  const rows = await db().select<{ n: string }>(ORACLE_QUERIES.liveOrdersLinkedToCart, [cartId]);
+  return Number(rows[0]?.n ?? "0");
+}
+
+/** Live orders reached through a SOFT-DELETED link (F9 says there are none: the compensation leaves no live order). */
+export async function liveOrdersViaSoftDeletedLinks(cartId: string): Promise<number> {
+  const rows = await db().select<{ n: string }>(ORACLE_QUERIES.liveOrdersViaSoftDeletedLinks, [
+    cartId,
+  ]);
   return Number(rows[0]?.n ?? "0");
 }

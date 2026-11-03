@@ -1,4 +1,5 @@
 import { test, expect } from "../../../src/fixtures/index.ts";
+import { isStripeTestKey, laneEnvGate } from "../../../src/lanes/med/env-gate.ts";
 import { laneOf } from "../../../src/lanes/med/lane-client.ts";
 import {
   buildPaymentEvent,
@@ -8,7 +9,8 @@ import {
 import {
   captureRowCount,
   liveOrderIdsForCart,
-  orderCountForCart,
+  liveOrdersLinkedToCart,
+  liveOrdersViaSoftDeletedLinks,
   paymentCapturedAt,
   paymentRowCount,
   paymentSession,
@@ -16,11 +18,12 @@ import {
 import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 
-const hasKey = Boolean(process.env["STRIPE_API_KEY"]);
-test.skip(
-  !hasKey,
-  "STRIPE_API_KEY not set: the Stripe payment provider does not load without it (RD-19)",
-);
+const stripeGate = laneEnvGate("STRIPE_API_KEY", {
+  isValid: isStripeTestKey,
+  expectText: "a Stripe test-mode key (sk_test_)",
+  reason: "the Stripe payment provider does not load without it (RD-19)",
+});
+test.skip(!stripeGate.ready, stripeGate.ready ? "" : stripeGate.reason);
 
 /**
  * Completion before the delayed webhook, one round per test. The route emits with a 5000 ms delay
@@ -64,7 +67,11 @@ for (let run = 1; run <= 20; run++) {
           message: "the payment is captured",
         })
         .toEqual(expect.any(String));
-      expect(await orderCountForCart(cartId), "live orders for the cart").toBe(1);
+      expect(await liveOrdersLinkedToCart(cartId), "live orders through any link").toBe(1);
+      expect(
+        await liveOrdersViaSoftDeletedLinks(cartId),
+        "live orders behind a soft-deleted link",
+      ).toBe(0);
       expect(await paymentRowCount(sessionId), "payments for the session").toBe(1);
       expect(await captureRowCount(sessionId), "captures for the session").toBe(1);
     } finally {
@@ -106,6 +113,11 @@ test.describe("medusa webhook first, then the client completes the same cart", (
       ).toBe(webhookOrder);
 
       expect(await liveOrderIdsForCart(cartId), "live orders for the cart").toEqual([webhookOrder]);
+      expect(await liveOrdersLinkedToCart(cartId), "live orders through any link").toBe(1);
+      expect(
+        await liveOrdersViaSoftDeletedLinks(cartId),
+        "live orders behind a soft-deleted link",
+      ).toBe(0);
       await expect
         .poll(() => paymentCapturedAt(sessionId), {
           timeout: SLO.medWebhookProcessing.ms,
