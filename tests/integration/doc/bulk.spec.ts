@@ -4,7 +4,8 @@ import type { APIRequestContext } from "@playwright/test";
 import { test, expect } from "../../../src/fixtures/index.ts";
 import { readOnlyDb, type ReadOnlyDb } from "../../../src/db/pg.ts";
 import { apiBaseUrl } from "../../../src/env.ts";
-import { listMail, mailboxOf } from "../../../src/lanes/doc/mail.ts";
+import { bodyOf, listMail, mailboxOf, signingTokenIn } from "../../../src/lanes/doc/mail.ts";
+import { bulkJobProblems, type AddressEvidence } from "../../../src/lanes/doc/bulk.ts";
 import { productsRoot } from "../../../src/readiness/checks.ts";
 import { currentRunPrefix, escapeLike } from "../../../src/run/prefix.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
@@ -164,10 +165,13 @@ test("P2-DOC-BULK-001 a CSV with one bad row mid-file: behaviour recorded and pi
   }
 });
 
-test("P2-DOC-BULK-002 re-submitting the same CSV sends no duplicate mail", async ({
+test("P2-DOC-BULK-002 re-submitting the same CSV sends one mail per recipient per job", async ({
   request,
   docAuth,
 }) => {
+  // Master plan (docs/master-plan.html): "Re-run does not double-send | Idempotency | Same CSV | Re-submit |
+  // Documented; no duplicate emails to the same recipient for the same job id". Each submission is a new bulk
+  // job (probe B-28), so each job mails each recipient once. The oracle is per job, not per address overall.
   const prefix = currentRunPrefix();
   const db = readOnlyDb("documenso");
   const authorization = docAuth.headerValue.reveal();
@@ -177,14 +181,14 @@ test("P2-DOC-BULK-002 re-submitting the same CSV sends no duplicate mail", async
   const addresses = [`${tag}a@example.test`, `${tag}c@example.test`];
   const csv = csvOf(addresses.map((a, i) => `${a},Name ${String(i + 1)}`));
   try {
+    // Setup: the first job gives one envelope and one mail per address.
     const first = await uploadBulkSend(request, cookie, docAuth.teamId, templateId, csv, true);
     expect(first.success).toBe(true);
-    // Wait on the real condition: one envelope per CSV row exists, and one signing mail per recipient arrived.
     await expect
       .poll(async () => (await envelopesWithTag(db, tag)).length, {
         timeout: SLO.docWebhookDelivery.ms,
         intervals: POLL_INTERVALS,
-        message: "first bulk job envelopes",
+        message: "first job envelopes",
       })
       .toBe(addresses.length);
     for (const address of addresses) {
@@ -192,20 +196,51 @@ test("P2-DOC-BULK-002 re-submitting the same CSV sends no duplicate mail", async
         .poll(async () => (await listMail(mailboxOf(address))).length, {
           timeout: SLO.docWebhookDelivery.ms,
           intervals: POLL_INTERVALS,
-          message: "one bulk mail",
+          message: "first job mail",
         })
         .toBe(1);
     }
+    // The second job with the same CSV.
     const second = await uploadBulkSend(request, cookie, docAuth.teamId, templateId, csv, true);
     expect(second.success).toBe(true);
+    // Real conditions: both bulk job rows for this CSV are terminal, both jobs made their envelopes, and each
+    // address has its second mail.
+    await expect
+      .poll(async () => terminalBulkJobs(db, tag), {
+        timeout: SLO.docWebhookDelivery.ms,
+        intervals: POLL_INTERVALS,
+        message: "both bulk job rows terminal",
+      })
+      .toBe(2);
     await expect
       .poll(async () => (await envelopesWithTag(db, tag)).length, {
         timeout: SLO.docWebhookDelivery.ms,
         intervals: POLL_INTERVALS,
-        message: "second bulk job envelopes",
+        message: "second job envelopes",
       })
       .toBe(addresses.length * 2);
-    for (const address of addresses) expect((await listMail(mailboxOf(address))).length).toBe(1);
+    for (const address of addresses) {
+      await expect
+        .poll(async () => (await listMail(mailboxOf(address))).length, {
+          timeout: SLO.docWebhookDelivery.ms,
+          intervals: POLL_INTERVALS,
+          message: "second job mail",
+        })
+        .toBe(2);
+    }
+    // Per address: the mail tokens are distinct, and they equal the tokens of that address's envelopes.
+    const evidence: AddressEvidence[] = [];
+    for (const address of addresses) {
+      const mailbox = mailboxOf(address);
+      const mails = await listMail(mailbox);
+      const mailTokens: string[] = [];
+      for (const mail of mails) {
+        const token = signingTokenIn(await bodyOf(mailbox, mail.id));
+        if (token !== undefined) mailTokens.push(token);
+      }
+      evidence.push({ mailTokens, envelopeTokens: await recipientTokens(db, address) });
+    }
+    expect(bulkJobProblems(evidence, 2)).toEqual([]);
   } finally {
     for (const envelopeId of await envelopesWithTag(db, tag)) {
       await request.fetch(`${apiBaseUrl("documenso")}/api/v2/envelope/delete`, {
@@ -218,3 +253,21 @@ test("P2-DOC-BULK-002 re-submitting the same CSV sends no duplicate mail", async
     await deleteTemplate(request, authorization, templateId);
   }
 });
+
+/** Bulk job rows for this test's CSV that have reached COMPLETED (the job's payload carries the CSV text). */
+async function terminalBulkJobs(db: ReadOnlyDb, tag: string): Promise<number> {
+  const rows = await db.select<{ n: number }>(
+    `SELECT COUNT(*)::int AS n FROM "BackgroundJob" WHERE "jobId" = 'internal.bulk-send-template' AND "status" = 'COMPLETED' AND "payload"->>'csvContent' LIKE $1 ESCAPE '\\'`,
+    [`%${escapeLike(tag)}%`],
+  );
+  return rows[0]?.n ?? 0;
+}
+
+/** Recipient tokens of every envelope created for one address (read through qa_ro). */
+async function recipientTokens(db: ReadOnlyDb, address: string): Promise<string[]> {
+  const rows = await db.select<{ token: string }>(
+    `SELECT r."token" AS token FROM "Recipient" r WHERE r."email" = $1`,
+    [address],
+  );
+  return rows.map((r) => r.token);
+}

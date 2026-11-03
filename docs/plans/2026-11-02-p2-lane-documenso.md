@@ -154,7 +154,7 @@ CUT = cut. Test titles begin with the ID. "BUILT" = the task writes it; "DEFERRE
 | P2-DOC-EXP-002 | U | L3 | same | `P2-DOC-EXP-002 signing 1 s after expiry is refused and the recipient is unchanged` | `expiresAt = now-1 s`: 400 `RECIPIENT_EXPIRED`; row unchanged | a 2xx; a changed row | BUILT |
 | P2-DOC-EXP-003 | NEW | L3 | same | `P2-DOC-EXP-003 a recipient moved back into its window signs again` | `expiresAt` moved from past to future: 200 | still refused | BUILT (scope OD-10) |
 | P2-DOC-BULK-001 | U | L3 | `tests/integration/doc/bulk.spec.ts` | `P2-DOC-BULK-001 a CSV with one bad row mid-file: behaviour recorded and pinned` | pinned observed outcome (UNPROBED) | outcome differs from the pin | BUILT after probe (UNPROBED) |
-| P2-DOC-BULK-002 | U | L3 | same | `P2-DOC-BULK-002 re-submitting the same CSV sends no duplicate mail` | count per recipient 1 | 2 | BUILT after probe (UNPROBED) |
+| P2-DOC-BULK-002 | U | L3 | same | `P2-DOC-BULK-002 re-submitting the same CSV sends one mail per recipient per job` | per address: one mail per job (2 total after 2 jobs), distinct tokens, token set equals that address's envelope tokens (`bulkJobProblems`, src/lanes/doc/bulk.ts) | a second mail with a repeated token, or a mail token that is no envelope's token | BUILT (live values UNPROBED: Docker unavailable in the follow-up session) |
 | P2-DOC-MAIL-001 | K | L3 | `tests/integration/doc/mail.spec.ts` | `P2-DOC-MAIL-001 each recipient gets exactly one signing mail carrying its own token` | counts 1 and 1; token match | 0, 2, or a foreign token | BUILT (P-DOC-10) |
 | P2-DOC-MAIL-002 | K | — | — | — | — | — | DEFERRED (OD-12): row text not in the master plan |
 | P2-DOC-REM-001 | K | L4 | `tests/serial/doc/reminders.spec.ts` | `P2-DOC-REM-001 one reminder per interval (one cron tick)` | one new reminder mail; `nextReminderAt` advanced past now | 0 or 2 new mails | BUILT (tick budget) |
@@ -168,7 +168,9 @@ CUT = cut. Test titles begin with the ID. "BUILT" = the task writes it; "DEFERRE
 Count of reviewed IDs covered: 22 K + 14 U + 3 CUT = 39. NEW: 5 (JOB-004, JOB-005, WH-006, WH-007, EXP-003).
 BUILT rows: L1 9 tests (incl. 1 `test.fail`), L2 12 (7 in `doc-api`, 5 in `doc-billing-api`, of which 2 skip without a key), L3 14, L4 4: 39 new test definitions in total. DEFERRED: CONV-002, CONV-003 (harness v0.3.1, HR-5), WH-005, MAIL-002, JOB-002, JOB-003, JOB-005.
 
-### 4.2 CUT list (not built; never in a task, spec title or file name)
+#> **Correction (follow-up session, 2026-11-03).** The BULK-002 row above was wrong in the first version: it asserted one mail per address overall. The master plan row (docs/master-plan.html) reads "Re-run does not double-send | Idempotency | Same CSV | Re-submit | Documented; no duplicate emails to the same recipient for the same job id". Each re-submission is a new bulk job (probe B-28), so the oracle is one mail per recipient per job. This plan has no section 18; the row above is the authoritative entry.
+
+## 4.2 CUT list (not built; never in a task, spec title or file name)
 
 P2-DOC-CONV-001, P2-DOC-I18N-003, P2-DOC-CON-002. Listed here only.
 
