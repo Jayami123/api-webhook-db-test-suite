@@ -39,3 +39,49 @@ export async function runPdfsig(file: string): Promise<PdfsigVerdict> {
   );
   return parsePdfsig(out);
 }
+
+/**
+ * A8: the /ByteRange of the first signature: [o1 l1 o2 l2]. The signed bytes are [o1, o1+l1) and [o2, o2+l2);
+ * the gap between them holds the /Contents signature. Pure: the caller passes the file bytes.
+ */
+export function parseByteRange(pdf: Buffer): [number, number, number, number] | undefined {
+  const m = /\/ByteRange\s*\[\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\]/.exec(pdf.toString("latin1"));
+  if (m === null) return undefined;
+  return [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])];
+}
+
+/** True when a byte offset lies inside one of the two signed ranges (not in the signature gap). */
+export function offsetIsSigned(pdf: Buffer, offset: number): boolean {
+  const range = parseByteRange(pdf);
+  if (range === undefined) return false;
+  const [o1, l1, o2, l2] = range;
+  return (offset >= o1 && offset < o1 + l1) || (offset >= o2 && offset < o2 + l2);
+}
+
+/** The DER length of the outermost SEQUENCE at the start of `der` (the /Contents is padded with zero bytes). */
+export function derSequenceLength(der: Buffer): number | undefined {
+  if (der[0] !== 0x30) return undefined;
+  const first = der[1];
+  if (first === undefined) return undefined;
+  if (first < 0x80) return 2 + first;
+  const n = first & 0x7f;
+  let len = 0;
+  for (let i = 0; i < n; i += 1) len = len * 256 + (der[2 + i] ?? 0);
+  return 2 + n + len;
+}
+
+/**
+ * The PKCS#7 blob of the first signature, trimmed to its DER length (A8: the signer certificate source).
+ * The hex sits in the gap between the two signed ranges (/ByteRange), inside `<` and `>`.
+ */
+export function signatureContents(pdf: Buffer): Buffer | undefined {
+  const range = parseByteRange(pdf);
+  if (range === undefined) return undefined;
+  const [, l1, o2] = range;
+  const gap = pdf.subarray(l1, o2).toString("latin1");
+  const hex = /<([0-9A-Fa-f]+)>/.exec(gap)?.[1];
+  if (hex === undefined) return undefined;
+  const raw = Buffer.from(hex, "hex");
+  const length = derSequenceLength(raw);
+  return length === undefined ? undefined : raw.subarray(0, length);
+}
