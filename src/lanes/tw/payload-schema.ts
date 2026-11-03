@@ -19,7 +19,9 @@ export const twentyBodySchema = {
   additionalProperties: true,
   properties: {
     targetUrl: { type: "string" },
-    eventName: { type: "string", pattern: "^person\\.(created|updated|deleted)$" },
+    // Names the pinned emitter sends: DatabaseEventAction DELETED = 'deleted' (soft delete) and DESTROYED = 'destroyed'
+    // (hard delete), database-event-action.ts:6-7, emitted by entity-events-to-db.listener.ts:60-76.
+    eventName: { type: "string", pattern: "^person\\.(created|updated|deleted|destroyed)$" },
     objectMetadata: {
       type: "object",
       required: ["id", "nameSingular"],

@@ -22,4 +22,19 @@ describe("twenty body schema", () => {
       "/record must have required property 'id'",
     ]);
   });
+
+  test("accepts each event name the pinned emitter sends (created, updated, deleted, destroyed)", () => {
+    for (const eventName of [
+      "person.created",
+      "person.updated",
+      "person.deleted",
+      "person.destroyed",
+    ]) {
+      assert.deepEqual(bodyErrors({ ...FULL, eventName }), [], eventName);
+    }
+  });
+
+  test("rejects a name the pinned emitter does not send", () => {
+    assert.notDeepEqual(bodyErrors({ ...FULL, eventName: "person.removed" }), []);
+  });
 });
