@@ -5,6 +5,8 @@ import { eventTypeIdBySlug } from "../../../src/lanes/cal/event-types.ts";
 import {
   apiBase,
   bookingRowsForEmail,
+  createConfirmationEventType,
+  deleteEventType,
   PRO_EMAIL,
   PRO_SLUG_30,
   slotStartsAhead,
@@ -43,6 +45,57 @@ test.describe("P2-CAL-IDEM booking idempotency", () => {
       expect(rows.map((r) => r.status)).toEqual(["accepted"]);
     } finally {
       for (const uid of first.uids) await api.cancel(uid, "P2 lane cleanup");
+    }
+  });
+
+  test("P2-CAL-IDEM-001 a PENDING retry creates at most one PENDING booking", async ({
+    request,
+    calAuth,
+  }) => {
+    const slug = `p2-pend-${currentRunPrefix().slice(-8)}`;
+    const typeId = await createConfirmationEventType(
+      request,
+      calAuth,
+      slug,
+      `p2 pending ${currentRunPrefix()}`,
+    );
+    const api = calBookingApi({ request, apiBaseUrl: apiBase(), auth: calAuth });
+    const email = attendeeEmailFor(currentRunPrefix(), "idem-pending");
+    let firstUid = "";
+    try {
+      // Setup, asserted first: the type requires confirmation, and the first booking is PENDING.
+      expect(
+        await db().select(`SELECT "requiresConfirmation" AS rc FROM "EventType" WHERE "id" = $1`, [
+          typeId,
+        ]),
+      ).toEqual([{ rc: true }]);
+      const starts = await slotStartsAhead(request, calAuth, typeId);
+      const first = await api.create({
+        eventTypeId: typeId,
+        start: String(starts[0]),
+        attendeeEmail: email,
+        attendeeName: "pending",
+      });
+      expect(first.status).toBe(201);
+      firstUid = first.uids[0] ?? "";
+      expect(await bookingRowsForEmail(db(), email)).toEqual([
+        { uid: firstUid, status: "pending" },
+      ]);
+      // Retry of the identical request: the API answers the same booking and no second row is created.
+      const second = await api.create({
+        eventTypeId: typeId,
+        start: String(starts[0]),
+        attendeeEmail: email,
+        attendeeName: "pending",
+      });
+      expect(second.uids).toEqual([firstUid]);
+      const pendingRows = (await bookingRowsForEmail(db(), email)).filter(
+        (r) => r.status === "pending",
+      );
+      expect(pendingRows).toHaveLength(1);
+    } finally {
+      if (firstUid !== "") await api.cancel(firstUid, "P2 lane cleanup");
+      expect(await deleteEventType(request, calAuth, typeId)).toBe(200);
     }
   });
 });

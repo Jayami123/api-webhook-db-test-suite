@@ -79,3 +79,43 @@ export function must<T>(value: T | undefined, label: string): T {
   if (value === undefined) throw new Error(`TEST BUG: expected ${label}, found none`);
   return value;
 }
+
+/** A temporary event type that needs confirmation (API v2 2024-06-14 `confirmationPolicy`; the old `requiresConfirmation` field is dropped by whitelist). */
+export async function createConfirmationEventType(
+  request: ApiRequestLike,
+  auth: CalAuth,
+  slug: string,
+  title: string,
+): Promise<number> {
+  const res = await request.fetch(`${apiBase()}/v2/event-types`, {
+    method: "POST",
+    headers: {
+      "cal-api-version": "2024-06-14",
+      authorization: auth.headerValue.reveal(),
+      "content-type": "application/json",
+    },
+    data: JSON.stringify({
+      title,
+      slug,
+      lengthInMinutes: 30,
+      confirmationPolicy: { type: "always", blockUnconfirmedBookingsInBooker: false },
+    }),
+    failOnStatusCode: false,
+  });
+  const body = JSON.parse(await res.text()) as { data?: { id?: number } };
+  return must(body.data?.id, `created event type (HTTP ${String(res.status())})`);
+}
+
+/** Deletes a temporary event type (`DELETE /v2/event-types/{id}`); returns the HTTP status. */
+export async function deleteEventType(
+  request: ApiRequestLike,
+  auth: CalAuth,
+  id: number,
+): Promise<number> {
+  const res = await request.fetch(`${apiBase()}/v2/event-types/${String(id)}`, {
+    method: "DELETE",
+    headers: { "cal-api-version": "2024-06-14", authorization: auth.headerValue.reveal() },
+    failOnStatusCode: false,
+  });
+  return res.status();
+}

@@ -86,12 +86,18 @@ warm `up cal` 28 s, `down cal` 2 s (plan section 2 timings reproduced).
 - `yoga-class` (recurring): one `POST /v2/bookings` answers 201 with `data` as an array of 12 occurrences, all `accepted`.
 - Cancel one occurrence: 200; one row `cancelled`, 11 `accepted`; one BOOKING_CANCELLED delivery on the next tasker run (REC-002).
 
-## L10 PENDING (run "probe-c")
+## L10 PENDING with confirmationPolicy (probe "probe-pend", then the suite)
 
-- `POST /v2/event-types` with `requiresConfirmation: true` (version `2024-06-14`) answers 201. A booking on it is **ACCEPTED**, not
-  PENDING, and the duplicate answers 400 (single row). No PENDING booking was produced, so the PENDING duplicate case cannot be exercised
-  as the plan describes. Decision: PROPOSE CUT for the PENDING sub-case of IDEM-001; the ACCEPTED positive control stays.
-- The temporary event type was deleted with `DELETE /v2/event-types/{id}` (200).
+- The first attempt (earlier run) sent `requiresConfirmation: true`. API v2 2024-06-14 does not take that field; its input is
+  `confirmationPolicy` (`BaseConfirmationPolicy_2024_06_14` in `contracts/cal/openapi-v2.json`). Its ValidationPipe uses
+  `whitelist: true`, so the unknown field was dropped silently, and bookings were ACCEPTED. That earlier "PENDING cut" was a probe bug.
+- Re-measured with `confirmationPolicy: {"type":"always","blockUnconfirmedBookingsInBooker":false}`:
+  - `POST /v2/event-types` (2024-06-14): 201; the `EventType` row has `requiresConfirmation = true` (qa_ro assertion).
+  - first `POST /v2/bookings` (same slot, attendee): 201; Booking row status `pending`, one row.
+  - second identical `POST /v2/bookings`: 201, the same booking uid, still one row (no duplicate PENDING).
+  - cleanup: cancel 200; `DELETE /v2/event-types/{id}`: 200.
+- Result: one PENDING row for the retry. No PENDING duplicate observed, so IDEM-001 PENDING closes (D9) with no finding.
+  Covered by `tests/integration/cal/cal-idem.spec.ts` ("a PENDING retry creates at most one PENDING booking").
 
 ## L11 availability and timezones (run "probe-d" and suite)
 
