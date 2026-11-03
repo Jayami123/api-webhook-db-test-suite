@@ -38,3 +38,12 @@ describe("capture oracle (medusa lane)", () => {
     });
   });
 });
+
+describe("live order oracle (medusa lane)", () => {
+  test("liveOrderIdsForCart counts only live links to live orders", () => {
+    const sql = ORACLE_QUERIES.liveOrderIdsForCart;
+    assert.match(sql, /oc\."deleted_at" IS NULL/);
+    assert.match(sql, /o\."deleted_at" IS NULL/);
+    assert.match(sql, /JOIN "order" o ON o\."id" = oc\."order_id"/);
+  });
+});

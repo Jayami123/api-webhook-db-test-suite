@@ -28,6 +28,7 @@ export const ORACLE_QUERIES = {
   orderDiscountText: `SELECT COALESCE(SUM(a."amount"), 0)::text AS amt FROM "order_line_item_adjustment" a JOIN "order_item" oi ON oi."item_id" = a."item_id" JOIN (SELECT DISTINCT ON ("order_id") "order_id", "version" AS v FROM "order_summary" WHERE "deleted_at" IS NULL ORDER BY "order_id", "version" DESC) latest ON latest."order_id" = oi."order_id" AND oi."version" = latest.v AND a."version" = latest.v WHERE oi."order_id" = $1 AND a."deleted_at" IS NULL`,
   paymentCapturedAt: `SELECT p."captured_at"::text AS captured_at FROM "payment" p WHERE p."payment_session_id" = $1 AND p."deleted_at" IS NULL`,
   captureRowCount: `SELECT COUNT(*)::text AS n FROM "capture" c JOIN "payment" p ON p."id" = c."payment_id" WHERE p."payment_session_id" = $1 AND c."deleted_at" IS NULL`,
+  liveOrderIdsForCart: `SELECT o."id" AS id FROM "order_cart" oc JOIN "order" o ON o."id" = oc."order_id" WHERE oc."cart_id" = $1 AND oc."deleted_at" IS NULL AND o."deleted_at" IS NULL ORDER BY o."id"`,
   reservationLiveCount: `SELECT COUNT(*)::text AS n FROM "reservation_item" WHERE "inventory_item_id" = $1 AND "deleted_at" IS NULL`,
   orderLineSum: `SELECT COALESCE(SUM(oi."quantity" * li."unit_price"), 0)::text AS items FROM "order_item" oi JOIN "order_line_item" li ON li."id" = oi."item_id" JOIN LATERAL (SELECT MAX("version") AS v FROM "order_summary" os WHERE os."order_id" = oi."order_id" AND os."deleted_at" IS NULL) latest ON oi."version" = latest.v WHERE oi."order_id" = $1 AND oi."deleted_at" IS NULL`,
 } as const;
@@ -184,4 +185,10 @@ export async function paymentCapturedAt(sessionId: string): Promise<string | nul
 export async function captureRowCount(sessionId: string): Promise<number> {
   const rows = await db().select<{ n: string }>(ORACLE_QUERIES.captureRowCount, [sessionId]);
   return Number(rows[0]?.n ?? "0");
+}
+
+/** Ids of the live orders linked to a cart through a live link (a soft-deleted link does not count). */
+export async function liveOrderIdsForCart(cartId: string): Promise<string[]> {
+  const rows = await db().select<{ id: string }>(ORACLE_QUERIES.liveOrderIdsForCart, [cartId]);
+  return rows.map((r) => r.id);
 }
