@@ -10,7 +10,14 @@ import { runScopedName } from "../../../src/run/prefix.ts";
  * The OpenAPI document is served only to an authenticated caller (P-TW-10: 403 without the bearer). The test saves the
  * authenticated document to the run's results folder and loads that file, because the loader takes a file, not a URL.
  */
-const OAS_FILE = path.join("results", "tw-oas-core.json");
+/** One OAS file per object (a shared file rewritten per case is not evidence). */
+const oasFileFor = (label: string): string => path.join("results", `tw-oas-${label}.json`);
+/** The list filter field: people are searched by firstName, the other objects by name. */
+const NAME_FILTER: Record<string, string> = {
+  people: "name.firstName",
+  companies: "name",
+  opportunities: "name",
+};
 /** The validator's print cap (src/contracts/oas.ts:32, MAX_ERRORS = 10). The count guard below stays under it. */
 const MAX_ERRORS = 10;
 
@@ -37,10 +44,10 @@ for (const [label, route] of [
     const headers = twAuthHeaders(twAuth);
     const oas = await request.get(`${apiBaseUrl("twenty")}/rest/open-api/core`, { headers });
     expect(oas.status()).toBe(200);
-    writeFileSync(OAS_FILE, await oas.text());
-    const spec = await loadSpec("twenty-core-oas", OAS_FILE);
+    writeFileSync(oasFileFor(label), await oas.text());
+    const spec = await loadSpec(`twenty-core-oas-${label}`, oasFileFor(label));
 
-    // One record of this run, created first, so the one-id check has a record the lane knows.
+    // One record of this run, created first: the list must contain it, and the one-id check uses it.
     const created = await request.post(`${apiBaseUrl("twenty")}/rest${route}`, {
       headers: { ...headers, "content-type": "application/json" },
       data: CREATE[label]?.(runScopedName(`con1-${label}`)),
@@ -55,14 +62,22 @@ for (const [label, route] of [
     ]?.id;
     expect(id, "setup: created id").toEqual(expect.any(String));
     try {
-      // The spec key is relative to the server URL (http://127.0.0.1:3002/rest/): /people is GET /rest/people.
-      const res = await request.get(`${apiBaseUrl("twenty")}/rest${route}?limit=1`, { headers });
+      // The run's records only (filter by the run prefix), at the default page size. The spec key is relative to the
+      // server URL (http://127.0.0.1:3002/rest/): /people is GET /rest/people.
+      const prefix = runScopedName(`con1-${label}`);
+      const filter = encodeURIComponent(`${NAME_FILTER[label] ?? "name"}[like]:${prefix}%`);
+      const res = await request.get(`${apiBaseUrl("twenty")}/rest${route}?filter=${filter}`, {
+        headers,
+      });
       expect(res.status()).toBe(200);
-      const body = (await res.json()) as { data: Record<string, unknown[]> };
+      const body = (await res.json()) as { data: Record<string, { id: string }[]> };
+      // Setup, asserted: the run's record is on the page (so the validator checks the records this run created).
+      expect(
+        (body.data[label] ?? []).map((r) => r.id),
+        "setup: the run's record is in the filtered page",
+      ).toContain(id);
       const result = spec.validate({ method: "get", path: route }, { status: 200 }, body);
       expect(result.matchedStatus).toBe("200");
-      // Setup, asserted before the known-bug marker: a non-empty list the validator really checked.
-      expect(body.data[label]?.length ?? 0, "setup: the list is not empty").toBeGreaterThan(0);
 
       const one = await request.get(`${apiBaseUrl("twenty")}/rest${route}/${id}`, { headers });
       expect(one.status()).toBe(200);
