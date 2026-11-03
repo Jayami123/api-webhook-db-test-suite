@@ -15,6 +15,11 @@ export const medusaSlo = {
     basis:
       "equals expect.timeout (playwright.config.ts:40, 10 s). The invalidation is observed at 51 ms after an admin price update with the cache on (P-MED-7, 0.3.1)",
   },
+  medCsvImport: {
+    ms: 20_000,
+    basis:
+      "the confirm route releases the waiting import step and answers 202 at once (@medusajs/medusa dist/api/admin/products/imports/[transaction_id]/confirm/route.js:13-22); the import then runs as a workflow on the workflow engine (Redis when MEDUSA_REDIS=1). Derived as the workflow margin of medWebhookProcessing: 25 s = 5 s emit delay + 20 s margin, and this route has no emit delay, so 20 s. Observed 255 ms for 100 products (P-MED-13)",
+  },
   medPoisonParked: {
     ms: 30_000,
     basis:

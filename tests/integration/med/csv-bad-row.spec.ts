@@ -3,15 +3,13 @@ import { laneOf, type LaneClient } from "../../../src/lanes/med/lane-client.ts";
 import { ORACLE_QUERIES } from "../../../src/lanes/med/oracle.ts";
 import { readOnlyDb } from "../../../src/db/pg.ts";
 import { likePrefixPattern, runScopedName } from "../../../src/run/prefix.ts";
-import { POLL_INTERVALS } from "../../../src/slo.ts";
+import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 
 /**
- * Product import, observed on 2026-11-02 (P-MED-13): the whole file is refused at preview when one
- * price is invalid (400 invalid_data, no product written), and a valid file imports after confirm.
- * The import confirm is a workflow job; its deadline is a policy bound local to this spec (observed
- * 255 ms for 100 products). It is not one of the three SLO entries of the plan.
+ * Product import, observed on 2026-11-02 (P-MED-13): the whole file is refused at preview when one price is
+ * invalid (400 invalid_data, no product written), and a valid file imports after confirm. The confirm deadline
+ * is the lane's SLO entry medCsvImport (src/slo/medusa.ts), derived and cited there.
  */
-const IMPORT_DEADLINE_MS = 30_000;
 
 function csvFor(prefix: string, badRow: number | undefined): string {
   const head =
@@ -79,7 +77,7 @@ test.describe("medusa product csv import", () => {
       ).toBe(202);
       await expect
         .poll(() => productsWithPrefix(okPrefix), {
-          timeout: IMPORT_DEADLINE_MS,
+          timeout: SLO.medCsvImport.ms,
           intervals: POLL_INTERVALS,
           message: "valid file products after confirm",
         })
