@@ -29,6 +29,8 @@ export const ORACLE_QUERIES = {
   paymentCapturedAt: `SELECT p."captured_at"::text AS captured_at FROM "payment" p WHERE p."payment_session_id" = $1 AND p."deleted_at" IS NULL`,
   captureRowCount: `SELECT COUNT(*)::text AS n FROM "capture" c JOIN "payment" p ON p."id" = c."payment_id" WHERE p."payment_session_id" = $1 AND c."deleted_at" IS NULL`,
   liveOrderIdsForCart: `SELECT o."id" AS id FROM "order_cart" oc JOIN "order" o ON o."id" = oc."order_id" WHERE oc."cart_id" = $1 AND oc."deleted_at" IS NULL AND o."deleted_at" IS NULL ORDER BY o."id"`,
+  orderShippingText: `SELECT COALESCE(SUM(m."amount"), 0)::text AS amt FROM "order_shipping" s JOIN (SELECT DISTINCT ON ("order_id") "order_id", "version" AS v FROM "order_summary" WHERE "deleted_at" IS NULL ORDER BY "order_id", "version" DESC) latest ON latest."order_id" = s."order_id" AND s."version" = latest.v JOIN "order_shipping_method" m ON m."id" = s."shipping_method_id" WHERE s."order_id" = $1 AND s."deleted_at" IS NULL AND m."deleted_at" IS NULL`,
+  orderTaxLineCount: `SELECT ((SELECT COUNT(*) FROM "order_line_item_tax_line" t JOIN "order_item" oi ON oi."item_id" = t."item_id" WHERE oi."order_id" = $1 AND t."deleted_at" IS NULL) + (SELECT COUNT(*) FROM "order_shipping_method_tax_line" st JOIN "order_shipping" s ON s."shipping_method_id" = st."shipping_method_id" WHERE s."order_id" = $1 AND st."deleted_at" IS NULL))::text AS n`,
   reservationLiveCount: `SELECT COUNT(*)::text AS n FROM "reservation_item" WHERE "inventory_item_id" = $1 AND "deleted_at" IS NULL`,
   orderLineSum: `SELECT COALESCE(SUM(oi."quantity" * li."unit_price"), 0)::text AS items FROM "order_item" oi JOIN "order_line_item" li ON li."id" = oi."item_id" JOIN LATERAL (SELECT MAX("version") AS v FROM "order_summary" os WHERE os."order_id" = oi."order_id" AND os."deleted_at" IS NULL) latest ON oi."version" = latest.v WHERE oi."order_id" = $1 AND oi."deleted_at" IS NULL`,
 } as const;
@@ -191,4 +193,19 @@ export async function captureRowCount(sessionId: string): Promise<number> {
 export async function liveOrderIdsForCart(cartId: string): Promise<string[]> {
   const rows = await db().select<{ id: string }>(ORACLE_QUERIES.liveOrderIdsForCart, [cartId]);
   return rows.map((r) => r.id);
+}
+
+/** Live shipping amount of the latest order version, major units as text ("0" when the order has no shipping method). */
+export async function orderShippingText(orderId: string): Promise<string> {
+  const rows = await db().select<{ amt: string }>(ORACLE_QUERIES.orderShippingText, [orderId]);
+  return rows[0]?.amt ?? "0";
+}
+
+/**
+ * Live tax lines of the order's items and shipping methods. Tax lines store a RATE, not an amount, so a
+ * tax term cannot be read from the database: the identity relies on this count being zero (no tax rates).
+ */
+export async function orderTaxLineCount(orderId: string): Promise<number> {
+  const rows = await db().select<{ n: string }>(ORACLE_QUERIES.orderTaxLineCount, [orderId]);
+  return Number(rows[0]?.n ?? "0");
 }

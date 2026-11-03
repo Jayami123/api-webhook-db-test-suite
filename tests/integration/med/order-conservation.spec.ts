@@ -2,9 +2,11 @@ import { test, expect } from "../../../src/fixtures/index.ts";
 import { laneOf, type LaneCurrency } from "../../../src/lanes/med/lane-client.ts";
 import { openPaidSession, renewPaymentSession } from "../../../src/lanes/med/cart-flow.ts";
 import {
-  orderTotalMinor as orderTotalFromDb,
   orderItemDiscountText,
   orderLineSumText,
+  orderShippingText,
+  orderTaxLineCount,
+  orderTotalMinor as orderTotalFromDb,
 } from "../../../src/lanes/med/oracle.ts";
 import { orderTotalMinor, toMinor } from "../../../src/lanes/med/money.ts";
 import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
@@ -79,10 +81,15 @@ test.describe("medusa order conservation", () => {
         // Components from the database (minor units), then the identity.
         const itemsMinor = toMinor(Number(await orderLineSumText(orderId)), c.currency);
         const discountMinor = toMinor(Number(await orderItemDiscountText(orderId)), c.currency);
+        // Zero terms, asserted from the database before the identity is applied (probe P-MED-21):
+        // no shipping method on the order, and no live tax line on its items or shipping methods.
+        const shippingMinor = toMinor(Number(await orderShippingText(orderId)), c.currency);
+        expect(shippingMinor, `${c.currency} shipping: no shipping method on the order`).toBe(0);
+        expect(await orderTaxLineCount(orderId), `${c.currency} live tax lines`).toBe(0);
         const totalMinor = await orderTotalFromDb(orderId, c.currency);
         const expectedMinor = orderTotalMinor({
           items: [{ unitMinor: toMinor(c.unitMajor, c.currency), quantity: c.quantity }],
-          shippingMinor: 0,
+          shippingMinor,
           taxMinor: 0,
           discountMinor,
         });
