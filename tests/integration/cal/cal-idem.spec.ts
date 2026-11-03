@@ -88,11 +88,13 @@ test.describe("P2-CAL-IDEM booking idempotency", () => {
         attendeeEmail: email,
         attendeeName: "pending",
       });
+      // Measured (probe L10): the retry answers 201 with the same uid.
+      expect(second.status).toBe(201);
       expect(second.uids).toEqual([firstUid]);
-      const pendingRows = (await bookingRowsForEmail(db(), email)).filter(
-        (r) => r.status === "pending",
-      );
-      expect(pendingRows).toHaveLength(1);
+      // Every row for this email, unfiltered: no extra row of any status may hide behind a filter.
+      expect(await bookingRowsForEmail(db(), email)).toEqual([
+        { uid: firstUid, status: "pending" },
+      ]);
     } finally {
       if (firstUid !== "") await api.cancel(firstUid, "P2 lane cleanup");
       expect(await deleteEventType(request, calAuth, typeId)).toBe(200);
