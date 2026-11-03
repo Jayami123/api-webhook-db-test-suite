@@ -1,4 +1,5 @@
 import { test, expect } from "../../../src/fixtures/index.ts";
+import { laneEnvGate } from "../../../src/lanes/med/env-gate.ts";
 import { laneOf } from "../../../src/lanes/med/lane-client.ts";
 import { redisKeys } from "../../../src/lanes/med/redis.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
@@ -6,11 +7,12 @@ import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 
 // The core cache is on only with the exact string "true" (medusa-env.ts:184-186; F4). With the flag
 // off the product does not cache and this case has nothing to observe.
-const cacheOn = process.env["MEDUSA_FF_CACHING"] === "true";
-test.skip(
-  !cacheOn,
-  'MEDUSA_FF_CACHING is not the string "true": the core cache is off (medusa-env.ts:184-186)',
-);
+const cacheGate = laneEnvGate("MEDUSA_FF_CACHING", {
+  isValid: (value) => value === "true",
+  expectText: 'the string "true"',
+  reason: "the core cache is off without it (medusa-env.ts:184-186, F4)",
+});
+test.skip(!cacheGate.ready, cacheGate.ready ? "" : cacheGate.reason);
 
 test.describe("medusa product cache", () => {
   test("P2-MED-CACHE-001 an admin price change is visible on the next store read while the cache is on", async ({

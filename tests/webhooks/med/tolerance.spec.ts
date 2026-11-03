@@ -1,4 +1,5 @@
 import { test, expect } from "../../../src/fixtures/index.ts";
+import { isStripeTestKey, laneEnvGate } from "../../../src/lanes/med/env-gate.ts";
 import { laneOf } from "../../../src/lanes/med/lane-client.ts";
 import {
   buildPaymentEvent,
@@ -23,11 +24,12 @@ const TOLERANCE_S = 300;
 const ACCEPT_RECEIPT_AGE_S =
   TOLERANCE_S - EMIT_DELAY_S - Math.ceil(SLO.medWebhookProcessing.ms / 1000); // 270
 
-const hasKey = Boolean(process.env["STRIPE_API_KEY"]);
-test.skip(
-  !hasKey,
-  "STRIPE_API_KEY not set: the Stripe payment provider does not load without it (RD-19)",
-);
+const stripeGate = laneEnvGate("STRIPE_API_KEY", {
+  isValid: isStripeTestKey,
+  expectText: "a Stripe test-mode key (sk_test_)",
+  reason: "the Stripe payment provider does not load without it (RD-19)",
+});
+test.skip(!stripeGate.ready, stripeGate.ready ? "" : stripeGate.reason);
 
 test.describe("medusa webhook tolerance", () => {
   test(`P2-MED-WH-006 receipt age ${String(ACCEPT_RECEIPT_AGE_S)} s is accepted (margin = the processing budget)`, async ({

@@ -1,4 +1,5 @@
 import { test, expect } from "../../../src/fixtures/index.ts";
+import { isStripeTestKey, laneEnvGate } from "../../../src/lanes/med/env-gate.ts";
 import { laneOf } from "../../../src/lanes/med/lane-client.ts";
 import {
   buildPaymentEvent,
@@ -9,11 +10,12 @@ import { captureRowCount, paymentRowCount, paymentSession } from "../../../src/l
 import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 
-const hasKey = Boolean(process.env["STRIPE_API_KEY"]);
-test.skip(
-  !hasKey,
-  "STRIPE_API_KEY not set: the Stripe payment provider does not load without it (RD-19)",
-);
+const stripeGate = laneEnvGate("STRIPE_API_KEY", {
+  isValid: isStripeTestKey,
+  expectText: "a Stripe test-mode key (sk_test_)",
+  reason: "the Stripe payment provider does not load without it (RD-19)",
+});
+test.skip(!stripeGate.ready, stripeGate.ready ? "" : stripeGate.reason);
 
 test.describe("medusa out-of-order payment events", () => {
   test("P2-MED-WH-003 succeeded before amount_capturable_updated ends authorized in the database", async ({

@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { isStripeTestKey, laneEnvGate } from "../../../src/lanes/med/env-gate.ts";
 import { test, expect } from "../../../src/fixtures/index.ts";
 import { laneOf } from "../../../src/lanes/med/lane-client.ts";
 import {
@@ -12,11 +13,12 @@ import { redisHget, redisZrange } from "../../../src/lanes/med/redis.ts";
 import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 
-const hasKey = Boolean(process.env["STRIPE_API_KEY"]);
-test.skip(
-  !hasKey,
-  "STRIPE_API_KEY not set: the Stripe payment provider does not load without it (RD-19)",
-);
+const stripeGate = laneEnvGate("STRIPE_API_KEY", {
+  isValid: isStripeTestKey,
+  expectText: "a Stripe test-mode key (sk_test_)",
+  reason: "the Stripe payment provider does not load without it (RD-19)",
+});
+test.skip(!stripeGate.ready, stripeGate.ready ? "" : stripeGate.reason);
 
 const FAILED_SET = "RedisEventBusService:events-queue:failed";
 const jobKey = (id: string): string => `RedisEventBusService:events-queue:${id}`;
