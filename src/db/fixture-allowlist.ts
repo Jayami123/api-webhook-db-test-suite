@@ -44,7 +44,7 @@ export const FIXTURE_ALLOWLIST: Readonly<Record<ProductId, readonly FixtureColum
       pkKind: "int",
       column: "expiresAt",
       kind: "timestamp",
-      cases: ["P2-DOC-EXP-001", "P2-DOC-EXP-002"],
+      cases: ["P2-DOC-EXP-001", "P2-DOC-EXP-002", "P2-DOC-EXP-003"],
       cite: "packages/prisma/schema.prisma:640 (Recipient.expiresAt); packages/lib/jobs/definitions/internal/expire-recipients-sweep.handler.ts:13",
     },
     {
