@@ -16,7 +16,8 @@ function dailySecret(): string {
 
 const route = (): string => `${webBase()}/api/recorded-daily-video`;
 const json = { "content-type": "application/json" };
-const RECORDING_BODY = '{"triggerEvent":"RECORDING_READY","payload":{"x":1}}';
+/** Daily-shaped: the route dispatches on `type` (route.ts:86); this payload fails recordingReadySchema. */
+const RECORDING_BODY = '{"type":"recording.ready-to-download","payload":{"x":1}}';
 
 test.describe("P2-CAL-DLY recorded-daily-video route", () => {
   test("P2-CAL-DLY-002 tampered body with the old signature is rejected with 403", async ({
@@ -31,14 +32,14 @@ test.describe("P2-CAL-DLY recorded-daily-video route", () => {
     const res = await request.fetch(route(), {
       method: "POST",
       headers: { ...json, ...signed.headers },
-      data: RECORDING_BODY.replace("RECORDING_READY", "RECORDING_XXXXX"),
+      data: RECORDING_BODY.replace("recording.ready-to-download", "recording.xxxx-xxxx-xxxx"),
       failOnStatusCode: false,
     });
     expect(res.status()).toBe(403);
     expect(JSON.parse(await res.text())).toEqual({ message: "Signature does not match" });
   });
 
-  test("P2-CAL-DLY-002 a canonical signature is accepted (not 403): the body then fails the handler's type check", async ({
+  test("P2-CAL-DLY-002 a canonical signature is accepted (not 403): the Daily-shaped body fails the payload check", async ({
     request,
   }) => {
     const ts = String(Math.floor(Date.now() / 1000));
@@ -53,7 +54,25 @@ test.describe("P2-CAL-DLY recorded-daily-video route", () => {
       data: RECORDING_BODY,
       failOnStatusCode: false,
     });
-    // Measured (docs/probes/2026-11-02-p2-lane-cal-live-probes.md L2): 200 "Invalid type in /recorded-daily-video" (plan said 400 Invalid Payload).
+    // Measured on the live stack (docs/probes/2026-11-02-p2-lane-cal-live-probes.md L2): 400 Invalid Payload.
+    expect(res.status()).not.toBe(403);
+    expect(res.status()).toBe(400);
+    expect(JSON.parse(await res.text())).toEqual({ message: "Invalid Payload" });
+  });
+
+  test("P2-CAL-DLY-002 observed contract: an unknown type with a valid signature answers 200 Invalid type", async ({
+    request,
+  }) => {
+    const body = '{"type":"unknown.event","payload":{}}';
+    const ts = String(Math.floor(Date.now() / 1000));
+    const signed = signedDailyRequest({ secretBase64: dailySecret(), body, timestamp: ts });
+    const res = await request.fetch(route(), {
+      method: "POST",
+      headers: { ...json, ...signed.headers },
+      data: body,
+      failOnStatusCode: false,
+    });
+    // Observed (L2): the route's final branch answers 200 for a type it does not handle (route.ts:223-225).
     expect(res.status()).toBe(200);
     expect(JSON.parse(await res.text())).toEqual({
       message: "Invalid type in /recorded-daily-video",
@@ -64,7 +83,7 @@ test.describe("P2-CAL-DLY recorded-daily-video route", () => {
     request,
   }) => {
     const ts = String(Math.floor(Date.now() / 1000));
-    const spaced = '{"triggerEvent":  "RECORDING_READY", "payload":{"x":1}}';
+    const spaced = '{"type":  "recording.ready-to-download", "payload":{"x":1}}';
     const signed = signedDailyRequest({
       secretBase64: dailySecret(),
       body: spaced,

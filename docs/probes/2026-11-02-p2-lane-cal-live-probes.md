@@ -26,7 +26,9 @@ warm `up cal` 28 s, `down cal` 2 s (plan section 2 timings reproduced).
 | Request | Status | Body |
 |---|---|---|
 | unsigned `{"test":"test"}` | 200 | `Test request successful` (zero DB writes: DLY-003) |
-| signed (canonical) non-test body `{"triggerEvent":"RECORDING_READY","payload":{"x":1}}` | 200 | `Invalid type in /recorded-daily-video` (plan said 400 `Invalid Payload`: corrected) |
+| signed (canonical), Daily-shaped body `{"type":"recording.ready-to-download","payload":{"x":1}}` | 400 | `Invalid Payload` (route.ts:86-90: dispatch on `type`, then `recordingReadySchema`). Re-measured in the fix run; the plan's 400 was right |
+| signed (canonical), body without `type` `{"triggerEvent":"RECORDING_READY",...}` | 200 | `Invalid type in /recorded-daily-video` (the final branch, route.ts:223-225). This was the earlier fixture's mistake, not a product behaviour to assert as the accepted-signature case |
+| signed, unknown `type` `{"type":"unknown.event","payload":{}}` | 200 | `Invalid type in /recorded-daily-video` (observed contract, separate test) |
 | tampered body, old signature | 403 | `Signature does not match` |
 | raw-signed non-canonical body | 403 | `Signature does not match` |
 | reserialised signature over a non-canonical body | 200 | `Invalid type in /recorded-daily-video` (the route verifies `JSON.stringify(parsed)`) |
