@@ -4,7 +4,7 @@ import { loadAuthEnv } from "../../../src/auth/env.ts";
 import { twentyClient, type TwentyClient } from "../../../src/clients/twenty.ts";
 import type { TwentyAuth } from "../../../src/auth/twenty.ts";
 import { readOnlyDb } from "../../../src/db/pg.ts";
-import { liveGate } from "../../../src/lanes/tw/gates.ts";
+import { requireTwEnv } from "../../../src/lanes/tw/gates.ts";
 import { deliveriesOf } from "../../../src/lanes/tw/visible.ts";
 import { awaitCanary } from "../../../src/lanes/tw/waits.ts";
 import { quietState } from "../../../src/lanes/tw/quiet.ts";
@@ -23,8 +23,6 @@ import {
   TW_QUIET_WINDOW_MS,
 } from "../../../src/lanes/tw/slo.ts";
 import { runScopedName, currentRunPrefix } from "../../../src/run/prefix.ts";
-
-const multiWorkspace = (process.env["IS_MULTIWORKSPACE_ENABLED"] ?? "").trim() === "true";
 
 /** Signs the test user in to the first workspace and returns a workspace token that can create workspaces. */
 async function userToken(base: string): Promise<string> {
@@ -55,11 +53,8 @@ test("P2-TW-WH-009 @multiws: a webhook delivers only inside its own workspace", 
   request,
   receiverHandle,
 }) => {
-  const gate = liveGate(
-    "P2-TW-WH-009",
-    multiWorkspace,
-    "needs the multi-workspace stack: IS_MULTIWORKSPACE_ENABLED=true and TWENTY_BASE_URL on a hostname",
-  );
+  // Locally a missing flag skips with the reason; in CI (the tw-multiws job) it fails (review addendum A7).
+  const gate = requireTwEnv("IS_MULTIWORKSPACE_ENABLED", "true");
   test.skip(gate.skip, gate.reason);
 
   const base = apiBaseUrl("twenty");
@@ -79,6 +74,7 @@ test("P2-TW-WH-009 @multiws: a webhook delivers only inside its own workspace", 
   let twB: TwentyClient | undefined;
   let hookB: FreshWebhook | undefined;
   let deletedB = false;
+  let activatedB = false;
   try {
     // Canary for A (A's own webhook, in A).
     createdInA.push(
@@ -88,6 +84,7 @@ test("P2-TW-WH-009 @multiws: a webhook delivers only inside its own workspace", 
     // Setup, asserted: the second workspace exists, is activated, and has its own key.
     ws = await createSecondWorkspace(base, await userToken(base));
     const token = await activateSecondWorkspace(base, ws);
+    activatedB = true;
     expect(token, "setup: activation returned a workspace token").toEqual(expect.any(String));
     keyBAuth = await mintKeyForWorkspace(base, ws, runScopedName("tw-tenant-key-b"));
     expect(await keyBAuth.isAccepted(), "setup: B's key is accepted by B").toBe(true);
@@ -153,6 +150,9 @@ test("P2-TW-WH-009 @multiws: a webhook delivers only inside its own workspace", 
       if (hookB !== undefined) await hookB.remove();
       if (keyBAuth !== undefined) await keyBAuth.revoke();
       if (ws !== undefined) {
+        // A pending workspace cannot be deleted through the product (probe record, B-P16 and BUG-004). If setup never
+        // activated it, activate it first, so a failure is reported as the setup cause and not as a delete error.
+        if (!activatedB) await activateSecondWorkspace(base, ws);
         await softDeleteSecondWorkspace(base, ws);
         deletedB = true;
       }

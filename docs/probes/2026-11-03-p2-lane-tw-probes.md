@@ -226,3 +226,13 @@ returned no violations (`npx playwright test` exit 0).
 - Header name at the pin: `X-Twenty-Webhook-Nonce`, set at `packages/twenty-server/src/engine/metadata-modules/webhook/jobs/call-webhook.job.ts:98`, value `crypto.randomBytes(16).toString('hex')` (32 hex characters). The name is also in `computeWebhooks.utils.ts:55`. `TWENTY_NONCE_HEADER` (`src/webhooks/sign.ts:51`) matches.
 - Timestamp and signature headers: `call-webhook.job.ts:92-96` (`X-Twenty-Webhook-Timestamp`, `X-Twenty-Webhook-Signature`).
 - Case: setup asserts the original carries a 32-hex nonce and the replacement (each hex digit rotated) differs. The rotated nonce verifies. Control: a timestamp changed by 1 ms fails verification. WH-001 byte-flip is kept.
+
+**A7 (multi-workspace flag in CI; delete prerequisites).**
+- Delete prerequisite, probed: `deleteCurrentWorkspace` on a PENDING_CREATION workspace fails with the check-constraint error
+  (B-P16, BUG-004, reproduced 2 of 2). On an ACTIVE workspace (after `activateWorkspace` with a fresh login-token exchange) it
+  succeeds (review fix step 8 cleanup: both leftovers activated, then deleted; `deletedAt` set). So cleanup in WH-009 activates
+  first when setup did not (`tenant.spec.ts`, `activatedB`).
+- CI behaviour: `requireTwEnv` (`src/lanes/tw/gates.ts`) throws `CI: IS_MULTIWORKSPACE_ENABLED must be "true" …` when the flag is
+  missing (checked: `CI=1` run of WH-009 without the flag fails with that message). Locally the same case skips with the reason.
+  The message names the variable and the required value, never the value set.
+- Used by WH-009 (`tw-multiws`) and CACHE-001 (`TWENTY_SERVER_REPLICAS=2`, `tw-cache`).

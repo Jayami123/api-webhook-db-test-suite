@@ -15,3 +15,19 @@ export function liveGate(name: string, ready: boolean, blockedBy: string): Gate 
 export function stripeKeyPresent(env: NodeJS.ProcessEnv = process.env): boolean {
   return (env["STRIPE_API_KEY"] ?? "").trim() !== "";
 }
+
+/**
+ * A job flag a live case needs (review addendum A7). Locally a missing or different value skips the case with the reason
+ * named. In CI (`CI` set) the same condition throws, so a job without its flag fails instead of passing with nothing run.
+ * The message names the variable and the required value, never the value that was set.
+ */
+export function requireTwEnv(
+  name: string,
+  expected: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Gate {
+  if ((env[name] ?? "").trim() === expected) return { skip: false, reason: "" };
+  const message = `${name} must be "${expected}" for this case (missing or different in this job)`;
+  if ((env["CI"] ?? "") !== "") throw new Error(`CI: ${message}`);
+  return { skip: true, reason: message };
+}

@@ -3,12 +3,10 @@ import { test, expect } from "../../../src/fixtures/index.ts";
 import type { APIRequestContext } from "@playwright/test";
 import { apiBaseUrl } from "../../../src/env.ts";
 import { twAuthHeaders } from "../../../src/lanes/tw/http.ts";
-import { liveGate } from "../../../src/lanes/tw/gates.ts";
+import { requireTwEnv } from "../../../src/lanes/tw/gates.ts";
 import { POLL_INTERVALS } from "../../../src/slo.ts";
 import { REPLICA_B_URL, CACHE_VISIBLE_BUDGET_MS } from "../../../src/lanes/tw/replicas.ts";
 import type { TwentyAuth } from "../../../src/auth/twenty.ts";
-
-const twoReplicas = (process.env["TWENTY_SERVER_REPLICAS"] ?? "").trim() === "2";
 
 async function metadata(request: APIRequestContext, base: string, auth: TwentyAuth, query: string) {
   const res = await request.post(`${base}/metadata`, {
@@ -25,11 +23,8 @@ test("P2-TW-CACHE-001 @replicas: a custom field added on replica A is visible on
   request,
   twAuth,
 }) => {
-  const gate = liveGate(
-    "P2-TW-CACHE-001",
-    twoReplicas,
-    "needs the two-replica stack: TWENTY_SERVER_REPLICAS=2 (server-2 on 127.0.0.1:3003)",
-  );
+  // Locally a missing flag skips with the reason; in CI (the tw-cache job) it fails (review addendum A7).
+  const gate = requireTwEnv("TWENTY_SERVER_REPLICAS", "2");
   test.skip(gate.skip, gate.reason);
 
   const a = apiBaseUrl("twenty");
