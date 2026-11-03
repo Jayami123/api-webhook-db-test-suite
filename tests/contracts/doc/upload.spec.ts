@@ -28,11 +28,37 @@ const upload = (
     failOnStatusCode: false,
   });
 
+/** DocumentData rows, read through qa_ro. The upload route writes one per stored file (files.ts:52). */
+const docDataCount = async (): Promise<number> =>
+  (
+    await readOnlyDb("documenso").select<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM "DocumentData"`,
+    )
+  )[0]?.n ?? -1;
+
+/**
+ * A positive control. It stores one DocumentData row and nothing deletes it: the upload route has no
+ * delete path for an orphan file (files.ts:29-54; the only deletes are envelope-bound, delete-envelope-item.ts:59
+ * and replace-envelope-item-pdf.ts:205, both at f4105e4). So the row persists by design; the test asserts
+ * the count grew by exactly one (the leak rules cannot match DocumentData, which has no name column).
+ */
+const positiveControl = async (
+  request: import("@playwright/test").APIRequestContext,
+  cookie: string,
+): Promise<void> => {
+  const before = await docDataCount();
+  const control = await upload(request, cookie, examplePdf(), "control.pdf");
+  expect(control.status()).toBe(200); // positive control first: a broken route would prove nothing
+  expect(await docDataCount()).toBe(before + 1);
+};
+
 test("P2-DOC-UP-001 a valid PDF upload with the session is accepted (positive control)", async ({
   request,
   docAuth,
 }) => {
+  const before = await docDataCount();
   const res = await upload(request, docAuth.sessionCookie.reveal(), examplePdf(), "control.pdf");
+  expect(await docDataCount()).toBe(before + (res.status() === 200 ? 1 : 0));
   expect(res.status()).toBe(200);
   const body = (await res.json()) as { id?: unknown };
   expect(typeof body.id).toBe("string");
@@ -42,15 +68,13 @@ test("P2-DOC-UP-001 a zero-byte PDF is refused with 4xx, not 500 (KNOWN PRODUCT 
   request,
   docAuth,
 }) => {
-  const control = await upload(
-    request,
-    docAuth.sessionCookie.reveal(),
-    examplePdf(),
-    "control.pdf",
-  );
-  expect(control.status()).toBe(200); // positive control first: a broken route would prove nothing
-  test.fail(true, PB_DOC_001);
+  await positiveControl(request, docAuth.sessionCookie.reveal());
+  const before = await docDataCount();
   const res = await upload(request, docAuth.sessionCookie.reveal(), Buffer.alloc(0), "empty.pdf");
+  // Setup asserts, before the expected failure: a 2xx is a new bug and must go red here.
+  expect(res.status(), "a 2xx stores the empty file (new bug)").toBeGreaterThanOrEqual(300);
+  expect(await docDataCount()).toBe(before);
+  test.fail(true, PB_DOC_001);
   expect([400, 415, 422]).toContain(res.status());
 });
 
@@ -58,16 +82,14 @@ test("P2-DOC-UP-002 an EXE renamed to .pdf is refused with 4xx (KNOWN PRODUCT BU
   request,
   docAuth,
 }) => {
-  const control = await upload(
-    request,
-    docAuth.sessionCookie.reveal(),
-    examplePdf(),
-    "control.pdf",
-  );
-  expect(control.status()).toBe(200);
-  test.fail(true, PB_DOC_001);
+  await positiveControl(request, docAuth.sessionCookie.reveal());
   const exe = Buffer.concat([Buffer.from("MZ"), Buffer.alloc(4096, 0x41)]); // MZ header, not a PDF
+  const before = await docDataCount();
   const res = await upload(request, docAuth.sessionCookie.reveal(), exe, "x.pdf");
+  // Setup asserts, before the expected failure: a 2xx is a new bug and must go red here.
+  expect(res.status(), "a 2xx stores the file (new bug)").toBeGreaterThanOrEqual(300);
+  expect(await docDataCount()).toBe(before);
+  test.fail(true, PB_DOC_001);
   expect([400, 415, 422]).toContain(res.status());
 });
 
@@ -75,16 +97,14 @@ test("P2-DOC-UP-003 a truncated PDF is refused with 4xx (KNOWN PRODUCT BUG PB-DO
   request,
   docAuth,
 }) => {
-  const control = await upload(
-    request,
-    docAuth.sessionCookie.reveal(),
-    examplePdf(),
-    "control.pdf",
-  );
-  expect(control.status()).toBe(200);
-  test.fail(true, PB_DOC_001);
+  await positiveControl(request, docAuth.sessionCookie.reveal());
   const truncated = examplePdf().subarray(0, 1000);
+  const before = await docDataCount();
   const res = await upload(request, docAuth.sessionCookie.reveal(), truncated, "trunc.pdf");
+  // Setup asserts, before the expected failure: a 2xx is a new bug and must go red here.
+  expect(res.status(), "a 2xx stores the file (new bug)").toBeGreaterThanOrEqual(300);
+  expect(await docDataCount()).toBe(before);
+  test.fail(true, PB_DOC_001);
   expect([400, 415, 422]).toContain(res.status());
 });
 
@@ -112,15 +132,13 @@ test("P2-DOC-UP-005 an encrypted PDF is refused with 4xx and stores nothing (KNO
   request,
   docAuth,
 }) => {
-  const control = await upload(
-    request,
-    docAuth.sessionCookie.reveal(),
-    examplePdf(),
-    "control.pdf",
-  );
-  expect(control.status()).toBe(200);
-  test.fail(true, PB_DOC_001);
+  await positiveControl(request, docAuth.sessionCookie.reveal());
   const encrypted = readFileSync(path.join("tests", "fixtures", "doc", "encrypted-example.pdf"));
+  const before = await docDataCount();
   const res = await upload(request, docAuth.sessionCookie.reveal(), encrypted, "enc.pdf");
+  // Setup asserts, before the expected failure: a 2xx stores the encrypted file and must go red here.
+  expect(res.status(), "a 2xx stores the encrypted file (new bug)").toBeGreaterThanOrEqual(300);
+  expect(await docDataCount()).toBe(before); // "stores nothing" is this count check
+  test.fail(true, PB_DOC_001);
   expect([400, 415, 422]).toContain(res.status());
 });
