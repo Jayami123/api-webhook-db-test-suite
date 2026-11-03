@@ -87,6 +87,7 @@ test("P2-TW-CACHE-001 @replicas: a custom field added on replica A is visible on
         `mutation { deleteOneField(input:{ id:"${fieldId}" }) { id } }`,
       );
       expect(del.errors, "cleanup: delete the field on A").toBeUndefined();
+      const deletedId: string = fieldId;
       // In-test leak assert (until the shared field rule lands): the field row is gone from the metadata table.
       await expect
         .poll(
@@ -94,7 +95,7 @@ test("P2-TW-CACHE-001 @replicas: a custom field added on replica A is visible on
             (
               await readOnlyDb("twenty").select<{ n: string }>(
                 `SELECT COUNT(*)::text AS n FROM core."fieldMetadata" WHERE id = $1`,
-                [fieldId],
+                [deletedId],
               )
             )[0]?.n,
           {
