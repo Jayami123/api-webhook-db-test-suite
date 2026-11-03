@@ -290,5 +290,5 @@ Not run as live mutations: WH-001 (second delivery signed by another secret; the
 - Fetched `https://raw.githubusercontent.com/medusajs/medusa/v2.21.2/www/apps/api-reference/specs/store/openapi.full.yaml`; sha256 `cc4af9d7b00fead80c8ab75bd3b2ab97fec0397086bc0d0eccc2f7cb12b7032a` (matches). OpenAPI 3.0.0, 52 `/store` paths; `info.version` reads 2.21.1 (noted in PROVENANCE.md).
 - Validation of the lane's responses (raw Ajv errors, all branches): 526 errors in 238 signatures: 406 `type` (null where the spec declares a non-null type) and 137 signatures SPEC; 117 `required` misses and 1 derived `oneOf` (101 signatures PRODUCT). The 401 operations (`/store/customers/me`, `/store/orders`) are documented as text/plain; the shared validator throws on a non-JSON schema (src/contracts/oas.ts, "has no application/json schema"), so those two are asserted by hand and recorded as SPEC.
 - Shared-code note (not edited): `ContractSpec.validate()` truncates its errors ("... and N more") and the lane reads Ajv's raw errors instead.
-- Register: `contracts/med/upstream/deviations.json` (generated from these runs; counts are informational; the lane compares signatures per operation and status).
+- Register: `src/lanes/med/deviation-register.json` (generated from these runs; counts are informational; the lane compares signatures per operation and status).
 - Status: CONFIRMED.

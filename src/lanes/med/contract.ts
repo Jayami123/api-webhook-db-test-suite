@@ -4,8 +4,8 @@ import type { ContractSpec, OperationRef } from "../../contracts/oas.ts";
 
 /** The upstream store OpenAPI at tag v2.21.2 (sha256 in contracts/med/upstream/PROVENANCE.md). */
 export const MED_SPEC_FILE = "contracts/med/upstream/store.openapi.full.yaml";
-/** The deviation register: every raw validator error, classified SPEC or PRODUCT, keyed by exact path. */
-export const DEVIATION_REGISTER = "contracts/med/upstream/deviations.json";
+/** The deviation register (lane data, not a spec: kept out of contracts/, which specs:validate reads). */
+export const DEVIATION_REGISTER = "src/lanes/med/deviation-register.json";
 
 export interface RegisterEntry {
   readonly op: string;

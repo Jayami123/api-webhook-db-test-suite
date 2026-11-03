@@ -13,7 +13,7 @@ import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
 /**
  * The responses of the flow the PRODUCT deviations are measured on. Setup first (a normal test), then the
  * known product bugs as test.fail: the test is expected red, and it is red because the response omits a
- * key the published contract requires (see contracts/med/upstream/deviations.json, class PRODUCT).
+ * key the published contract requires (see src/lanes/med/deviation-register.json, class PRODUCT).
  */
 const LABEL = "conprod";
 
