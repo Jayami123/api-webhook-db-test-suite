@@ -9,6 +9,33 @@ import { distributedEnvelope } from "../../fixtures/doc/distributed-envelope.ts"
 // EXP-003 (a recipient moved back into its window) uses the Recipient.expiresAt allow-list entry in
 // src/db/fixture-allowlist.ts (merged with #16). Master plan row: P2-DOC-EXP-003, scope OD-10.
 
+/**
+ * The envelope reaches COMPLETED after its last recipient signs (asynchronously). Cleanup must not run in the window
+ * between the two: a delete that reads PENDING and then finds COMPLETED takes the guarded hard delete and fails
+ * (delete-document.ts:185-191, product finding P5-DOC-DEL-001). Wait for the settled state, then delete once.
+ */
+async function waitEnvelopeCompleted(
+  db: ReturnType<typeof readOnlyDb>,
+  envelopeId: string,
+): Promise<void> {
+  await expect
+    .poll(
+      async () =>
+        (
+          await db.select<{ status: string }>(
+            `SELECT "status" AS status FROM "Envelope" WHERE "id" = $1`,
+            [envelopeId],
+          )
+        )[0]?.status,
+      {
+        timeout: SLO.docWebhookDelivery.ms,
+        intervals: POLL_INTERVALS,
+        message: "envelope COMPLETED",
+      },
+    )
+    .toBe("COMPLETED");
+}
+
 test("P2-DOC-EXP-001 signing before expiry succeeds", async ({ doc, request, docAuth }) => {
   const runPrefix = currentRunPrefix();
   const db = readOnlyDb("documenso");
@@ -61,6 +88,7 @@ test("P2-DOC-EXP-001 signing before expiry succeeds", async ({ doc, request, doc
         { timeout: SLO.docWebhookDelivery.ms, intervals: POLL_INTERVALS, message: "SIGNED" },
       )
       .toBe("SIGNED");
+    await waitEnvelopeCompleted(db, env.envelopeId);
   } finally {
     await w.close();
     await doc.envelopes.remove(env.envelopeId);
@@ -176,6 +204,7 @@ test("P2-DOC-EXP-003 a recipient moved back into its window signs again", async 
         { timeout: SLO.docWebhookDelivery.ms, intervals: POLL_INTERVALS, message: "SIGNED" },
       )
       .toBe("SIGNED");
+    await waitEnvelopeCompleted(db, env.envelopeId);
   } finally {
     await w.close();
     await doc.envelopes.remove(env.envelopeId);
