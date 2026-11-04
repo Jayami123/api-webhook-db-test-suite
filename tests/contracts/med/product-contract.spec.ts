@@ -107,11 +107,18 @@ test.describe("medusa store product deviations", () => {
     }
   });
 
+  // The register is the measurement the expected-red test relies on. A normal test: a wrong count is a failure,
+  // not a "known bug" that test.fail would hide.
+  test("P2-MED-CON-PRODUCT the deviation register lists the 101 PRODUCT deviations", () => {
+    const registered = loadRegister().filter((e) => e.class === "PRODUCT");
+    expect(registered.length, "the register lists the product deviations").toBe(101);
+  });
+
   // KNOWN PRODUCT BUGS (suspected, from the register). Expected red: each PRODUCT entry is a response that
   // omits a key the published contract (info.version 2.21.1 at tag v2.21.2) requires. Fix the product or
   // the spec, then regenerate the register; this test then turns green and must be unmarked.
   test.fail(
-    "P2-MED-CON-PRODUCT every store response carries every key the published contract requires (101 registered PRODUCT deviations; expected red)",
+    "P2-MED-CON-PRODUCT every store response carries every key the published contract requires (expected red)",
     async ({ request, medAuth, med }) => {
       const lane = laneOf({ request, medAuth });
       try {
@@ -126,10 +133,6 @@ test.describe("medusa store product deviations", () => {
               productDeviations.push(`${opName(step.op)} ${key}`);
           }
         }
-        const registered = loadRegister()
-          .filter((e) => e.class === "PRODUCT")
-          .map((e) => `${e.op} ${e.key}`);
-        expect(registered.length, "the register lists the product deviations").toBe(101);
         expect(productDeviations, "product deviations observed now").toEqual([]);
       } finally {
         await cleanupLabel(lane, med, LABEL);
