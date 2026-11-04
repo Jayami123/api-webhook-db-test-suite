@@ -217,6 +217,62 @@ warm `up cal` 28 s, `down cal` 2 s (plan section 2 timings reproduced).
   violation, printing rule ids and counts only. CI sets `P2_RUN_ID` once (generate step) so the tests and the check share the prefix,
   and runs the check after the tests under `if: always()`, before the harness teardown.
 
+## L19 CON-005 per-operation cal-api-version (2026-11-04, review C1)
+
+Before: CON-005 sent `cal-api-version: 2024-08-13` to all 55 GET operations. After: each operation sends the version its own
+OAS header parameter declares (the schema default in `contracts/cal/openapi-v2.json`), and no version where the OAS declares
+none (`apiVersionFor` in `src/lanes/cal/oas-walk.ts`). The before column is the same spec with the header held at 2024-08-13
+(a copy at the pre-change commit). Both are one fresh `up cal` each, the same Cal fork (c2b7ac4). The per-operation record is
+`results/cal-con-005-crawl.json` (not committed; it holds the validation errors of each 200 body).
+
+Result: the same 31 operations are crawled before and after. 9 identities changed and 22 did not. 7 operations now answer 200
+(formerly 404 under the wrong header): 4 pass the committed spec (private-links, schedules, verified emails, verified phones)
+and 3 are real deviations, recorded as KNOWN_INVALID. `/v2/event-types` and `/v2/event-types/{eventTypeId}` return
+`bookingFields` items with `isDefault` as a boolean and no `label` or `placeholder`; `/v2/schedules/default` returns
+`data: null`.
+
+| Operation | version sent, before → after | status / body valid, before | status / body valid, after | disposition |
+|---|---|---|---|---|
+| `GET /v2/bookings` | 2024-08-13 → 2024-08-13 | 200 / false | 200 / false | unchanged |
+| `GET /v2/bookings/{bookingUid}` | 2024-08-13 → 2024-08-13 | 200 / false | 200 / false | unchanged |
+| `GET /v2/bookings/{bookingUid}/recordings` | 2024-08-13 → 2024-08-13 | 404 / - | 404 / - | unchanged |
+| `GET /v2/bookings/{bookingUid}/transcripts` | 2024-08-13 → 2024-08-13 | 404 / - | 404 / - | unchanged |
+| `GET /v2/bookings/{bookingUid}/calendar-links` | 2024-08-13 → 2024-08-13 | 200 / false | 200 / false | unchanged |
+| `GET /v2/bookings/{bookingUid}/references` | 2024-08-13 → 2024-08-13 | 200 / false | 200 / false | unchanged |
+| `GET /v2/bookings/{bookingUid}/conferencing-sessions` | 2024-08-13 → 2024-08-13 | 404 / - | 404 / - | unchanged |
+| `GET /v2/bookings/{bookingUid}/attendees` | 2024-08-13 → none | 200 / true | 404 / - | 200 under the wrong header; the OAS declares no version, none is sent, and the product answers 404: new KNOWN_UNDOCUMENTED pin |
+| `GET /v2/calendars/connections` | 2024-08-13 → none | 200 / true | 200 / true | unchanged |
+| `GET /v2/calendars/ics-feed/check` | 2024-08-13 → none | 400 / - | 400 / - | unchanged |
+| `GET /v2/calendars/busy-times` | 2024-08-13 → none | 400 / - | 400 / - | unchanged |
+| `GET /v2/calendars` | 2024-08-13 → none | 200 / false | 200 / false | unchanged |
+| `GET /v2/conferencing` | 2024-08-13 → none | 200 / true | 200 / true | unchanged |
+| `GET /v2/conferencing/default` | 2024-08-13 → none | 200 / true | 200 / true | unchanged |
+| `GET /v2/oauth-clients` | 2024-08-13 → none | 401 / - | 401 / - | unchanged |
+| `GET /v2/event-types` | 2024-08-13 → 2024-06-14 | 404 / - | 200 / false | header caused the 404; the 200 body fails the committed schema (bookingFields items): new KNOWN_INVALID pin |
+| `GET /v2/event-types/{eventTypeId}` | 2024-08-13 → 2024-06-14 | 404 / - | 200 / false | header caused the 404; the 200 body fails the committed schema (bookingFields items): new KNOWN_INVALID pin |
+| `GET /v2/event-types/{eventTypeId}/webhooks` | 2024-08-13 → none | 200 / true | 200 / true | unchanged |
+| `GET /v2/event-types/{eventTypeId}/webhooks/{webhookId}` | 2024-08-13 → none | 400 / - | 400 / - | unchanged |
+| `GET /v2/event-types/{eventTypeId}/private-links` | 2024-08-13 → none | 404 / - | 200 / true | header caused the 404; 200 and valid: pin removed |
+| `GET /v2/me` | 2024-08-13 → none | 200 / true | 200 / true | unchanged |
+| `GET /v2/schedules` | 2024-08-13 → 2024-06-11 | 404 / - | 200 / true | header caused the 404; 200 and valid: pin removed |
+| `GET /v2/schedules/default` | 2024-08-13 → 2024-06-11 | 404 / - | 200 / false | header caused the 404; the 200 body has data null and fails the schema: pin moved to KNOWN_INVALID |
+| `GET /v2/slots` | 2024-08-13 → 2024-09-04 | 404 / - | 400 / - | 400 under the declared version (2024-09-04); the 404 was the wrong header: pin kept with status 400 (CON-001 test.fail stays red) |
+| `GET /v2/stripe/connect` | 2024-08-13 → none | 400 / - | 400 / - | unchanged |
+| `GET /v2/stripe/save` | 2024-08-13 → none | 400 / - | 400 / - | unchanged |
+| `GET /v2/stripe/check` | 2024-08-13 → none | 404 / - | 404 / - | unchanged |
+| `GET /v2/verified-resources/emails` | 2024-08-13 → none | 404 / - | 200 / true | header caused the 404; 200 and valid: pin removed |
+| `GET /v2/verified-resources/phones` | 2024-08-13 → none | 404 / - | 200 / true | header caused the 404; 200 and valid: pin removed |
+| `GET /v2/webhooks` | 2024-08-13 → none | 200 / false | 200 / false | unchanged |
+| `GET /v2/webhooks/{webhookId}` | 2024-08-13 → none | 200 / false | 200 / false | unchanged |
+
+Pins after C1: KNOWN_UNDOCUMENTED = 12 (was 18: 7 removed as caused by the wrong header, the attendees 404 added, slots kept with
+status 400); KNOWN_INVALID = 10 (was 7: the 3 deviations above added).
+
+Lane on the fresh stack (run "con005-after", cal-api + cal-serial): CON-005 passes. Two tests fail: P2-CAL-REC-002 and the
+P2-CAL-WH-003 positive control, both at `Received length: 0` from `taskRowsFor`. The same two fail at the pre-change commit
+(4110f6d, CON-005 excluded), so this change does not cause them. Open item: `taskRowsFor` finds no Task row for the test
+receiver URL (src/lanes/cal/tasks.ts, `payloadNamesTest`, commit 27caf79), while the receiver delivery itself arrives.
+
 ## Open items (for the discovery round)
 
 - Deterministic SCH-002 repro (not attempted this round, by decision).

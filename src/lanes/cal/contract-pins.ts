@@ -71,8 +71,10 @@ export const NO_VALUE_OPERATIONS: readonly string[] = [
 export type UncrawledReason = "no-path-value";
 
 /**
- * Each status a documented-or-not response answered that the committed OAS does not list for that operation (not 200).
- * Each is a finding (SPEC-CAL-UNDOC, classified per entry). None is filtered out; a new entry turns the test red.
+ * Each status a response answered that the committed OAS does not list for that operation (not 200). Re-measured
+ * 2026-11-04 with the per-operation cal-api-version (results/cal-con-005-crawl.json; probe section L19). Each is a
+ * finding (SPEC-CAL-UNDOC), with its measured cause. None is filtered out; a new entry turns the test red.
+ *
  */
 export const KNOWN_UNDOCUMENTED: readonly {
   readonly operation: string;
@@ -97,71 +99,41 @@ export const KNOWN_UNDOCUMENTED: readonly {
     status: 404,
     note: "the booking has no transcript; the route is not in the committed OAS",
   },
-  // the crawl sends no query (date range, calendars); 400 is the input check
+  // the OAS declares no cal-api-version for this operation, so none is sent; 404 without it. The committed OAS documents only 200
+  {
+    operation: "GET /v2/bookings/{bookingUid}/attendees",
+    status: 404,
+    note: "the OAS declares no cal-api-version for this operation, so none is sent; 404 without it; the route is not in the committed OAS",
+  },
+  // the crawl sends no query (date range, calendars); 400 is the input check; the route is not in the committed OAS
   {
     operation: "GET /v2/calendars/busy-times",
     status: 400,
-    note: "the crawl sends no query (date range, calendars); 400 is the input check",
+    note: "the crawl sends no query (date range, calendars); 400 is the input check; the route is not in the committed OAS",
   },
-  // the crawl sends no query; the 400 is the input check (classify when the crawl supplies params)
+  // the crawl sends no query; the 400 is the input check; the route is not in the committed OAS
   {
     operation: "GET /v2/calendars/ics-feed/check",
     status: 400,
-    note: "the crawl sends no query; the 400 is the input check (classify when the crawl supplies params)",
+    note: "the crawl sends no query; the 400 is the input check (classify when the crawl supplies params); the route is not in the committed OAS",
   },
-  // 404 on the list route for this key; 404 on this crawl input; the cause is not measured (UNVERIFIED)
-  {
-    operation: "GET /v2/event-types",
-    status: 404,
-    note: "404 on the list route for this key; 404 on this crawl input; the cause is not measured (UNVERIFIED)",
-  },
-  // 404 on this crawl input; the cause is not measured (UNVERIFIED)
-  {
-    operation: "GET /v2/event-types/{eventTypeId}",
-    status: 404,
-    note: "404 on this crawl input; the cause is not measured (UNVERIFIED)",
-  },
-  // the event type has no private links; the route is not in the committed OAS
-  {
-    operation: "GET /v2/event-types/{eventTypeId}/private-links",
-    status: 404,
-    note: "the event type has no private links; the route is not in the committed OAS",
-  },
-  // 400 on this crawl input; the cause is not measured (UNVERIFIED)
-  {
-    operation: "GET /v2/event-types/{eventTypeId}/webhooks/{webhookId}",
-    status: 400,
-    note: "400 on this crawl input; the cause is not measured (UNVERIFIED)",
-  },
-  // 401 on this crawl input; the cause is not measured (UNVERIFIED)
+  // 401 on this crawl input; the cause is not measured (UNVERIFIED); the route is not in the committed OAS
   {
     operation: "GET /v2/oauth-clients",
     status: 401,
-    note: "401 on this crawl input; the cause is not measured (UNVERIFIED)",
+    note: "401 on this crawl input; the cause is not measured (UNVERIFIED); the route is not in the committed OAS",
   },
-  // 404 on this crawl input; the cause is not measured (UNVERIFIED)
+  // 400 on this crawl input; the cause is not measured (UNVERIFIED); the route is not in the committed OAS
   {
-    operation: "GET /v2/schedules",
-    status: 404,
-    note: "404 on this crawl input; the cause is not measured (UNVERIFIED)",
+    operation: "GET /v2/event-types/{eventTypeId}/webhooks/{webhookId}",
+    status: 400,
+    note: "400 on this crawl input; the cause is not measured (UNVERIFIED); the route is not in the committed OAS",
   },
-  // 404 on this crawl input; the cause is not measured (UNVERIFIED)
-  {
-    operation: "GET /v2/schedules/default",
-    status: 404,
-    note: "404 on this crawl input; the cause is not measured (UNVERIFIED)",
-  },
-  // the crawl sends no eventTypeId, start or end; 404 is the crawl input (CON-001 covers the positive case)
+  // 400 with the version the OAS declares (2024-09-04); the crawl sends no eventTypeId, start or end; the route is not in the committed OAS
   {
     operation: "GET /v2/slots",
-    status: 404,
-    note: "the crawl sends no eventTypeId, start or end; 404 is the crawl input (CON-001 covers the positive case)",
-  },
-  // 404: no Stripe account on the seed; the route is not in the committed OAS
-  {
-    operation: "GET /v2/stripe/check",
-    status: 404,
-    note: "404: no Stripe account on the seed; the route is not in the committed OAS",
+    status: 400,
+    note: "400 with the version the OAS declares; the crawl sends no eventTypeId, start or end (CON-001 covers the positive case); the route is not in the committed OAS",
   },
   // 400 without Stripe connect params; the route is not in the committed OAS
   {
@@ -175,23 +147,19 @@ export const KNOWN_UNDOCUMENTED: readonly {
     status: 400,
     note: "400 without Stripe params; the route is not in the committed OAS",
   },
-  // 404: no verified emails on the seed; the route is not in the committed OAS
+  // 404: no Stripe account on the seed; the route is not in the committed OAS
   {
-    operation: "GET /v2/verified-resources/emails",
+    operation: "GET /v2/stripe/check",
     status: 404,
-    note: "404: no verified emails on the seed; the route is not in the committed OAS",
-  },
-  // 404: no verified phones on the seed; the route is not in the committed OAS
-  {
-    operation: "GET /v2/verified-resources/phones",
-    status: 404,
-    note: "404: no verified phones on the seed; the route is not in the committed OAS",
+    note: "404: no Stripe account on the seed; the route is not in the committed OAS",
   },
 ];
 
 /**
  * Operations whose 200 body fails the committed spec (PB-CAL-OAS-1, product documentation). Measured with one booking and one
- * webhook present. Validity is data-dependent (/v2/webhooks is valid with no webhook), so the crawl always seeds the same data.
+ * webhook present, with the per-operation cal-api-version (2026-11-04). Validity is data-dependent (/v2/webhooks is valid with
+ * no webhook), so the crawl always seeds the same data. The three added on 2026-11-04 (event-types, event-types/{eventTypeId},
+ * schedules/default) are 200 under the version the OAS declares and fail the committed schema: real deviations, not header errors.
  */
 export const KNOWN_INVALID: readonly string[] = [
   "GET /v2/bookings",
@@ -199,6 +167,9 @@ export const KNOWN_INVALID: readonly string[] = [
   "GET /v2/bookings/{bookingUid}/calendar-links",
   "GET /v2/bookings/{bookingUid}/references",
   "GET /v2/calendars",
+  "GET /v2/event-types",
+  "GET /v2/event-types/{eventTypeId}",
+  "GET /v2/schedules/default",
   "GET /v2/webhooks",
   "GET /v2/webhooks/{webhookId}",
 ];
