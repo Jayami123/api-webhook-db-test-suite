@@ -232,6 +232,9 @@ warm `up cal` 28 s, `down cal` 2 s (plan section 2 timings reproduced).
   returns the baseline minus its first element). The meaning of PROP-003 is unchanged: the same instants for five viewer zones.
 - Plan scope, quiet windows: the window is the scheduled-delivery budget (10 s, `SLO.calWebhookDelivery`), not the product cron
   interval, because the lane runs no cron and the shared 60 s test timeout cannot hold a 60 s window (`src/lanes/cal/quiet.ts`).
+  - **Amendment (2026-11-04), supersedes the bullet above for the quiet window.** The window is 70 s: one cron tick (60 s) plus a
+    10 s margin, under an 85 s per-test budget applied with `test.setTimeout` to the three SCH tests that hold it. Basis and
+    numbers: `src/lanes/cal/quiet.ts` and section L17 of this record. The 60 s shared timeout is unchanged.
 
 ## Findings (review addendum)
 
