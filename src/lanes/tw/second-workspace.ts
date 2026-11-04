@@ -82,6 +82,8 @@ export async function mintKeyForWorkspace(
     { i: { name: label, expiresAt, roleId: admin.id } },
     access,
   );
+  if (created.body.errors !== undefined)
+    throw new Error(`ENV or TEST BUG: create api key: ${JSON.stringify(created.body.errors)}`);
   const keyId = (created.body.data as { createApiKey: { id: string } }).createApiKey.id;
   const minted = await metadataGql(
     base,
@@ -89,6 +91,10 @@ export async function mintKeyForWorkspace(
     { id: keyId, e: expiresAt },
     access,
   );
+  if (minted.body.errors !== undefined)
+    throw new Error(
+      `ENV or TEST BUG: generate api key token: ${JSON.stringify(minted.body.errors)}`,
+    );
   const token = (minted.body.data as { generateApiKeyToken: { token: string } }).generateApiKeyToken
     .token;
   let revoked = false;
