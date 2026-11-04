@@ -1,7 +1,7 @@
 import { test, expect } from "../../../src/fixtures/index.ts";
 import { laneEnvGate } from "../../../src/lanes/med/env-gate.ts";
 import { laneOf } from "../../../src/lanes/med/lane-client.ts";
-import { redisKeys } from "../../../src/lanes/med/redis.ts";
+import { keysAdded, redisKeys } from "../../../src/lanes/med/redis.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 
@@ -27,10 +27,18 @@ test.describe("medusa product cache", () => {
     try {
       const region = await lane.regionFor("usd");
       const product = await lane.productWithPrice(label, "usd", 10);
+      // The mc:* keys are hashed (mc:<hash>, mc:tag:<hash>, mc:tags:<hash>; probe P-MED-7), so none can be tied to
+      // this product or region. The control is therefore the set of keys the warm read added. No other test runs
+      // during this spec (workers: 1, fullyParallel: false), so nothing else writes mc:* between the two reads.
+      const keysBeforeWarm = await redisKeys("mc:*");
       expect(await lane.productPrice(product.id, region.id)).toBe(10);
-      // Positive control: the warm read wrote cache keys. Without it a cache that never fills would pass.
+      // Positive control: the warm read must add keys that were absent before it. With the cache off nothing is
+      // added, and this assertion fails. Without it a cache that never fills would pass.
       const keysAfterWarm = await redisKeys("mc:*");
-      expect(keysAfterWarm.length, "cache keys written by the warm read").toBeGreaterThan(0);
+      expect(
+        keysAdded(keysBeforeWarm, keysAfterWarm),
+        "cache keys added by the warm read",
+      ).not.toEqual([]);
 
       await lane.setVariantPrice(product.id, product.variantId, "usd", 15);
       await expect

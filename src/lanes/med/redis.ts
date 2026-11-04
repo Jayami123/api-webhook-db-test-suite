@@ -27,6 +27,12 @@ async function cli(args: readonly string[], run: DockerRunner): Promise<string> 
   return run(["exec", container, "redis-cli", ...args]);
 }
 
+/** Keys present in `after` and absent from `before`: what one step added to the cache. */
+export function keysAdded(before: readonly string[], after: readonly string[]): string[] {
+  const seen = new Set(before);
+  return after.filter((key) => !seen.has(key));
+}
+
 /** Keys matching a glob. The pattern is validated: no shell, no spaces. SCAN, never KEYS. */
 export async function redisKeys(
   pattern: string,

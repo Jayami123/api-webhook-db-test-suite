@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { parseRedisScan, redisKeys } from "../../../../src/lanes/med/redis.ts";
+import { keysAdded, parseRedisScan, redisKeys } from "../../../../src/lanes/med/redis.ts";
 
 describe("harness redis reader (medusa lane)", () => {
   test("parseRedisScan splits redis-cli output and drops blank lines", () => {
@@ -20,5 +20,17 @@ describe("harness redis reader (medusa lane)", () => {
     assert.deepEqual(keys, ["mc:one", "mc:two"]);
     assert.deepEqual(calls[1], ["exec", "cid123", "redis-cli", "--scan", "--pattern", "mc:*"]);
     assert.ok(calls[0]?.includes("label=com.docker.compose.project=qa-harness-medusa"));
+  });
+});
+
+describe("keysAdded", () => {
+  test("returns the keys present after and absent before, and nothing when the cache did not grow", () => {
+    assert.deepEqual(keysAdded(["mc:a", "mc:b"], ["mc:a", "mc:b", "mc:c"]), ["mc:c"]);
+    assert.deepEqual(
+      keysAdded(["mc:a", "mc:b"], ["mc:a", "mc:b"]),
+      [],
+      "a flat cache adds nothing",
+    );
+    assert.deepEqual(keysAdded(["mc:a"], []), []);
   });
 });
