@@ -74,84 +74,84 @@ export type UncrawledReason = "no-path-value";
  * Each status a response answered that the committed OAS does not list for that operation (not 200). Re-measured
  * 2026-11-04 with the per-operation cal-api-version (results/cal-con-005-crawl.json; probe section L19). Each is a
  * finding (SPEC-CAL-UNDOC), with its measured cause. None is filtered out; a new entry turns the test red.
- *
+ * Every pinned route is in the committed OAS, which documents only 200 for it.
  */
 export const KNOWN_UNDOCUMENTED: readonly {
   readonly operation: string;
   readonly status: number;
   readonly note: string;
 }[] = [
-  // the booking has no conferencing session; the route is not in the committed OAS
+  // the booking has no conferencing session; the committed OAS documents only 200 for this operation
   {
     operation: "GET /v2/bookings/{bookingUid}/conferencing-sessions",
     status: 404,
-    note: "the booking has no conferencing session; the route is not in the committed OAS",
+    note: "the booking has no conferencing session; the committed OAS documents only 200 for this operation",
   },
-  // the booking has no recording; the route is not in the committed OAS
+  // the booking has no recording; the committed OAS documents only 200 for this operation
   {
     operation: "GET /v2/bookings/{bookingUid}/recordings",
     status: 404,
-    note: "the booking has no recording; the route is not in the committed OAS",
+    note: "the booking has no recording; the committed OAS documents only 200 for this operation",
   },
-  // the booking has no transcript; the route is not in the committed OAS
+  // the booking has no transcript; the committed OAS documents only 200 for this operation
   {
     operation: "GET /v2/bookings/{bookingUid}/transcripts",
     status: 404,
-    note: "the booking has no transcript; the route is not in the committed OAS",
+    note: "the booking has no transcript; the committed OAS documents only 200 for this operation",
   },
   // the OAS declares no cal-api-version for this operation, so none is sent; 404 without it. The committed OAS documents only 200
   {
     operation: "GET /v2/bookings/{bookingUid}/attendees",
     status: 404,
-    note: "the OAS declares no cal-api-version for this operation, so none is sent; 404 without it; the route is not in the committed OAS",
+    note: "the OAS declares no cal-api-version for this operation, so none is sent; 404 without it; the committed OAS documents only 200 for this operation",
   },
-  // the crawl sends no query (date range, calendars); 400 is the input check; the route is not in the committed OAS
+  // the crawl sends no query (date range, calendars); 400 is the input check; the committed OAS documents only 200 for this operation
   {
     operation: "GET /v2/calendars/busy-times",
     status: 400,
-    note: "the crawl sends no query (date range, calendars); 400 is the input check; the route is not in the committed OAS",
+    note: "the crawl sends no query (date range, calendars); 400 is the input check; the committed OAS documents only 200 for this operation",
   },
-  // the crawl sends no query; the 400 is the input check; the route is not in the committed OAS
+  // the crawl sends no query; the 400 is the input check; the committed OAS documents only 200 for this operation
   {
     operation: "GET /v2/calendars/ics-feed/check",
     status: 400,
-    note: "the crawl sends no query; the 400 is the input check (classify when the crawl supplies params); the route is not in the committed OAS",
+    note: "the crawl sends no query; the 400 is the input check (classify when the crawl supplies params); the committed OAS documents only 200 for this operation",
   },
-  // 401 on this crawl input; the cause is not measured (UNVERIFIED); the route is not in the committed OAS
+  // 401 on this crawl input; the cause is not measured (UNVERIFIED); the committed OAS documents only 200 for this operation
   {
     operation: "GET /v2/oauth-clients",
     status: 401,
-    note: "401 on this crawl input; the cause is not measured (UNVERIFIED); the route is not in the committed OAS",
+    note: "401 on this crawl input; the cause is not measured (UNVERIFIED); the committed OAS documents only 200 for this operation",
   },
-  // 400 on this crawl input; the cause is not measured (UNVERIFIED); the route is not in the committed OAS
+  // 400 on this crawl input; the cause is not measured (UNVERIFIED); the committed OAS documents only 200 for this operation
   {
     operation: "GET /v2/event-types/{eventTypeId}/webhooks/{webhookId}",
     status: 400,
-    note: "400 on this crawl input; the cause is not measured (UNVERIFIED); the route is not in the committed OAS",
+    note: "400 on this crawl input; the cause is not measured (UNVERIFIED); the committed OAS documents only 200 for this operation",
   },
-  // 400 with the version the OAS declares (2024-09-04); the crawl sends no eventTypeId, start or end; the route is not in the committed OAS
+  // 400 with the version the OAS declares (2024-09-04); the crawl sends no eventTypeId, start or end; the committed OAS documents only 200
   {
     operation: "GET /v2/slots",
     status: 400,
-    note: "400 with the version the OAS declares; the crawl sends no eventTypeId, start or end (CON-001 covers the positive case); the route is not in the committed OAS",
+    note: "400 with the version the OAS declares; the crawl sends no eventTypeId, start or end (CON-001 covers the positive case); the committed OAS documents only 200 for this operation",
   },
-  // 400 without Stripe connect params; the route is not in the committed OAS
+  // 400 without Stripe connect params; the committed OAS documents only 200 for this operation
   {
     operation: "GET /v2/stripe/connect",
     status: 400,
-    note: "400 without Stripe connect params; the route is not in the committed OAS",
+    note: "400 without Stripe connect params; the committed OAS documents only 200 for this operation",
   },
-  // 400 without Stripe params; the route is not in the committed OAS
+  // 400 without Stripe params; the committed OAS documents only 200 for this operation
   {
     operation: "GET /v2/stripe/save",
     status: 400,
-    note: "400 without Stripe params; the route is not in the committed OAS",
+    note: "400 without Stripe params; the committed OAS documents only 200 for this operation",
   },
-  // 404: no Stripe account on the seed; the route is not in the committed OAS
+  // 404: no Stripe account on the seed; the committed OAS documents only 200 for this operation
   {
     operation: "GET /v2/stripe/check",
     status: 404,
-    note: "404: no Stripe account on the seed; the route is not in the committed OAS",
+    note: "404: no Stripe account on the seed; the committed OAS documents only 200 for this operation",
   },
 ];
 
