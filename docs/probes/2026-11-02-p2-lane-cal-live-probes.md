@@ -268,10 +268,13 @@ and 3 are real deviations, recorded as KNOWN_INVALID. `/v2/event-types` and `/v2
 Pins after C1: KNOWN_UNDOCUMENTED = 12 (was 18: 7 removed as caused by the wrong header, the attendees 404 added, slots kept with
 status 400); KNOWN_INVALID = 10 (was 7: the 3 deviations above added).
 
-Lane on the fresh stack (run "con005-after", cal-api + cal-serial): CON-005 passes. Two tests fail: P2-CAL-REC-002 and the
-P2-CAL-WH-003 positive control, both at `Received length: 0` from `taskRowsFor`. The same two fail at the pre-change commit
-(4110f6d, CON-005 excluded), so this change does not cause them. Open item: `taskRowsFor` finds no Task row for the test
-receiver URL (src/lanes/cal/tasks.ts, `payloadNamesTest`, commit 27caf79), while the receiver delivery itself arrives.
+Lane on the local stack (run "con005-after", cal-api + cal-serial): CON-005 passes. Two tests fail: P2-CAL-REC-002 and
+the P2-CAL-WH-003 positive control, both at `Received length: 0` from `taskRowsFor`. The local run did not use a fresh
+database: `down cal` does not remove the `qa-harness-cal_db_data` volume, so the same local volume was reused. The same two tests
+also failed locally at the pre-change commit (4110f6d, CON-005 excluded), but that run also reused the volume. The CI run of
+4110f6d on a clean runner (p2-cal run 41581943369) was green, so these two failures are not yet explained. The cause is not
+established: the receiver delivery arrives, and `taskRowsFor` finds no Task row for the test receiver URL
+(src/lanes/cal/tasks.ts, `payloadNamesTest`, commit 27caf79). CI on the new head is the check on a clean database.
 
 ## Open items (for the discovery round)
 
