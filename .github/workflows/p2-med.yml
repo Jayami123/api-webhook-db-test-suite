@@ -50,7 +50,15 @@ jobs:
             echo "::error title=STRIPE_API_KEY missing::The repository secret STRIPE_API_KEY is not set. The Stripe payment provider cannot load without it, so the medusa lane cannot run. Add the secret (test mode) and re-run."
             exit 1
           fi
-          echo "STRIPE_API_KEY is set (value not printed)."
+          # Test mode only: a live key must never reach the lane. The value is matched, never printed.
+          case "$STRIPE_API_KEY" in
+            sk_test_*) ;;
+            *)
+              echo "::error title=STRIPE_API_KEY is not a test-mode key::The repository secret STRIPE_API_KEY must be a Stripe test-mode secret key (it starts with sk_test_). The stored value does not, so the medusa lane was not started. Replace the secret with the test-mode key and re-run. The value is not printed."
+              exit 1
+              ;;
+          esac
+          echo "STRIPE_API_KEY is a test-mode key (value not printed)."
 
       - name: Generate per-run secrets (masked, never printed)
         timeout-minutes: 2
