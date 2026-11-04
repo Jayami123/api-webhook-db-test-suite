@@ -17,13 +17,21 @@ export async function cleanupLabel(
     () => med.admin.deleteCustomersByEmailPrefix(runScopedName(label)),
     () => lane.releaseRegions(),
   ];
-  let first: Error | undefined;
+  await runAllThenRethrow(steps);
+}
+
+/**
+ * Runs every step in order, even after one fails, then rethrows the first failure (the original error object).
+ * A cleanup that stops at its first error leaves the later rows behind, so every cleanup uses this.
+ */
+export async function runAllThenRethrow(steps: readonly (() => Promise<unknown>)[]): Promise<void> {
+  let first: { readonly error: unknown } | undefined;
   for (const step of steps) {
     try {
       await step();
     } catch (error) {
-      first ??= error instanceof Error ? error : new Error(String(error));
+      first ??= { error };
     }
   }
-  if (first !== undefined) throw first;
+  if (first !== undefined) throw first.error;
 }

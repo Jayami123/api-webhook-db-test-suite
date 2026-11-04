@@ -1,7 +1,7 @@
 import { randomInt } from "node:crypto";
 import { test, expect } from "../../../src/fixtures/index.ts";
 import { laneOf } from "../../../src/lanes/med/lane-client.ts";
-import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
+import { cleanupLabel, runAllThenRethrow } from "../../../src/lanes/med/cleanup.ts";
 import { openPaidSession } from "../../../src/lanes/med/cart-flow.ts";
 import { liveOrdersLinkedToCart } from "../../../src/lanes/med/oracle.ts";
 import {
@@ -93,15 +93,18 @@ test.describe("medusa inventory model", () => {
         expect(identityHolds(model, level?.available ?? NaN), `${detail}: identity`).toBe(true);
       }
     } finally {
-      // Live orders hold reservations: cancel them first, or the product cannot be removed.
-      for (const order of liveOrders) {
-        await lane.admin("POST", `/admin/orders/${order.orderId}/cancel`, {
-          body: {},
-          expect: [200],
-        });
+      // Every step is tried even after a failure, in this order, and the first error is rethrown at the end.
+      // Live orders hold reservations: they are cancelled first, or the product cannot be removed.
+      const cleanups: (() => Promise<unknown>)[] = liveOrders.map(
+        (order) => () =>
+          lane.admin("POST", `/admin/orders/${order.orderId}/cancel`, { body: {}, expect: [200] }),
+      );
+      cleanups.push(() => cleanupLabel(lane, med, label));
+      if (locationId !== undefined) {
+        const stockLocationId = locationId;
+        cleanups.push(() => lane.removeStockLocation(stockLocationId));
       }
-      await cleanupLabel(lane, med, label);
-      if (locationId !== undefined) await lane.removeStockLocation(locationId);
+      await runAllThenRethrow(cleanups);
     }
   });
 });
