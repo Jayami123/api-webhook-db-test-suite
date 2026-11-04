@@ -113,6 +113,14 @@ describe("twenty lane workflows", () => {
     assert.doesNotMatch(study, /pull_request:/, "the study is never a pull request check");
   });
 
+  test("the study runs only its own cases: no dependency projects, and the anchored case selector", () => {
+    const study = live(".github/workflows/tw-study.yml");
+    const run = study.match(/^ +npx playwright test .*$/m)?.[0] ?? "";
+    assert.match(run, /--project=tw-serial/, "the study uses the serial project");
+    assert.match(run, /--no-deps/, "tw-serial depends on tw-api; the study must not run the lane");
+    assert.match(run, /--grep "P2-TW-WH-010 case"/, "the selector is anchored to the study cases");
+  });
+
   test("every lane job carries the same-repo guard, and dispatch is allowed by event name", () => {
     const jobs = jobIfs(live(".github/workflows/p2-tw.yml"));
     assert.deepEqual(

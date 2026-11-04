@@ -69,7 +69,9 @@ jobs:
         timeout-minutes: 25
         run: |
           mkdir -p results
-          npx playwright test --project=tw-serial --grep "P2-TW-WH-010"
+          # --no-deps: tw-serial depends on tw-api, and Playwright runs dependency projects without the grep.
+          # Without it the study also ran the whole lane (including the b1-drop P2-TW-WH-010 gate test).
+          npx playwright test --project=tw-serial --no-deps --grep "P2-TW-WH-010 case"
       - name: Upload study JSON and receiver logs
         if: always()
         timeout-minutes: 5
