@@ -13,6 +13,8 @@ const run = promisify(execFile);
 /** The opt-in Gotenberg service of the harness overlay (docker/documenso.gotenberg.compose.yml). Only this container is touched. */
 const GOTENBERG = "qa-harness-documenso-gotenberg";
 const GOTENBERG_HEALTH = "http://127.0.0.1:3010/health";
+/** circuit-breaker.ts:14 (`const COOLDOWN_MS = 30_000`): the open window after a real conversion failure. */
+const CIRCUIT_COOLDOWN_MS = 30_000;
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 /** P5 finding: a dependency outage is answered as a client error (see the CONV-002 comment). */
 const P5_CONV_001 =
@@ -96,6 +98,10 @@ test("P2-DOC-CONV-003 Gotenberg restarts: DOCX create succeeds once the service 
   request,
   docAuth,
 }) => {
+  // This case's own budget: the health poll may take up to docConvertHealth; the in-process circuit stays open for
+  // CIRCUIT_COOLDOWN_MS after the last real failure (circuit-breaker.ts:14, COOLDOWN_MS = 30_000); then the recovery
+  // poll gets docConvertRecover. The Playwright default (60 s, playwright.config.ts:39) is shorter than that sum.
+  test.setTimeout(SLO.docConvertHealth.ms + CIRCUIT_COOLDOWN_MS + SLO.docConvertRecover.ms);
   const authorization = docAuth.headerValue.reveal();
   // Self-contained: this case makes its own outage, so it does not depend on CONV-002 running or passing.
   await docker(["stop", GOTENBERG]);
