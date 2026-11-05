@@ -413,7 +413,7 @@ Verdict labels: `CONFIRMED-GAP`, `COVERED` (cite the existing spec), `PRODUCT DE
 | label-discovery-round-scope | COVERED (partial) | This session's probes; the cross-product sweep is listed as follow-up (cross-probes record). |
 | label-ci-yml-gate-pr, label-readme-claude-cloud-setup, label-cron-tick-nightly, label-upstream-issue-filing | NOT ATTEMPTED | Track-only (out of scope; upstream filing is a non-goal). |
 
-Counts of verdicts in section 9: COVERED or NOT REPRODUCIBLE 17 (including workaround and D2 closures), PRODUCT DEFECT 8, CONFIRMED-GAP 3 (two harness, one coverage), STILL BLOCKED 22, NOT ATTEMPTED 20. Counted by hand from the table above.
+Counts of verdict rows in section 9 (counted mechanically): COVERED or NOT REPRODUCIBLE 16, PRODUCT DEFECT 6, CONFIRMED-GAP 2 (both harness, see section 10 for the product-facing one), STILL BLOCKED 15, NOT ATTEMPTED 20. Total 59 table rows. The 62 register rows are covered by grouping: the four Twenty bug rows share one row, the four track-only items share one row, and the Medusa WH-008 row has three sub-cases.
 
 ## 10. Proposed case IDs (PROPOSED, for owner approval)
 
@@ -431,7 +431,7 @@ Not proposed: the Medusa 200-before-verify point (PRODUCT DEFECT, P5 design) and
 |---|---|---|
 | `docs/plans/2026-11-02-p2-lane-twenty.md:1089-1090` | HR-4 and HR-5 DEFERRED | Stale. Harness 0.3.1 has the replicas adapter and multi-workspace passthrough; `CACHE-001` and `WH-009` pass (Twenty record). |
 | `docs/plans/2026-11-02-p2-lane-twenty.md:1122-1123` | OD-7 and OD-8 DEFERRED | Applied and passing (same evidence). |
-| `docs/plans/2026-11-02-p2-lane-twenty.md:10xx` (`OD-10`) and `:132` | OD-10 "not BLOCKING" versus row BLOCKED | Reconcile to BLOCKED: billing sync needs the CA in the server container (Twenty record, billing stage). |
+| `docs/plans/2026-11-02-p2-lane-twenty.md:1125` (`OD-10`) and `:132` | OD-10 "not BLOCKING" versus row BLOCKED | Reconcile to BLOCKED: billing sync needs the CA in the server container (Twenty record, billing stage). |
 | `docs/plans/2026-11-02-p2-lane-twenty.md:793` (up command) | No base URL for the multi-workspace job | Add `TWENTY_BASE_URL=http://localhost:3002` for the `@multiws` job (B-P13; WH-009 passes only with it). |
 | `docs/plans/2026-11-02-p2-lane-documenso.md:128-129` | CONV-002 and CONV-003 DEFERRED | Stale. Specs on `main`; CONV-003 passes; CONV-002 expected failure. Run with `DOCUMENSO_GOTENBERG=1` (harness 0.3.1). |
 | `docs/plans/2026-11-02-p2-lane-documenso.md:137`, `:1018` | WH-005 DEFERRED (OD-11) | Spec exists; expected-failure marker verified. Row text still missing (D8). |
