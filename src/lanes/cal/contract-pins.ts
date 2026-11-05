@@ -1,0 +1,175 @@
+/**
+ * Pinned identities for the CON-005 OAS crawl (plan section 4.2; review A1). Every value is a MEASURED identity from the
+ * crawl on the pinned stack (docs/probes/2026-11-02-p2-lane-cal-live-probes.md, section L12). Counts are never pinned:
+ * the crawl seeds one booking and one webhook of its own, so these identities do not move with the seed.
+ * The crawl input is fixed by this file; a change here is a reviewed change, never a silent one.
+ */
+
+/** Operations the crawl called and got a status for (the crawl input supplied every path value). */
+export const CRAWLED_OPERATIONS: readonly string[] = [
+  "GET /v2/bookings",
+  "GET /v2/bookings/{bookingUid}",
+  "GET /v2/bookings/{bookingUid}/attendees",
+  "GET /v2/bookings/{bookingUid}/calendar-links",
+  "GET /v2/bookings/{bookingUid}/conferencing-sessions",
+  "GET /v2/bookings/{bookingUid}/recordings",
+  "GET /v2/bookings/{bookingUid}/references",
+  "GET /v2/bookings/{bookingUid}/transcripts",
+  "GET /v2/calendars",
+  "GET /v2/calendars/busy-times",
+  "GET /v2/calendars/connections",
+  "GET /v2/calendars/ics-feed/check",
+  "GET /v2/conferencing",
+  "GET /v2/conferencing/default",
+  "GET /v2/event-types",
+  "GET /v2/event-types/{eventTypeId}",
+  "GET /v2/event-types/{eventTypeId}/private-links",
+  "GET /v2/event-types/{eventTypeId}/webhooks",
+  "GET /v2/event-types/{eventTypeId}/webhooks/{webhookId}",
+  "GET /v2/me",
+  "GET /v2/oauth-clients",
+  "GET /v2/schedules",
+  "GET /v2/schedules/default",
+  "GET /v2/slots",
+  "GET /v2/stripe/check",
+  "GET /v2/stripe/connect",
+  "GET /v2/stripe/save",
+  "GET /v2/verified-resources/emails",
+  "GET /v2/verified-resources/phones",
+  "GET /v2/webhooks",
+  "GET /v2/webhooks/{webhookId}",
+];
+
+/** Operations the crawl did not call; the reason is from the closed list `UncrawledReason`. */
+export const NO_VALUE_OPERATIONS: readonly string[] = [
+  "GET /v2/auth/oauth2/clients/{clientId}",
+  "GET /v2/bookings/by-seat/{seatUid}",
+  "GET /v2/bookings/{bookingUid}/attendees/{attendeeId}",
+  "GET /v2/calendars/connections/{connectionId}/events",
+  "GET /v2/calendars/connections/{connectionId}/events/{eventId}",
+  "GET /v2/calendars/connections/{connectionId}/freebusy",
+  "GET /v2/calendars/{calendar}/check",
+  "GET /v2/calendars/{calendar}/connect",
+  "GET /v2/calendars/{calendar}/event/{eventUid}",
+  "GET /v2/calendars/{calendar}/events",
+  "GET /v2/calendars/{calendar}/events/{eventUid}",
+  "GET /v2/calendars/{calendar}/freebusy",
+  "GET /v2/calendars/{calendar}/save",
+  "GET /v2/conferencing/{app}/oauth/auth-url",
+  "GET /v2/conferencing/{app}/oauth/callback",
+  "GET /v2/oauth-clients/{clientId}",
+  "GET /v2/oauth-clients/{clientId}/users",
+  "GET /v2/oauth-clients/{clientId}/users/{userId}",
+  "GET /v2/oauth-clients/{clientId}/webhooks",
+  "GET /v2/oauth-clients/{clientId}/webhooks/{webhookId}",
+  "GET /v2/schedules/{scheduleId}",
+  "GET /v2/slots/reservations/{uid}",
+  "GET /v2/verified-resources/emails/{id}",
+  "GET /v2/verified-resources/phones/{id}",
+];
+
+export type UncrawledReason = "no-path-value";
+
+/**
+ * Each status a response answered that the committed OAS does not list for that operation (not 200). Re-measured
+ * 2026-11-04 with the per-operation cal-api-version (results/cal-con-005-crawl.json; probe section L19). Each is a
+ * finding (SPEC-CAL-UNDOC), with its measured cause. None is filtered out; a new entry turns the test red.
+ * Every pinned route is in the committed OAS, which documents only 200 for it.
+ */
+export const KNOWN_UNDOCUMENTED: readonly {
+  readonly operation: string;
+  readonly status: number;
+  readonly note: string;
+}[] = [
+  // the booking has no conferencing session; the committed OAS documents only 200 for this operation
+  {
+    operation: "GET /v2/bookings/{bookingUid}/conferencing-sessions",
+    status: 404,
+    note: "the booking has no conferencing session; the committed OAS documents only 200 for this operation",
+  },
+  // the booking has no recording; the committed OAS documents only 200 for this operation
+  {
+    operation: "GET /v2/bookings/{bookingUid}/recordings",
+    status: 404,
+    note: "the booking has no recording; the committed OAS documents only 200 for this operation",
+  },
+  // the booking has no transcript; the committed OAS documents only 200 for this operation
+  {
+    operation: "GET /v2/bookings/{bookingUid}/transcripts",
+    status: 404,
+    note: "the booking has no transcript; the committed OAS documents only 200 for this operation",
+  },
+  // the OAS declares no cal-api-version for this operation, so none is sent; 404 without it. The committed OAS documents only 200
+  {
+    operation: "GET /v2/bookings/{bookingUid}/attendees",
+    status: 404,
+    note: "the OAS declares no cal-api-version for this operation, so none is sent; 404 without it; the committed OAS documents only 200 for this operation",
+  },
+  // the crawl sends no query (date range, calendars); 400 is the input check; the committed OAS documents only 200 for this operation
+  {
+    operation: "GET /v2/calendars/busy-times",
+    status: 400,
+    note: "the crawl sends no query (date range, calendars); 400 is the input check; the committed OAS documents only 200 for this operation",
+  },
+  // the crawl sends no query; the 400 is the input check; the committed OAS documents only 200 for this operation
+  {
+    operation: "GET /v2/calendars/ics-feed/check",
+    status: 400,
+    note: "the crawl sends no query; the 400 is the input check (classify when the crawl supplies params); the committed OAS documents only 200 for this operation",
+  },
+  // 401 on this crawl input; the cause is not measured (UNVERIFIED); the committed OAS documents only 200 for this operation
+  {
+    operation: "GET /v2/oauth-clients",
+    status: 401,
+    note: "401 on this crawl input; the cause is not measured (UNVERIFIED); the committed OAS documents only 200 for this operation",
+  },
+  // 400 on this crawl input; the cause is not measured (UNVERIFIED); the committed OAS documents only 200 for this operation
+  {
+    operation: "GET /v2/event-types/{eventTypeId}/webhooks/{webhookId}",
+    status: 400,
+    note: "400 on this crawl input; the cause is not measured (UNVERIFIED); the committed OAS documents only 200 for this operation",
+  },
+  // 400 with the version the OAS declares (2024-09-04); the crawl sends no eventTypeId, start or end; the committed OAS documents only 200
+  {
+    operation: "GET /v2/slots",
+    status: 400,
+    note: "400 with the version the OAS declares; the crawl sends no eventTypeId, start or end (CON-001 covers the positive case); the committed OAS documents only 200 for this operation",
+  },
+  // 400 without Stripe connect params; the committed OAS documents only 200 for this operation
+  {
+    operation: "GET /v2/stripe/connect",
+    status: 400,
+    note: "400 without Stripe connect params; the committed OAS documents only 200 for this operation",
+  },
+  // 400 without Stripe params; the committed OAS documents only 200 for this operation
+  {
+    operation: "GET /v2/stripe/save",
+    status: 400,
+    note: "400 without Stripe params; the committed OAS documents only 200 for this operation",
+  },
+  // 404: no Stripe account on the seed; the committed OAS documents only 200 for this operation
+  {
+    operation: "GET /v2/stripe/check",
+    status: 404,
+    note: "404: no Stripe account on the seed; the committed OAS documents only 200 for this operation",
+  },
+];
+
+/**
+ * Operations whose 200 body fails the committed spec (PB-CAL-OAS-1, product documentation). Measured with one booking and one
+ * webhook present, with the per-operation cal-api-version (2026-11-04). Validity is data-dependent (/v2/webhooks is valid with
+ * no webhook), so the crawl always seeds the same data. The three added on 2026-11-04 (event-types, event-types/{eventTypeId},
+ * schedules/default) are 200 under the version the OAS declares and fail the committed schema: real deviations, not header errors.
+ */
+export const KNOWN_INVALID: readonly string[] = [
+  "GET /v2/bookings",
+  "GET /v2/bookings/{bookingUid}",
+  "GET /v2/bookings/{bookingUid}/calendar-links",
+  "GET /v2/bookings/{bookingUid}/references",
+  "GET /v2/calendars",
+  "GET /v2/event-types",
+  "GET /v2/event-types/{eventTypeId}",
+  "GET /v2/schedules/default",
+  "GET /v2/webhooks",
+  "GET /v2/webhooks/{webhookId}",
+];
