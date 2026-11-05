@@ -10,7 +10,9 @@ import {
   teardownRunStripe,
   type RunStripeFixture,
 } from "../../../src/lanes/doc/stripe-fixture.ts";
+import { retained } from "../../../src/invariants/fixture.ts";
 import { bodyOf, listMail, mailboxOf } from "../../../src/lanes/doc/mail.ts";
+import { runUserEmail } from "../../../src/lanes/doc/run-user.ts";
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 
@@ -59,7 +61,7 @@ async function personalOrganisation(
 
 /** Creates the run user through the product: signup, confirmation mail, verify-email, sign-in (cookie in ctx). */
 async function createRunUser(runId: string): Promise<RunUser> {
-  const email = `${runId}-str@example.test`;
+  const email = runUserEmail(runId);
   // Generated per run, held in memory only; never printed or written anywhere.
   const password = `${randomBytes(12).toString("base64url")}Aa1!`;
   const ctx = await playwrightRequest.newContext();
@@ -181,10 +183,17 @@ export const stripeTest = base.extend<{ stripeRun: RunStripeFixture }, { runUser
       const key = assertTestModeKey(process.env.STRIPE_API_KEY);
       const stripe = new Stripe(key);
       const user = await createRunUser(currentRunPrefix());
+      // The after-test sweep's doc-leak-user-email rule matches this prefixed email while the worker holds it. It is
+      // this worker's live fixture, so it is retained until the teardown has run, then released (never loosened).
+      const release = retained.retain("doc-leak-user-email", user.email);
       try {
         await use(user);
       } finally {
-        await teardownRunUser(stripe, user);
+        try {
+          await teardownRunUser(stripe, user);
+        } finally {
+          release();
+        }
       }
     },
     { scope: "worker" },
