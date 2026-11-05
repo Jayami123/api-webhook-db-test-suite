@@ -409,3 +409,74 @@ describe("p2-med Stripe test-key gate", () => {
     assert.ok(!res.output.includes("unitfixture"), "the key value is never echoed");
   });
 });
+
+describe("scripts/ci-changes.sh: which lane flags are set", () => {
+  /** Runs the classifier with an event name and changed paths; returns its four flags. */
+  function classify(event: string, paths: string[]): Record<string, string> {
+    const res = spawnSync("bash", ["scripts/ci-changes.sh"], {
+      input: paths.join("\n"),
+      env: { PATH: process.env["PATH"] ?? "", EVENT_NAME: event },
+      encoding: "utf8",
+    });
+    assert.equal(res.status, 0, res.stderr);
+    return Object.fromEntries(
+      res.stdout
+        .trim()
+        .split("\n")
+        .map((line) => line.split("=") as [string, string]),
+    );
+  }
+  const ALL = { p2_cal: "true", p2_doc: "true", p2_med: "true", p2_tw: "true" };
+  const NONE = { p2_cal: "false", p2_doc: "false", p2_med: "false", p2_tw: "false" };
+  const only = (lane: keyof typeof ALL): Record<string, string> => ({ ...NONE, [lane]: "true" });
+
+  test("G1 workflow_dispatch runs every lane", () => {
+    assert.deepEqual(classify("workflow_dispatch", []), ALL);
+  });
+  test("G2 push runs no lane, whatever changed", () => {
+    assert.deepEqual(classify("push", ["src/lanes/cal/cron.ts"]), NONE);
+  });
+  test("G3 a pull request with no changed paths runs every lane (fail-safe)", () => {
+    assert.deepEqual(classify("pull_request", []), ALL);
+  });
+  test("G4 a docs-only change runs no lane", () => {
+    assert.deepEqual(classify("pull_request", ["docs/lane-ownership.md"]), NONE);
+  });
+  test("G5 a README-only change runs no lane", () => {
+    assert.deepEqual(classify("pull_request", ["README.md"]), NONE);
+  });
+  test("G6 a cal lane path runs only cal", () => {
+    assert.deepEqual(classify("pull_request", ["src/lanes/cal/cron.ts"]), only("p2_cal"));
+  });
+  test("G7 the medusa slo file runs only med", () => {
+    assert.deepEqual(classify("pull_request", ["src/slo/medusa.ts"]), only("p2_med"));
+  });
+  test("G8 a documenso billing test runs only doc", () => {
+    assert.deepEqual(classify("pull_request", ["tests/billing/doc/x.spec.ts"]), only("p2_doc"));
+  });
+  test("G9 a twenty serial test runs only tw", () => {
+    assert.deepEqual(classify("pull_request", ["tests/serial/tw/x.spec.ts"]), only("p2_tw"));
+  });
+  test("G10 a shared file runs every lane", () => {
+    assert.deepEqual(classify("pull_request", ["src/invariants/rules.ts"]), ALL);
+  });
+  test("G11 a change to api.yml runs every lane", () => {
+    assert.deepEqual(classify("pull_request", [".github/workflows/api.yml"]), ALL);
+  });
+  test("G12 two lane paths run exactly those two lanes", () => {
+    assert.deepEqual(classify("pull_request", ["src/lanes/cal/cron.ts", "src/lanes/med/x.ts"]), {
+      ...NONE,
+      p2_cal: "true",
+      p2_med: "true",
+    });
+  });
+  test("G13 a lane path plus a shared path runs every lane", () => {
+    assert.deepEqual(
+      classify("pull_request", ["src/lanes/cal/cron.ts", "src/invariants/rules.ts"]),
+      ALL,
+    );
+  });
+  test("G14 a docs path plus a doc lane path runs only doc", () => {
+    assert.deepEqual(classify("pull_request", ["docs/x.md", "src/lanes/doc/y.ts"]), only("p2_doc"));
+  });
+});
