@@ -20,7 +20,8 @@ env:
   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
   PRODUCTS_ROOT: ${{ github.workspace }}/../products
   TASKER_ENABLE_WEBHOOKS: "1"
-  STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
+  # STRIPE_API_KEY is not set here: only the three steps that need it (the gate, harness up and the lane tests) get it
+  # in their own step env, so no other step (install, bootstrap, leak check, upload) can read it.
 
 jobs:
   cal-api:
@@ -46,12 +47,23 @@ jobs:
         run: npm ci
       - name: Require the Stripe test key (never printed)
         timeout-minutes: 2
+        env:
+          STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
         run: |
           set -euo pipefail
           if [ -z "${STRIPE_API_KEY:-}" ]; then
             echo "::error::STRIPE_API_KEY is not set. Add the test-mode key as a repository secret (plan OD-STRIPE); the cal lane stops here by design."
             exit 1
           fi
+          # Test mode only: a live key must never reach the lane. The value is matched, never printed.
+          case "$STRIPE_API_KEY" in
+            sk_test_*) ;;
+            *)
+              echo "::error::STRIPE_API_KEY must be a Stripe test-mode secret key (it starts with sk_test_). The stored value does not, so the cal lane was not started. Replace the secret with the test-mode key and re-run. The value is not printed."
+              exit 1
+              ;;
+          esac
+          echo "STRIPE_API_KEY is a test-mode key (value not printed)."
       - name: Generate per-job values (masked, written to the job environment only)
         timeout-minutes: 2
         run: |
@@ -71,12 +83,16 @@ jobs:
         run: bash scripts/bootstrap.sh cal
       - name: Harness up (cal)
         timeout-minutes: 16
+        env:
+          STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
         run: node node_modules/qa-portfolio-harness/scripts/up.mjs cal
       - name: Provision the P2 database roles
         timeout-minutes: 3
         run: npm run db:roles:provision -- cal
       - name: Lane tests (cal-api, then cal-serial)
         timeout-minutes: 10
+        env:
+          STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
         run: |
           set -euo pipefail
           mkdir -p results
