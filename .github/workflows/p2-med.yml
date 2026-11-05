@@ -21,6 +21,7 @@ jobs:
     timeout-minutes: 75
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      P2_JSON_FILE: results/playwright-med.json
     steps:
       - name: Checkout
         timeout-minutes: 5
@@ -122,6 +123,14 @@ jobs:
         env:
           STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
         run: npx playwright test --project=med-api
+
+      - name: Job summary (med)
+        if: ${{ !cancelled() }}
+        # SUMMARY_STEP basis: P1 e2e.yml:256-261 gives its job-summary step the same 2-minute budget.
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          node scripts/write-ci-job-summary.ts "med" results/playwright-med.json
 
       - name: Upload the report, junit and logs
         if: always()
