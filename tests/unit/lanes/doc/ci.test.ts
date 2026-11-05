@@ -55,8 +55,9 @@ describe("documenso lane workflow (.github/workflows/p2-doc.yml)", () => {
     assert.match(WORKFLOW, /--project=doc-billing-api/);
   });
 
-  test("it runs on pull requests and never on workflow_run (a PR branch would not trigger it)", () => {
-    assert.ok(WORKFLOW.includes("on:\n  pull_request:\n  workflow_dispatch:"));
+  test("it is called by ci.yml (workflow_call) and never triggers on pull_request, push or workflow_run", () => {
+    assert.ok(WORKFLOW.includes("on:\n  workflow_call:\n  workflow_dispatch:"));
+    assert.equal(new RegExp("^\\s{2}(pull_request|push):", "m").test(WORKFLOW), false);
     // The explanatory comment names workflow_run; the trigger key itself must not exist.
     assert.equal(new RegExp("^\\s{2}workflow_run:", "m").test(WORKFLOW), false);
   });

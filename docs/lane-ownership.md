@@ -28,7 +28,8 @@ adds a real file.
 
 ## Shared files (lanes must not edit these)
 
-- CI: `.github/workflows/api.yml`, `tests/unit/ci/workflow.test.ts`
+- CI: `.github/workflows/ci.yml`, `.github/workflows/api.yml`, `.github/workflows/env-check.yml`,
+  `tests/unit/ci/workflow.test.ts`
 - Playwright and scripts: `playwright.config.ts`, `package.json`, `package-lock.json`, `scripts/`
 - Shared runtime: `src/invariants/rules.ts`, `src/invariants/lane-kit.ts`, `src/invariants/engine.ts`,
   `src/slo.ts`, `src/db/`, `src/contracts/`, `src/webhooks/`, `src/run/`, `src/auth/`, `src/clients/`,
@@ -39,13 +40,18 @@ adds a real file.
 
 ## Gate for lane workflows
 
-Lane workflows run on `pull_request` (and `workflow_dispatch`), not on `workflow_run`: GitHub runs a
-`workflow_run` workflow only from the file on the default branch, so a lane's PR version would never
-run. Each job that runs on `pull_request` is guarded by the same-repo check
-(`github.event.pull_request.head.repo.full_name == github.repository`), so fork PRs never start a stack
-or receive secrets. Lane workflows run alongside `api`; there is no cross-file `needs`. The shape is
-enforced by `tests/unit/ci/workflow.test.ts`, which also lists the allowed secret names (currently
-`STRIPE_API_KEY`). Inert stubs stay valid until a lane replaces its file.
+`.github/workflows/ci.yml` is the one workflow that runs on `pull_request`, `push` to `main` and
+`workflow_dispatch`. It calls each lane workflow (`p2-cal.yml`, `p2-doc.yml`, `p2-med.yml`,
+`p2-tw.yml`) and `api.yml` and `env-check.yml` with `workflow_call`, so one Actions run lists every
+job. A lane runs only when `scripts/ci-changes.sh` sets its flag: the lane's own paths changed, or a
+shared path changed (which runs every lane), or the run is manual. Docs-only changes run no lane.
+On `push`, no lane runs. The `gate` job is the only required check. It passes when `changes`, `api`
+and `env-check` succeeded and every flagged lane succeeded. A skipped lane passes only when its flag
+is false. A fork PR never calls a lane, so a fork PR that changes a lane path is red at the gate.
+Each lane job's `if:` and each lane's job guard require the same-repo check, so a fork never
+starts a stack or receives a secret. The shape is enforced by `tests/unit/ci/workflow.test.ts`, which
+also lists the allowed secret names (currently `STRIPE_API_KEY`). `tw-study.yml` is a scheduled
+measurement, never called from `ci.yml`, and never a required check.
 
 ## Shared changes made in this PR
 

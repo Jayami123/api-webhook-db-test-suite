@@ -1,12 +1,10 @@
 # Foundation shape (plan Task 6). Each product lane owns its own workflow file (p2-cal.yml, p2-med.yml,
-# p2-doc.yml, p2-tw.yml; tw-study.yml for twenty), so lanes never edit this file. The gate for them is
-# described in docs/lane-ownership.md; the commented skeleton at the end of this file is guidance only.
+# p2-doc.yml, p2-tw.yml; tw-study.yml for twenty), so lanes never edit this file. This file is called by
+# ci.yml (workflow_call); ci.yml's `gate` requires this job's result. docs/lane-ownership.md describes the gate.
 name: api
 
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_call:
   workflow_dispatch:
 
 permissions:
@@ -80,7 +78,7 @@ jobs:
           retention-days: 7
 
   # Proves the server-side read-only layers on a real Postgres (plan D5, D14). Not a product.
-  # Not required at first; joins check and unit in the Main ruleset after two green main runs.
+  # Required through ci.yml's gate: this job is part of the `api` caller result.
   db-guard:
     name: db-guard
     runs-on: ubuntu-24.04
@@ -131,8 +129,8 @@ jobs:
       - name: Committed OAS files are valid (contracts/ and tests/fixtures/oas/)
         run: npm run specs:validate
 
-  # The single gate the product lanes depend on. It runs even when a dependency failed (always())
-  # so that its own result is a failure then, not "skipped".
+  # Aggregates this file's jobs. ci.yml's gate also requires the `api` caller result, which includes this job.
+  # It runs even when a dependency failed (always()), so its own result is a failure then, not "skipped".
   foundation:
     name: foundation
     needs: [check, unit, db-guard, specs]
