@@ -11,17 +11,33 @@ import { currentRunPrefix } from "../../../src/run/prefix.ts";
 import { distributedEnvelope } from "../../fixtures/doc/distributed-envelope.ts";
 import { holdQuiet } from "../../fixtures/doc/quiet-window.ts";
 import { SLO } from "../../../src/slo.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
 
 /** Poll interval for the cron wait: a 15-minute sweep needs a coarse poll, not a fixed sleep. */
 const TICK_POLL_MS = 5_000;
 
-test.describe.configure({ timeout: 25 * 60_000 });
+/**
+ * Per-test budget from named parts (the file-wide 25 min is gone). Each part is a real wait or a named SLO:
+ * - setup: distribute and the first mail, bounded by the lane's delivery budget (SLO.docWebhookDelivery);
+ * - the cron wait: tickDeadlineMs (the next quarter hour plus its margin) and the poll's own 60 s slack, as the poll uses;
+ * - quietMs: the quiet window after the send, if the test holds one;
+ * - the final read: one more delivery budget.
+ */
+function reminderBudgetMs(nowMs: number, quietMs: number): number {
+  return (
+    SLO.docWebhookDelivery.ms +
+    (tickDeadlineMs(nowMs) + 60_000) +
+    quietMs +
+    SLO.docWebhookDelivery.ms
+  );
+}
 
 test("P2-DOC-REM-001 one reminder per interval (one cron tick)", async ({
   doc,
   request,
   docAuth,
 }) => {
+  test.setTimeout(reminderBudgetMs(Date.now(), SLO.docJobQuiet.ms));
   const runPrefix = currentRunPrefix();
   const db = readOnlyDb("documenso");
   const w = documensoFixtureWriter(runPrefix);
@@ -69,8 +85,7 @@ test("P2-DOC-REM-001 one reminder per interval (one cron tick)", async ({
     if (latest === undefined) throw new Error("TEST BUG: no mail listed");
     expect(await bodyOf(mailbox, latest.id)).toContain(target.token);
   } finally {
-    await w.close();
-    await doc.envelopes.remove(env.envelopeId);
+    await runAllThenRethrow([() => w.close(), () => doc.envelopes.remove(env.envelopeId)]);
   }
 });
 
@@ -79,6 +94,7 @@ test("P2-DOC-REM-002 a recipient who signed gets no reminder (one cron tick)", a
   request,
   docAuth,
 }) => {
+  test.setTimeout(reminderBudgetMs(Date.now(), 0));
   const runPrefix = currentRunPrefix();
   const db = readOnlyDb("documenso");
   const w = documensoFixtureWriter(runPrefix);
@@ -126,7 +142,6 @@ test("P2-DOC-REM-002 a recipient who signed gets no reminder (one cron tick)", a
       .toBe(pendingBefore + 1);
     expect((await listMail(signedMailbox)).length).toBe(signedBefore);
   } finally {
-    await w.close();
-    await doc.envelopes.remove(env.envelopeId);
+    await runAllThenRethrow([() => w.close(), () => doc.envelopes.remove(env.envelopeId)]);
   }
 });

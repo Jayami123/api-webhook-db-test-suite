@@ -5,6 +5,7 @@ import { completeRecipient, trpcPost } from "../../../src/lanes/doc/envelope.ts"
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 import { distributedEnvelope } from "../../fixtures/doc/distributed-envelope.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
 
 // EXP-003 (a recipient moved back into its window) uses the Recipient.expiresAt allow-list entry in
 // src/db/fixture-allowlist.ts (merged with #16). Master plan row: P2-DOC-EXP-003, scope OD-10.
@@ -106,8 +107,7 @@ test("P2-DOC-EXP-001 signing before expiry succeeds", async ({ doc, request, doc
       .toBe("SIGNED");
     await waitEnvelopeCompleted(db, env.envelopeId);
   } finally {
-    await w.close();
-    await doc.envelopes.remove(env.envelopeId);
+    await runAllThenRethrow([() => w.close(), () => doc.envelopes.remove(env.envelopeId)]);
     await assertReadsDeleted(db, env.envelopeId);
   }
 });
@@ -154,8 +154,7 @@ test("P2-DOC-EXP-002 signing 1 s after expiry is refused with RECIPIENT_EXPIRED 
     expect(res.text).toContain("RECIPIENT_EXPIRED");
     expect(JSON.stringify(await recipientRow())).toBe(before);
   } finally {
-    await w.close();
-    await doc.envelopes.remove(env.envelopeId);
+    await runAllThenRethrow([() => w.close(), () => doc.envelopes.remove(env.envelopeId)]);
   }
 });
 
@@ -223,8 +222,7 @@ test("P2-DOC-EXP-003 a recipient moved back into its window signs again", async 
       .toBe("SIGNED");
     await waitEnvelopeCompleted(db, env.envelopeId);
   } finally {
-    await w.close();
-    await doc.envelopes.remove(env.envelopeId);
+    await runAllThenRethrow([() => w.close(), () => doc.envelopes.remove(env.envelopeId)]);
     await assertReadsDeleted(db, env.envelopeId);
   }
 });

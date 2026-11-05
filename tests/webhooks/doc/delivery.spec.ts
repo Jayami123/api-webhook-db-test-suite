@@ -11,6 +11,7 @@ import { completedEnvelope } from "../../fixtures/doc/completed-envelope.ts";
 import { distributedEnvelope } from "../../fixtures/doc/distributed-envelope.ts";
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
 import { holdQuiet } from "../../fixtures/doc/quiet-window.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
 
 const examplePdf = (): Buffer =>
   readFileSync(path.join(productsRoot(), "documenso", "assets", "example.pdf"));
@@ -59,8 +60,10 @@ test("P2-DOC-WH-001 the secret header equals the configured secret; a loopback w
       expect.objectContaining({ ok: false }),
     );
   } finally {
-    if (envelopeId) await doc.envelopes.remove(envelopeId);
-    await doc.webhooks.remove(id);
+    await runAllThenRethrow([
+      () => (envelopeId ? doc.envelopes.remove(envelopeId) : Promise.resolve()),
+      () => doc.webhooks.remove(id),
+    ]);
   }
   // SSRF path: a loopback address is refused at create time (400), so no webhook row is made.
   await expect(
@@ -120,8 +123,10 @@ test("P2-DOC-WH-002 one event makes 1 + 3 attempts with no back-off, and created
     for (const d of ds)
       expect(verifyDocumenso({ secret, headers: d.headers })).toEqual({ ok: true });
   } finally {
-    if (envelopeId) await doc.envelopes.remove(envelopeId);
-    await doc.webhooks.remove(id);
+    await runAllThenRethrow([
+      () => (envelopeId ? doc.envelopes.remove(envelopeId) : Promise.resolve()),
+      () => doc.webhooks.remove(id),
+    ]);
   }
 });
 
@@ -155,8 +160,10 @@ test("P2-DOC-WH-003 a 9 s receiver is delivered once", async ({ doc, receiverHan
     );
     expect(receiverHandle.receiver.deliveries(key)).toHaveLength(1); // no retry after a 9 s answer
   } finally {
-    if (envelopeId) await doc.envelopes.remove(envelopeId);
-    await doc.webhooks.remove(id);
+    await runAllThenRethrow([
+      () => (envelopeId ? doc.envelopes.remove(envelopeId) : Promise.resolve()),
+      () => doc.webhooks.remove(id),
+    ]);
   }
 });
 
@@ -201,8 +208,10 @@ test("P2-DOC-WH-003 an 11 s receiver is aborted at the 10 s timeout and retried 
       expect(gap).toBeGreaterThanOrEqual(9_500);
     }
   } finally {
-    if (envelopeId) await doc.envelopes.remove(envelopeId);
-    await doc.webhooks.remove(id);
+    await runAllThenRethrow([
+      () => (envelopeId ? doc.envelopes.remove(envelopeId) : Promise.resolve()),
+      () => doc.webhooks.remove(id),
+    ]);
   }
 });
 
@@ -249,8 +258,10 @@ test("P2-DOC-WH-006 no per-delivery identifier exists (only payload.id is stable
     };
     expect(new Set(ds.map((d) => stripCreatedAt(d.rawBody))).size).toBe(1);
   } finally {
-    if (envelopeId) await doc.envelopes.remove(envelopeId);
-    await doc.webhooks.remove(id);
+    await runAllThenRethrow([
+      () => (envelopeId ? doc.envelopes.remove(envelopeId) : Promise.resolve()),
+      () => doc.webhooks.remove(id),
+    ]);
   }
 });
 
@@ -289,8 +300,10 @@ test("P2-DOC-WH-007 a 302 receiver is not followed (no delivery on /redirected)"
     expect(ds.every((d) => d.mode === "redirect")).toBe(true); // every attempt was answered with the 302
     expect(ds.every((d) => !d.path.endsWith("/redirected"))).toBe(true);
   } finally {
-    if (envelopeId) await doc.envelopes.remove(envelopeId);
-    await doc.webhooks.remove(id);
+    await runAllThenRethrow([
+      () => (envelopeId ? doc.envelopes.remove(envelopeId) : Promise.resolve()),
+      () => doc.webhooks.remove(id),
+    ]);
   }
 });
 
@@ -405,7 +418,9 @@ test("P2-DOC-WH-004 each event of the trigger matrix is delivered exactly once p
     }
     expect(counts).toEqual(expected);
   } finally {
-    for (const envelopeId of cleanup) await doc.envelopes.remove(envelopeId);
-    await doc.webhooks.remove(id);
+    await runAllThenRethrow([
+      ...cleanup.map((envelopeId) => () => doc.envelopes.remove(envelopeId)),
+      () => doc.webhooks.remove(id),
+    ]);
   }
 });

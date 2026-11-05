@@ -6,6 +6,7 @@ import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 import { ZWebhookPayloadSchema } from "../../../src/lanes/doc/webhook-schema.ts";
 import { verifyDocumenso } from "../../../src/webhooks/verify.ts";
 import { distributedEnvelope } from "../../fixtures/doc/distributed-envelope.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
 
 /**
  * WH-005 (master plan): "Payload contract per event", priority P1. Oracle: every payload is valid, and no
@@ -78,7 +79,9 @@ test("P2-DOC-WH-005 every delivered payload matches the schema and carries no re
     );
     expect(tokensInPayloads).toEqual([]);
   } finally {
-    if (envelopeId) await doc.envelopes.remove(envelopeId);
-    await doc.webhooks.remove(id);
+    await runAllThenRethrow([
+      () => (envelopeId ? doc.envelopes.remove(envelopeId) : Promise.resolve()),
+      () => doc.webhooks.remove(id),
+    ]);
   }
 });
