@@ -32,22 +32,26 @@ test.describe("P2-CAL-REC recurring bookings", () => {
   }) => {
     const testId = "cal-rec-002";
     const key = receiverHandle.key(testId);
-    const yogaId = await eventTypeIdBySlug(db(), PRO_EMAIL, "yoga-class");
-    const hookId = await cal.webhooks.create({
-      subscriberUrl: receiverHandle.urlFor(testId),
-      eventTriggers: ["BOOKING_CANCELLED"],
-      secret: randomSecret(),
-    });
     const api = calBookingApi({ request, apiBaseUrl: apiBase(), auth: calAuth });
-    const starts = await slotStartsAhead(request, calAuth, yogaId);
     const email = attendeeEmailFor(currentRunPrefix(), testId);
-    const series = await api.create({
-      eventTypeId: yogaId,
-      start: String(starts[0]),
-      attendeeEmail: email,
-      attendeeName: "rec",
-    });
+    // What the test has created so far: finally removes only what exists.
+    const track: { hookId?: string; booked: boolean } = { booked: false };
     try {
+      const yogaId = await eventTypeIdBySlug(db(), PRO_EMAIL, "yoga-class");
+      track.hookId = await cal.webhooks.create({
+        subscriberUrl: receiverHandle.urlFor(testId),
+        eventTriggers: ["BOOKING_CANCELLED"],
+        secret: randomSecret(),
+      });
+      const starts = await slotStartsAhead(request, calAuth, yogaId);
+      // Set before the create: a create that throws after the product wrote rows still has them cancelled.
+      track.booked = true;
+      const series = await api.create({
+        eventTypeId: yogaId,
+        start: String(starts[0]),
+        attendeeEmail: email,
+        attendeeName: "rec",
+      });
       expect(series.status).toBe(201);
       // Measured (docs/probes/2026-11-02-p2-lane-cal-live-probes.md L9): one request makes a 12-occurrence series, all ACCEPTED.
       expect(series.recurringSeriesLength).toBe(12);
@@ -75,12 +79,14 @@ test.describe("P2-CAL-REC recurring bookings", () => {
       expect(await taskRowsFor(db(), currentRunPrefix(), testId)).toHaveLength(1);
     } finally {
       // Only accepted rows are cancelled: the occurrence the test cancelled is skipped, so every cancel expects 200.
-      const accepted = (await bookingRowsForEmail(db(), email)).filter(
-        (r) => r.status === "accepted",
-      );
+      // The series rows are read by this run's attendee email, so the lookup runs only once a create was sent.
+      const accepted = track.booked
+        ? (await bookingRowsForEmail(db(), email)).filter((r) => r.status === "accepted")
+        : [];
+      const hookId = track.hookId;
       await runAllThenRethrow([
         ...accepted.map((r) => () => cancelInCleanup(api, r.uid, { cancelledByTest: false })),
-        () => cal.webhooks.remove(hookId),
+        ...(hookId === undefined ? [] : [() => cal.webhooks.remove(hookId)]),
       ]);
     }
   });

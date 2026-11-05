@@ -79,22 +79,23 @@ test("P2-CAL-CON-005 the crawl pins every operation, undocumented status and inv
       )[0]?.id,
   });
   // The crawl seeds its own data so that every identity is measured against the same state:
-  // one booking (for {bookingUid}) and one webhook (for {webhookId}). Both are removed in finally.
-  const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
-  const starts = await slotStartsAhead(request, calAuth, eventTypeId);
+  // one booking (for {bookingUid}) and one webhook (for {webhookId}). The try opens right after the
+  // mint, so a throw in any setup step still revokes the key; finally removes only what was created.
   const api = calBookingApi({ request, apiBaseUrl: apiBase(), auth: calAuth });
-  const booked = await api.create({
-    eventTypeId,
-    start: String(starts[15]),
-    attendeeEmail: attendeeEmailFor(currentRunPrefix(), "con-005"),
-    attendeeName: "crawl",
-  });
   const results: Crawl[] = [];
-  let webhookId: string | undefined;
+  const track: { hookId?: string; uids: string[] } = { uids: [] };
   try {
+    const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
+    const starts = await slotStartsAhead(request, calAuth, eventTypeId);
+    const booked = await api.create({
+      eventTypeId,
+      start: String(starts[15]),
+      attendeeEmail: attendeeEmailFor(currentRunPrefix(), "con-005"),
+      attendeeName: "crawl",
+    });
+    track.uids.push(...booked.uids);
     expect(booked.status).toBe(201);
-    // Created inside the try, so a failed create still cancels the booking and revokes the key in finally.
-    webhookId = await cal.webhooks.create({
+    track.hookId = await cal.webhooks.create({
       subscriberUrl: `http://127.0.0.1:9/r/${currentRunPrefix()}/con-005`,
       eventTriggers: ["BOOKING_CREATED"],
       secret: `con005-${currentRunPrefix()}`,
@@ -102,7 +103,7 @@ test("P2-CAL-CON-005 the crawl pins every operation, undocumented status and inv
     const values: Record<string, string> = {
       bookingUid: booked.uids[0] ?? "",
       eventTypeId: String(eventTypeId),
-      webhookId,
+      webhookId: track.hookId,
     };
     for (const op of ops) {
       if (op.params.some((p) => values[p] === undefined)) {
@@ -145,9 +146,9 @@ test("P2-CAL-CON-005 the crawl pins every operation, undocumented status and inv
       });
     }
   } finally {
-    const hookId = webhookId;
+    const hookId = track.hookId;
     await runAllThenRethrow([
-      ...booked.uids.map((uid) => () => cancelInCleanup(api, uid, { cancelledByTest: false })),
+      ...track.uids.map((uid) => () => cancelInCleanup(api, uid, { cancelledByTest: false })),
       ...(hookId === undefined ? [] : [() => cal.webhooks.remove(hookId)]),
       () => revokeAndVerify(key, () => key.isPresent()),
     ]);

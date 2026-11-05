@@ -28,6 +28,28 @@ import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
 const db = (): ReturnType<typeof readOnlyDb> => readOnlyDb("cal");
 const cronSecret = (): string => process.env["CRON_SECRET"] ?? "";
 
+/** What a test has created so far: finally removes only what exists. */
+interface Track {
+  hookId?: string;
+  uids: string[];
+}
+
+/** Cancels every tracked booking and removes the webhook when it was created; `cancelledByTest(i)` marks the uid at index i the test cancelled itself. */
+async function cleanup(
+  api: ReturnType<typeof calBookingApi>,
+  cal: import("../../../src/clients/cal.ts").CalClient,
+  track: Track,
+  cancelledByTest: (index: number) => boolean = () => false,
+): Promise<void> {
+  const hookId = track.hookId;
+  await runAllThenRethrow([
+    ...track.uids.map(
+      (uid, i) => () => cancelInCleanup(api, uid, { cancelledByTest: cancelledByTest(i) }),
+    ),
+    ...(hookId === undefined ? [] : [() => cal.webhooks.remove(hookId)]),
+  ]);
+}
+
 test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
   test("P2-CAL-WH-001 BOOKING_CREATED is delivered once with a valid HMAC over the raw bytes", async ({
     request,
@@ -38,21 +60,23 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
     const testId = "cal-wh-001";
     const key = receiverHandle.key(testId);
     const secret = randomSecret();
-    const hookId = await cal.webhooks.create({
-      subscriberUrl: receiverHandle.urlFor(testId),
-      eventTriggers: ["BOOKING_CREATED"],
-      secret,
-    });
     const api = calBookingApi({ request, apiBaseUrl: apiBase(), auth: calAuth });
-    const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
-    const starts = await slotStartsAhead(request, calAuth, eventTypeId);
-    const booked = await api.create({
-      eventTypeId,
-      start: String(starts[0]),
-      attendeeEmail: attendeeEmailFor(currentRunPrefix(), testId),
-      attendeeName: "wh",
-    });
+    const track: Track = { uids: [] };
     try {
+      track.hookId = await cal.webhooks.create({
+        subscriberUrl: receiverHandle.urlFor(testId),
+        eventTriggers: ["BOOKING_CREATED"],
+        secret,
+      });
+      const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
+      const starts = await slotStartsAhead(request, calAuth, eventTypeId);
+      const booked = await api.create({
+        eventTypeId,
+        start: String(starts[0]),
+        attendeeEmail: attendeeEmailFor(currentRunPrefix(), testId),
+        attendeeName: "wh",
+      });
+      track.uids.push(...booked.uids);
       expect(booked.status).toBe(201);
       expect(await runTaskerOnce(request, webBase(), cronSecret())).toBe(200);
       await expect
@@ -67,10 +91,7 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
       expect(expectCalSignature(must(delivery, "delivery"), secret)).toEqual({ ok: true });
       expect(must(delivery, "delivery").headers["x-cal-signature-256"]).toMatch(/^[0-9a-f]{64}$/);
     } finally {
-      await runAllThenRethrow([
-        ...booked.uids.map((uid) => () => cancelInCleanup(api, uid, { cancelledByTest: false })),
-        () => cal.webhooks.remove(hookId),
-      ]);
+      await cleanup(api, cal, track);
     }
   });
 
@@ -83,21 +104,23 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
     const testId = "cal-wh-001n";
     const key = receiverHandle.key(testId);
     const secret = randomSecret();
-    const hookId = await cal.webhooks.create({
-      subscriberUrl: receiverHandle.urlFor(testId),
-      eventTriggers: ["BOOKING_CREATED"],
-      secret,
-    });
     const api = calBookingApi({ request, apiBaseUrl: apiBase(), auth: calAuth });
-    const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
-    const starts = await slotStartsAhead(request, calAuth, eventTypeId);
-    const booked = await api.create({
-      eventTypeId,
-      start: String(starts[11]),
-      attendeeEmail: attendeeEmailFor(currentRunPrefix(), testId),
-      attendeeName: "wh1n",
-    });
+    const track: Track = { uids: [] };
     try {
+      track.hookId = await cal.webhooks.create({
+        subscriberUrl: receiverHandle.urlFor(testId),
+        eventTriggers: ["BOOKING_CREATED"],
+        secret,
+      });
+      const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
+      const starts = await slotStartsAhead(request, calAuth, eventTypeId);
+      const booked = await api.create({
+        eventTypeId,
+        start: String(starts[11]),
+        attendeeEmail: attendeeEmailFor(currentRunPrefix(), testId),
+        attendeeName: "wh1n",
+      });
+      track.uids.push(...booked.uids);
       expect(booked.status).toBe(201);
       expect(await runTaskerOnce(request, webBase(), cronSecret())).toBe(200);
       await expect
@@ -114,10 +137,7 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
         reason: "signature-mismatch",
       });
     } finally {
-      await runAllThenRethrow([
-        ...booked.uids.map((uid) => () => cancelInCleanup(api, uid, { cancelledByTest: false })),
-        () => cal.webhooks.remove(hookId),
-      ]);
+      await cleanup(api, cal, track);
     }
   });
 
@@ -129,21 +149,23 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
   }) => {
     const testId = "cal-wh-002c";
     const key = receiverHandle.key(testId);
-    const hookId = await cal.webhooks.create({
-      subscriberUrl: receiverHandle.urlFor(testId),
-      eventTriggers: ["BOOKING_CREATED"],
-      secret: randomSecret(),
-    });
     const api = calBookingApi({ request, apiBaseUrl: apiBase(), auth: calAuth });
-    const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
-    const starts = await slotStartsAhead(request, calAuth, eventTypeId);
-    const booked = await api.create({
-      eventTypeId,
-      start: String(starts[1]),
-      attendeeEmail: attendeeEmailFor(currentRunPrefix(), testId),
-      attendeeName: "wh2",
-    });
+    const track: Track = { uids: [] };
     try {
+      track.hookId = await cal.webhooks.create({
+        subscriberUrl: receiverHandle.urlFor(testId),
+        eventTriggers: ["BOOKING_CREATED"],
+        secret: randomSecret(),
+      });
+      const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
+      const starts = await slotStartsAhead(request, calAuth, eventTypeId);
+      const booked = await api.create({
+        eventTypeId,
+        start: String(starts[1]),
+        attendeeEmail: attendeeEmailFor(currentRunPrefix(), testId),
+        attendeeName: "wh2",
+      });
+      track.uids.push(...booked.uids);
       expect(booked.status).toBe(201);
       expect(await runTaskerOnce(request, webBase(), cronSecret())).toBe(200);
       await expect
@@ -158,10 +180,7 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
       expect(bookingWebhookErrors(body)).toEqual([]);
       expect((body as { triggerEvent: string }).triggerEvent).toBe("BOOKING_CREATED");
     } finally {
-      await runAllThenRethrow([
-        ...booked.uids.map((uid) => () => cancelInCleanup(api, uid, { cancelledByTest: false })),
-        () => cal.webhooks.remove(hookId),
-      ]);
+      await cleanup(api, cal, track);
     }
   });
 
@@ -173,23 +192,24 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
   }) => {
     const testId = "cal-wh-002r";
     const key = receiverHandle.key(testId);
-    const hookId = await cal.webhooks.create({
-      subscriberUrl: receiverHandle.urlFor(testId),
-      eventTriggers: ["BOOKING_RESCHEDULED"],
-      secret: randomSecret(),
-    });
     const api = calBookingApi({ request, apiBaseUrl: apiBase(), auth: calAuth });
-    const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
-    const starts = await slotStartsAhead(request, calAuth, eventTypeId);
-    const booked = await api.create({
-      eventTypeId,
-      start: String(starts[2]),
-      attendeeEmail: attendeeEmailFor(currentRunPrefix(), testId),
-      attendeeName: "wh2r",
-    });
-    const uids = [...booked.uids];
+    const track: Track = { uids: [] };
     let rescheduled = false;
     try {
+      track.hookId = await cal.webhooks.create({
+        subscriberUrl: receiverHandle.urlFor(testId),
+        eventTriggers: ["BOOKING_RESCHEDULED"],
+        secret: randomSecret(),
+      });
+      const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
+      const starts = await slotStartsAhead(request, calAuth, eventTypeId);
+      const booked = await api.create({
+        eventTypeId,
+        start: String(starts[2]),
+        attendeeEmail: attendeeEmailFor(currentRunPrefix(), testId),
+        attendeeName: "wh2r",
+      });
+      track.uids.push(...booked.uids);
       expect(booked.status).toBe(201);
       const res = await request.fetch(
         `${apiBase()}/v2/bookings/${booked.uids[0] ?? ""}/reschedule`,
@@ -204,7 +224,7 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
       // A reschedule cancels the original booking (probe record, L20): its cleanup cancel may answer already-cancelled.
       rescheduled = true;
       const newUid = (JSON.parse(await res.text()) as { data: { uid: string } }).data.uid;
-      uids.push(newUid);
+      track.uids.push(newUid);
       expect(await runTaskerOnce(request, webBase(), cronSecret())).toBe(200);
       await expect
         .poll(() => receiverHandle.receiver.deliveries(key).length, {
@@ -218,12 +238,7 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
       expect(bookingWebhookErrors(body)).toEqual([]);
       expect((body as { triggerEvent: string }).triggerEvent).toBe("BOOKING_RESCHEDULED");
     } finally {
-      await runAllThenRethrow([
-        ...uids.map(
-          (uid, i) => () => cancelInCleanup(api, uid, { cancelledByTest: i === 0 && rescheduled }),
-        ),
-        () => cal.webhooks.remove(hookId),
-      ]);
+      await cleanup(api, cal, track, (i) => i === 0 && rescheduled);
     }
   });
 
@@ -235,22 +250,24 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
   }) => {
     const testId = "cal-wh-002x";
     const key = receiverHandle.key(testId);
-    const hookId = await cal.webhooks.create({
-      subscriberUrl: receiverHandle.urlFor(testId),
-      eventTriggers: ["BOOKING_CANCELLED"],
-      secret: randomSecret(),
-    });
     const api = calBookingApi({ request, apiBaseUrl: apiBase(), auth: calAuth });
-    const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
-    const starts = await slotStartsAhead(request, calAuth, eventTypeId);
-    const booked = await api.create({
-      eventTypeId,
-      start: String(starts[4]),
-      attendeeEmail: attendeeEmailFor(currentRunPrefix(), testId),
-      attendeeName: "wh2x",
-    });
+    const track: Track = { uids: [] };
     let cancelledByTest = false;
     try {
+      track.hookId = await cal.webhooks.create({
+        subscriberUrl: receiverHandle.urlFor(testId),
+        eventTriggers: ["BOOKING_CANCELLED"],
+        secret: randomSecret(),
+      });
+      const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
+      const starts = await slotStartsAhead(request, calAuth, eventTypeId);
+      const booked = await api.create({
+        eventTypeId,
+        start: String(starts[4]),
+        attendeeEmail: attendeeEmailFor(currentRunPrefix(), testId),
+        attendeeName: "wh2x",
+      });
+      track.uids.push(...booked.uids);
       expect(booked.status).toBe(201);
       expect(await api.cancel(booked.uids[0] ?? "", "P2 lane cancel")).toBe(200);
       cancelledByTest = true;
@@ -267,17 +284,15 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
       expect(bookingWebhookErrors(body)).toEqual([]);
       expect((body as { triggerEvent: string }).triggerEvent).toBe("BOOKING_CANCELLED");
     } finally {
-      await runAllThenRethrow([
-        ...booked.uids.map(
-          (uid, i) => () =>
-            cancelInCleanup(api, uid, { cancelledByTest: i === 0 && cancelledByTest }),
-        ),
-        () => cal.webhooks.remove(hookId),
-      ]);
+      await cleanup(api, cal, track, (i) => i === 0 && cancelledByTest);
     }
   });
 
-  /** Setup shared by the WH-003 control and finding: receiver 500, one booking, one tasker run. */
+  /**
+   * Setup shared by the WH-003 control and finding: a webhook, receiver 500, one booking. Records each
+   * resource in `track` as it is created, so the caller's finally (which also restores the receiver
+   * mode) removes what exists even when a step here throws.
+   */
   async function wh003Setup(
     ctx: {
       request: import("../../../src/clients/base.ts").ApiRequestLike;
@@ -287,14 +302,15 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
     },
     testId: string,
     startIndex: number,
-  ): Promise<{ hookId: string; uids: string[]; key: ReturnType<typeof ctx.receiverHandle.key> }> {
+    api: ReturnType<typeof calBookingApi>,
+    track: Track,
+  ): Promise<void> {
     const key = ctx.receiverHandle.key(testId);
-    const hookId = await ctx.cal.webhooks.create({
+    track.hookId = await ctx.cal.webhooks.create({
       subscriberUrl: ctx.receiverHandle.urlFor(testId),
       eventTriggers: ["BOOKING_CREATED"],
       secret: randomSecret(),
     });
-    const api = calBookingApi({ request: ctx.request, apiBaseUrl: apiBase(), auth: ctx.calAuth });
     const eventTypeId = await eventTypeIdBySlug(db(), PRO_EMAIL, PRO_SLUG_30);
     const starts = await slotStartsAhead(ctx.request, ctx.calAuth, eventTypeId);
     ctx.receiverHandle.receiver.setMode(key, { kind: "500" });
@@ -304,8 +320,8 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
       attendeeEmail: attendeeEmailFor(currentRunPrefix(), testId),
       attendeeName: "wh3",
     });
+    track.uids.push(...booked.uids);
     expect(booked.status).toBe(201);
-    return { hookId, uids: [...booked.uids], key };
   }
 
   test("P2-CAL-WH-003 receiver 500: one attempt, the Task succeeded, no second delivery in the same run (positive control)", async ({
@@ -316,23 +332,20 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
   }) => {
     const testId = "cal-wh-003c";
     const ctx = { request, calAuth, cal, receiverHandle };
-    const made = await wh003Setup(ctx, testId, 12);
+    const key = receiverHandle.key(testId);
     const api = calBookingApi({ request, apiBaseUrl: apiBase(), auth: calAuth });
+    const track: Track = { uids: [] };
     try {
+      await wh003Setup(ctx, testId, 12, api, track);
       expect(await runTaskerOnce(request, webBase(), cronSecret())).toBe(200);
-      expect(receiverHandle.receiver.deliveries(made.key)).toHaveLength(1);
-      expect(receiverHandle.receiver.deliveries(made.key)[0]?.mode, "receiver answered 500").toBe(
-        "500",
-      );
+      expect(receiverHandle.receiver.deliveries(key)).toHaveLength(1);
+      expect(receiverHandle.receiver.deliveries(key)[0]?.mode, "receiver answered 500").toBe("500");
       const rows = await taskRowsFor(db(), currentRunPrefix(), testId);
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ attempts: 1, succeeded: true, lastError: null });
     } finally {
-      receiverHandle.receiver.setMode(made.key, { kind: "ok" });
-      await runAllThenRethrow([
-        ...made.uids.map((uid) => () => cancelInCleanup(api, uid, { cancelledByTest: false })),
-        () => cal.webhooks.remove(made.hookId),
-      ]);
+      receiverHandle.receiver.setMode(key, { kind: "ok" });
+      await cleanup(api, cal, track);
     }
   });
 
@@ -344,25 +357,22 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
   }) => {
     const testId = "cal-wh-003f";
     const ctx = { request, calAuth, cal, receiverHandle };
-    const made = await wh003Setup(ctx, testId, 13);
+    const key = receiverHandle.key(testId);
     const api = calBookingApi({ request, apiBaseUrl: apiBase(), auth: calAuth });
+    const track: Track = { uids: [] };
     try {
+      await wh003Setup(ctx, testId, 13, api, track);
       // Setup, asserted before the expected failure: the first run made exactly one attempt.
       expect(await runTaskerOnce(request, webBase(), cronSecret())).toBe(200);
-      expect(receiverHandle.receiver.deliveries(made.key)).toHaveLength(1);
-      expect(receiverHandle.receiver.deliveries(made.key)[0]?.mode, "receiver answered 500").toBe(
-        "500",
-      );
+      expect(receiverHandle.receiver.deliveries(key)).toHaveLength(1);
+      expect(receiverHandle.receiver.deliveries(key)[0]?.mode, "receiver answered 500").toBe("500");
       expect(await runTaskerOnce(request, webBase(), cronSecret())).toBe(200);
       // Finding B2 (proven: plan P4; probe record L5): the 500 is acknowledged as success and never retried.
       test.fail();
-      expect(receiverHandle.receiver.deliveries(made.key)).toHaveLength(2);
+      expect(receiverHandle.receiver.deliveries(key)).toHaveLength(2);
     } finally {
-      receiverHandle.receiver.setMode(made.key, { kind: "ok" });
-      await runAllThenRethrow([
-        ...made.uids.map((uid) => () => cancelInCleanup(api, uid, { cancelledByTest: false })),
-        () => cal.webhooks.remove(made.hookId),
-      ]);
+      receiverHandle.receiver.setMode(key, { kind: "ok" });
+      await cleanup(api, cal, track);
     }
   });
 });
