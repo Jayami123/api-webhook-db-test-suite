@@ -389,26 +389,26 @@ describe("lane workflow checker: fixtures", () => {
   }
 });
 
-describe("p2-med Stripe test-key gate", () => {
-  /** The run script of one step, dedented: the same bash script the job runs for it. */
-  function stepScript(file: string, name: string): string {
-    const lines = readFileSync(file, "utf8").split("\n");
-    const start = lines.indexOf(`      - name: ${name}`);
-    assert.ok(start >= 0, `step: ${name}`);
-    const body: string[] = [];
-    let inRun = false;
-    for (const line of lines.slice(start + 1)) {
-      if (/^ {6}- name: /.test(line)) break;
-      if (line === "        run: |") {
-        inRun = true;
-        continue;
-      }
-      if (inRun) body.push(line.startsWith("          ") ? line.slice(10) : line);
+/** The run script of one step, dedented: the same bash script the job runs for it. */
+function stepScript(file: string, name: string): string {
+  const lines = readFileSync(file, "utf8").split("\n");
+  const start = lines.indexOf(`      - name: ${name}`);
+  assert.ok(start >= 0, `step: ${name}`);
+  const body: string[] = [];
+  let inRun = false;
+  for (const line of lines.slice(start + 1)) {
+    if (/^ {6}- name: /.test(line)) break;
+    if (line === "        run: |") {
+      inRun = true;
+      continue;
     }
-    assert.ok(body.length > 0, `run block of ${name}`);
-    return body.join("\n");
+    if (inRun) body.push(line.startsWith("          ") ? line.slice(10) : line);
   }
+  assert.ok(body.length > 0, `run block of ${name}`);
+  return body.join("\n");
+}
 
+describe("p2-med Stripe test-key gate", () => {
   function runGate(stripeKey: string | undefined) {
     const env: NodeJS.ProcessEnv = { PATH: process.env["PATH"] ?? "" };
     if (stripeKey !== undefined) env["STRIPE_API_KEY"] = stripeKey;
@@ -512,5 +512,289 @@ describe("scripts/ci-changes.sh: which lane flags are set", () => {
   });
   test("G14 a docs path plus a doc lane path runs only doc", () => {
     assert.deepEqual(classify("pull_request", ["docs/x.md", "src/lanes/doc/y.ts"]), only("p2_doc"));
+  });
+});
+
+/**
+ * Checks the caller (ci.yml) and returns its violations (empty = pass). Pure: the callee texts come in
+ * through `calleeText`, so a test can hand it a broken callee. Rules: docs/plans/2026-11-05-p2-ci-gate.md, 6.4 (E-group).
+ */
+export function checkCallerWorkflow(
+  text: string,
+  calleeText: (file: string) => string | null,
+): string[] {
+  const violations: string[] = [];
+  const fail = (message: string): void => {
+    violations.push(`ci.yml: ${message}`);
+  };
+  const live = text.split("\n").filter((line) => !line.trimStart().startsWith("#"));
+  const body = live.join("\n");
+
+  const triggers = triggersOf(live) ?? [];
+  if ([...triggers].sort().join(",") !== "pull_request,push,workflow_dispatch") {
+    fail(`triggers are ${triggers.join(", ")}; expected pull_request, push, workflow_dispatch`);
+  }
+  if (!/^ {2}push:\n {4}branches: \[main\]$/m.test(body))
+    fail("push must be limited to branches: [main]");
+  if (!/^permissions:\n {2}contents: read$/m.test(body))
+    fail("permissions must be exactly contents: read");
+  if (
+    !/^concurrency:\n {2}group: ci-\$\{\{ github\.ref \}\}\n {2}cancel-in-progress: true$/m.test(
+      body,
+    )
+  ) {
+    fail("concurrency must be ci-${{ github.ref }} with cancel-in-progress: true");
+  }
+  if (/continue-on-error|pull_request_target|workflow_run/.test(body)) {
+    fail("continue-on-error, pull_request_target and workflow_run are not allowed");
+  }
+  if (/\bsecrets\.[A-Za-z_]/.test(body))
+    fail("ci.yml may not reference a secret value (only secrets: inherit)");
+  for (const line of live) {
+    if (!/^\s*-?\s*uses:/.test(line)) continue;
+    const local = /^\s*(- )?uses: \.\/\.github\/workflows\/[\w.-]+\.yml$/.test(line);
+    if (!local && !PINNED_USES.test(line))
+      fail(`action is not pinned to a full commit SHA: ${line.trim()}`);
+  }
+
+  const jobList = splitJobs(blockUnder(live, "jobs") ?? []);
+  const expected = ["changes", "api", "env-check", "p2-cal", "p2-doc", "p2-med", "p2-tw", "gate"];
+  const ids = jobList.map((job) => job.id);
+  if (ids.join(",") !== expected.join(","))
+    fail(`jobs are ${ids.join(", ")}; expected ${expected.join(", ")}`);
+
+  for (const job of jobList) {
+    const jobBody = job.lines.join("\n");
+    const ifLine = /^ {4}if: (.*)$/m.exec(jobBody)?.[1] ?? "";
+    const uses = /^ {4}uses: \.\/\.github\/workflows\/([\w.-]+\.yml)$/m.exec(jobBody)?.[1];
+    if (uses !== undefined) {
+      const callee = calleeText(uses);
+      if (
+        callee === null ||
+        !(triggersOf(callee.split("\n"))?.includes("workflow_call") ?? false)
+      ) {
+        fail(`job ${job.id}: ${uses} is missing or not workflow_call`);
+      }
+      const refsSecrets = callee !== null && /\bsecrets\./.test(callee);
+      const inherits = /^ {4}secrets: inherit$/m.test(jobBody);
+      if (refsSecrets !== inherits) {
+        fail(
+          `job ${job.id}: secrets: inherit must be present exactly when ${uses} references a secret`,
+        );
+      }
+    }
+    if (job.id.startsWith("p2-")) {
+      if (!ifLine.includes("needs.changes.outputs.p2_"))
+        fail(`job ${job.id} has no changes flag in its if:`);
+      if (!ifLine.includes("github.event.pull_request.head.repo.full_name == github.repository")) {
+        fail(`job ${job.id} has no same-repo guard in its if:`);
+      }
+    }
+  }
+
+  const gateBody = jobList.find((job) => job.id === "gate")?.lines.join("\n") ?? "";
+  if (!/^ {4}needs: \[changes, api, env-check, p2-cal, p2-doc, p2-med, p2-tw\]$/m.test(gateBody)) {
+    fail("gate needs must be exactly changes, api, env-check, p2-cal, p2-doc, p2-med, p2-tw");
+  }
+  if (!/^ {4}if: \$\{\{ always\(\) \}\}$/m.test(gateBody)) fail("gate must be if: ${{ always() }}");
+  if (!/^ {4}timeout-minutes: 5$/m.test(gateBody)) fail("gate timeout must be 5 minutes");
+  if (!/^ {4}runs-on: ubuntu-24\.04$/m.test(gateBody)) fail("gate must run on ubuntu-24.04");
+  return violations;
+}
+
+describe("ci.yml caller and gate shape", () => {
+  const caller = readFileSync(".github/workflows/ci.yml", "utf8");
+  const calleeFile = (file: string): string | null => {
+    try {
+      return readFileSync(`.github/workflows/${file}`, "utf8");
+    } catch {
+      return null;
+    }
+  };
+  /** Applies one textual change to ci.yml (the from text must occur once) and checks it. */
+  const mutate = (from: string, to: string): string[] => {
+    assert.equal(caller.split(from).length - 1, 1, `fixture contains ${JSON.stringify(from)} once`);
+    return checkCallerWorkflow(caller.replace(from, to), calleeFile);
+  };
+
+  test("E1 ci.yml passes the caller checker", () => {
+    assert.deepEqual(checkCallerWorkflow(caller, calleeFile), []);
+  });
+  test("E2 fails: a trigger outside pull_request, push and workflow_dispatch", () => {
+    const v = mutate(
+      "  push:\n    branches: [main]\n",
+      '  push:\n    branches: [main]\n  schedule:\n    - cron: "17 5 * * 1"\n',
+    );
+    assert.ok(
+      v.some((m) => m.includes("triggers are")),
+      JSON.stringify(v),
+    );
+  });
+  test("E3 fails: the gate does not need every caller job", () => {
+    const v = mutate(
+      "needs: [changes, api, env-check, p2-cal, p2-doc, p2-med, p2-tw]",
+      "needs: [changes, api, env-check, p2-cal, p2-doc, p2-med]",
+    );
+    assert.ok(
+      v.some((m) => m.includes("gate needs")),
+      JSON.stringify(v),
+    );
+  });
+  test("E4 fails: the gate is not always()", () => {
+    const v = mutate("if: ${{ always() }}", "if: ${{ success() }}");
+    assert.ok(
+      v.some((m) => m.includes("always()")),
+      JSON.stringify(v),
+    );
+  });
+  test("E5 fails: a lane caller job has no same-repo guard", () => {
+    const v = mutate(
+      "(github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) }}\n    uses: ./.github/workflows/p2-cal.yml",
+      "(github.event_name == 'workflow_dispatch') }}\n    uses: ./.github/workflows/p2-cal.yml",
+    );
+    assert.ok(
+      v.some((m) => m.includes("same-repo guard")),
+      JSON.stringify(v),
+    );
+  });
+  test("E6 fails: secrets: inherit missing on a callee that references secrets", () => {
+    const v = mutate(
+      "    uses: ./.github/workflows/p2-cal.yml\n    secrets: inherit\n",
+      "    uses: ./.github/workflows/p2-cal.yml\n",
+    );
+    assert.ok(
+      v.some((m) => m.includes("secrets: inherit must be present")),
+      JSON.stringify(v),
+    );
+  });
+  test("E7 fails: secrets: inherit present on a callee that references none", () => {
+    const v = mutate(
+      "    uses: ./.github/workflows/p2-tw.yml\n",
+      "    uses: ./.github/workflows/p2-tw.yml\n    secrets: inherit\n",
+    );
+    assert.ok(
+      v.some((m) => m.includes("p2-tw.yml references a secret")),
+      JSON.stringify(v),
+    );
+  });
+  test("E8 fails: a secret expression in ci.yml itself", () => {
+    const v = mutate(
+      "      NEEDS: ${{ toJSON(needs) }}",
+      "      NEEDS: ${{ toJSON(needs) }}\n      TOKEN: ${{ secrets.STRIPE_API_KEY }}",
+    );
+    assert.ok(
+      v.some((m) => m.includes("may not reference a secret")),
+      JSON.stringify(v),
+    );
+  });
+  test("E9 fails: a uses target that is not workflow_call", () => {
+    const v = checkCallerWorkflow(caller, (file) =>
+      file === "p2-med.yml"
+        ? (calleeFile(file) ?? "").replace("  workflow_call:\n", "")
+        : calleeFile(file),
+    );
+    assert.ok(
+      v.some((m) => m.includes("p2-med.yml is missing or not workflow_call")),
+      JSON.stringify(v),
+    );
+  });
+  test("E10 fails: a third-party action not pinned by full SHA", () => {
+    const v = mutate(
+      "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",
+      "actions/checkout@v7",
+    );
+    assert.ok(
+      v.some((m) => m.includes("not pinned")),
+      JSON.stringify(v),
+    );
+  });
+  test("E11 fails: continue-on-error on the gate", () => {
+    const v = mutate(
+      "    if: ${{ always() }}\n",
+      "    if: ${{ always() }}\n    continue-on-error: true\n",
+    );
+    assert.ok(
+      v.some((m) => m.includes("continue-on-error")),
+      JSON.stringify(v),
+    );
+  });
+});
+
+describe("ci.yml gate block (executed)", () => {
+  const gateScript = stepScript(
+    ".github/workflows/ci.yml",
+    "Every required job passed (skipped counts as a pass only when its lane flag is false)",
+  );
+  const ALL_PASS: Record<string, string> = {
+    changes: "success",
+    api: "success",
+    "env-check": "success",
+    "p2-cal": "success",
+    "p2-doc": "success",
+    "p2-med": "success",
+    "p2-tw": "success",
+  };
+  /** Runs the gate's run block with the given job results and lane flags (default "false"). */
+  function runGate(results: Record<string, string>, flags: Record<string, string> = {}) {
+    const needs: Record<string, { result: string }> = {};
+    for (const [job, result] of Object.entries(results)) needs[job] = { result };
+    const env: NodeJS.ProcessEnv = {
+      PATH: process.env["PATH"] ?? "",
+      NEEDS: JSON.stringify(needs),
+      P2_CAL: flags["P2_CAL"] ?? "false",
+      P2_DOC: flags["P2_DOC"] ?? "false",
+      P2_MED: flags["P2_MED"] ?? "false",
+      P2_TW: flags["P2_TW"] ?? "false",
+    };
+    const res = spawnSync("bash", ["-c", gateScript], { env, encoding: "utf8" });
+    return { status: res.status, output: res.stdout + res.stderr };
+  }
+  const ALL_TRUE = { P2_CAL: "true", P2_DOC: "true", P2_MED: "true", P2_TW: "true" };
+  const SKIPPED = {
+    "p2-cal": "skipped",
+    "p2-doc": "skipped",
+    "p2-med": "skipped",
+    "p2-tw": "skipped",
+  };
+
+  test("F1 every job passed and every flag is true: green", () => {
+    assert.equal(runGate(ALL_PASS, ALL_TRUE).status, 0);
+  });
+  test("F2 docs-only (every lane skipped, flags false): green", () => {
+    assert.equal(runGate({ ...ALL_PASS, ...SKIPPED }).status, 0);
+  });
+  test("F3 a flagged lane failed: red and named", () => {
+    const res = runGate({ ...ALL_PASS, "p2-cal": "failure" }, { P2_CAL: "true" });
+    assert.notEqual(res.status, 0);
+    assert.match(res.output, /p2-cal finished with result 'failure'/);
+  });
+  test("F4 a flagged lane was cancelled: red", () => {
+    assert.notEqual(runGate({ ...ALL_PASS, "p2-doc": "cancelled" }, { P2_DOC: "true" }).status, 0);
+  });
+  test("F5 a flagged lane was skipped: red (the silent-pass case)", () => {
+    const res = runGate({ ...ALL_PASS, "p2-med": "skipped" }, { P2_MED: "true" });
+    assert.notEqual(res.status, 0);
+    assert.match(res.output, /p2-med was skipped/);
+  });
+  test("F6 changes failed (lanes skipped, flags false): red", () => {
+    assert.notEqual(runGate({ ...ALL_PASS, changes: "failure", ...SKIPPED }).status, 0);
+  });
+  test("F7 api failed: red", () => {
+    assert.notEqual(runGate({ ...ALL_PASS, api: "failure" }).status, 0);
+  });
+  test("F8 api skipped: red", () => {
+    assert.notEqual(runGate({ ...ALL_PASS, api: "skipped" }).status, 0);
+  });
+  test("F9 env-check missing from needs: red and named as missing", () => {
+    const rest: Record<string, string> = { ...ALL_PASS };
+    delete rest["env-check"];
+    const res = runGate(rest);
+    assert.notEqual(res.status, 0);
+    assert.match(res.output, /env-check finished with result 'missing'/);
+  });
+  test("F10 a lane flag that is empty: red", () => {
+    const res = runGate(ALL_PASS, { P2_TW: "" });
+    assert.notEqual(res.status, 0);
+    assert.match(res.output, /lane flag is ''/);
   });
 });
