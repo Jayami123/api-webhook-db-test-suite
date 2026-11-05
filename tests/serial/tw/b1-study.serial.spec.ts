@@ -21,6 +21,8 @@ import {
 import { composeServiceContainer } from "../../../src/webhooks/docker-net.ts";
 import { TWENTY_COMPOSE_PROJECT } from "../../../src/webhooks/reach.ts";
 import { currentRunPrefix, runScopedName } from "../../../src/run/prefix.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
+import { removeEach } from "../../../src/lanes/tw/cleanup-steps.ts";
 
 /**
  * P2-TW-WH-010: a MEASUREMENT of the B1 drop (SUSPECTED intermittent product bug), not a gate. It runs only in the
@@ -149,8 +151,11 @@ for (const c of STUDY_CASES) {
         captureWorkerLog: () => workerLogSince(sinceIso),
         // No catch: a failed removal fails the case, and the record says it was not cleaned.
         cleanup: async () => {
-          for (const id of created) await tw.people.remove(id);
-          if (hook) await hook.remove();
+          const made = hook;
+          await runAllThenRethrow([
+            ...removeEach(created, (id) => tw.people.remove(id)),
+            ...(made === undefined ? [] : [() => made.remove()]),
+          ]);
         },
       },
       records,

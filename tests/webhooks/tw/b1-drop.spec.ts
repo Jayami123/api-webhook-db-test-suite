@@ -10,6 +10,8 @@ import {
   TW_QUIET_WINDOW_MS,
 } from "../../../src/lanes/tw/slo.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
+import { removeEach } from "../../../src/lanes/tw/cleanup-steps.ts";
 
 /**
  * B1 positive control (one test, normal lane). It shows that a fresh webhook delivers an event sent after one memo
@@ -43,11 +45,10 @@ test("B1 control: a fresh webhook delivers an event sent after one memo window",
       })
       .toBe(1);
   } finally {
-    try {
-      for (const id of created) await tw.people.remove(id);
-    } finally {
-      await hook.remove();
-    }
+    await runAllThenRethrow([
+      ...removeEach(created, (id) => tw.people.remove(id)),
+      () => hook.remove(),
+    ]);
   }
 });
 
@@ -125,11 +126,11 @@ test("P2-TW-WH-010: a webhook created right after a delete receives the next eve
     // The deleted URL never receives the event.
     expect(deliveriesOf(receiverHandle.receiver, keyA, event)).toHaveLength(0);
   } finally {
-    try {
-      for (const id of created) await tw.people.remove(id);
-    } finally {
-      if (!hookAGone) await hookA.remove();
-      if (hookB !== undefined) await hookB.remove();
-    }
+    const lateHook = hookB;
+    await runAllThenRethrow([
+      ...removeEach(created, (id) => tw.people.remove(id)),
+      ...(hookAGone ? [] : [() => hookA.remove()]),
+      ...(lateHook === undefined ? [] : [() => lateHook.remove()]),
+    ]);
   }
 });

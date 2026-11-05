@@ -11,6 +11,8 @@ import {
 import { TWENTY_NONCE_HEADER } from "../../../src/webhooks/sign.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/lanes/tw/slo.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
+import { removeEach } from "../../../src/lanes/tw/cleanup-steps.ts";
 
 test('P2-TW-WH-001: a person.created delivery verifies over "${timestamp}:${body}" with the timestamp within 5 s of receipt', async ({
   tw,
@@ -50,11 +52,10 @@ test('P2-TW-WH-001: a person.created delivery verifies over "${timestamp}:${body
       reason: "signature-mismatch",
     });
   } finally {
-    try {
-      for (const id of created) await tw.people.remove(id);
-    } finally {
-      await hook.remove();
-    }
+    await runAllThenRethrow([
+      ...removeEach(created, (id) => tw.people.remove(id)),
+      () => hook.remove(),
+    ]);
   }
 });
 
@@ -118,10 +119,9 @@ test("P2-TW-WH-007: the nonce header is not signed, so the same delivery with a 
     };
     expect(verifyDelivery({ ...delivery, headers: shifted }, hook.secret).ok).toBe(false);
   } finally {
-    try {
-      for (const id of created) await tw.people.remove(id);
-    } finally {
-      await hook.remove();
-    }
+    await runAllThenRethrow([
+      ...removeEach(created, (id) => tw.people.remove(id)),
+      () => hook.remove(),
+    ]);
   }
 });

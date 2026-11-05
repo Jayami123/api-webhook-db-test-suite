@@ -5,6 +5,8 @@ import { twAuthHeaders } from "../../../src/lanes/tw/http.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
 import type { TwentyAuth } from "../../../src/auth/twenty.ts";
 import type { APIRequestContext } from "@playwright/test";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
+import { removeEach } from "../../../src/lanes/tw/cleanup-steps.ts";
 
 /** Pages of people whose first name starts with `tag`, limit 2, followed by the cursor endCursor. */
 interface Page {
@@ -57,8 +59,9 @@ async function restOf(
   return ids;
 }
 
+/** One step per id (src/shared/cleanup.ts): a failed delete does not leave the later ids behind. */
 async function deleteAll(tw: TwentyClient, ids: readonly string[]): Promise<void> {
-  for (const id of ids) await tw.people.remove(id);
+  await runAllThenRethrow(removeEach(ids, (id) => tw.people.remove(id)));
 }
 
 /** Tag of this test's people: `<run>-<label>-`. The LIKE filter's trailing `%` matches all of them. */
