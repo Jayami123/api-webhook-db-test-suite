@@ -201,7 +201,7 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
         },
       );
       expect(res.status()).toBe(201);
-      // A reschedule cancels the original booking (probe record, L18): its cleanup cancel may answer already-cancelled.
+      // A reschedule cancels the original booking (probe record, L20): its cleanup cancel may answer already-cancelled.
       rescheduled = true;
       const newUid = (JSON.parse(await res.text()) as { data: { uid: string } }).data.uid;
       uids.push(newUid);

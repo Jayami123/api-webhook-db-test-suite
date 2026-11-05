@@ -124,9 +124,9 @@ export function utcIso(instant: Date): string {
 }
 
 /**
- * Status of `POST /v2/bookings/{uid}/cancel` for a booking that is already cancelled. Source: handleCancelBooking.ts:135-139
- * at the pin throws HttpError 400 "This booking has already been cancelled."; measured live in the probe record
- * (docs/probes/2026-11-02-p2-lane-cal-live-probes.md, L18).
+ * Status of `POST /v2/bookings/{uid}/cancel` for a booking that is already cancelled, by a cancel or by a reschedule.
+ * Measured: 400, 3 of 3 repeats and once after a reschedule (docs/probes/2026-11-02-p2-lane-cal-live-probes.md, L20; the
+ * v2 check is input.service.ts:789 at the pin).
  */
 export const CAL_ALREADY_CANCELLED_STATUS = 400;
 

@@ -277,6 +277,15 @@ also failed locally at the pre-change commit (4110f6d, CON-005 excluded), but th
 established: the receiver delivery arrives, and `taskRowsFor` finds no Task row for the test receiver URL
 (src/lanes/cal/tasks.ts, `payloadNamesTest`, commit 27caf79). CI on the new head is the check on a clean database.
 
+## L20 cancel of an already-cancelled booking (2026-11-05, probe "probe-l20", local stack at the pin)
+
+- Booking A created (201), cancelled (200), then cancelled again three times: **400** each time (3 of 3), `BadRequestException`,
+  "Can't cancel booking with uid=… because it has been cancelled already" (`apps/api/v2/src/platform/bookings/2024-08-13/services/input.service.ts:789`).
+- Booking B created (201), rescheduled (201): the original row is `cancelled`, the new row `accepted`. Cancelling the original:
+  **400**, the same message. Cancelling the new booking: 200.
+- Use: `CAL_ALREADY_CANCELLED_STATUS` (`src/lanes/cal/booking.ts`). `cancelInCleanup` accepts it only for a booking the test
+  itself cancelled or rescheduled first (WH-002 cancelled, WH-002 rescheduled, SCH-001); every other cleanup cancel expects 200.
+
 ## Open items (for the discovery round)
 
 - Deterministic SCH-002 repro (not attempted this round, by decision).
