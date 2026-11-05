@@ -98,20 +98,24 @@ test.describe("P2-CAL-CON contract cases", () => {
     });
     const text = await res.text();
     const uid = (JSON.parse(text) as { data?: { uid?: string } }).data?.uid ?? "";
+    let created: unknown;
     try {
       expect(res.status()).toBe(201);
       const rows = await bookingRowsForEmail(db(), email);
       expect(rows.map((r) => r.uid)).toEqual([uid]);
-      // PB-CAL-OAS-1 (product documentation, proven): the committed 201 schema requires strings and numbers
-      // where the live body has null (rescheduledByEmail, rating) and requires attendee seatUid and
-      // bookingFieldsResponses that the live body omits. Evidence: docs/probes/2026-11-02-p2-lane-cal-live-probes.md L12.
-      test.fail();
-      spec.assertValid({ method: "post", path: "/v2/bookings" }, { status: 201 }, JSON.parse(text));
+      created = JSON.parse(text);
     } finally {
       await runAllThenRethrow(
         uid === "" ? [] : [() => cancelInCleanup(api, uid, { cancelledByTest: false })],
       );
     }
+    // PB-CAL-OAS-1 (product documentation, proven): the committed 201 schema requires strings and numbers
+    // where the live body has null (rescheduledByEmail, rating) and requires attendee seatUid and
+    // bookingFieldsResponses that the live body omits. Evidence: docs/probes/2026-11-02-p2-lane-cal-live-probes.md L12.
+    // The marker is called only after the setup asserts and the cleanup have finished, so a cleanup failure is a
+    // normal test failure and never satisfies the expected failure.
+    test.fail();
+    spec.assertValid({ method: "post", path: "/v2/bookings" }, { status: 201 }, created);
   });
 
   test("P2-CAL-CON-003 missing attendee email: 400 error envelope and no Booking row", async ({

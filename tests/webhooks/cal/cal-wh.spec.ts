@@ -360,6 +360,7 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
     const key = receiverHandle.key(testId);
     const api = calBookingApi({ request, apiBaseUrl: apiBase(), auth: calAuth });
     const track: Track = { uids: [] };
+    let afterSecondRun: ReturnType<typeof receiverHandle.receiver.deliveries> | undefined;
     try {
       await wh003Setup(ctx, testId, 13, api, track);
       // Setup, asserted before the expected failure: the first run made exactly one attempt.
@@ -367,12 +368,15 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
       expect(receiverHandle.receiver.deliveries(key)).toHaveLength(1);
       expect(receiverHandle.receiver.deliveries(key)[0]?.mode, "receiver answered 500").toBe("500");
       expect(await runTaskerOnce(request, webBase(), cronSecret())).toBe(200);
-      // Finding B2 (proven: plan P4; probe record L5): the 500 is acknowledged as success and never retried.
-      test.fail();
-      expect(receiverHandle.receiver.deliveries(key)).toHaveLength(2);
+      afterSecondRun = [...receiverHandle.receiver.deliveries(key)];
     } finally {
       receiverHandle.receiver.setMode(key, { kind: "ok" });
       await cleanup(api, cal, track);
     }
+    // Finding B2 (proven: plan P4; probe record L5): the 500 is acknowledged as success and never retried. The marker
+    // is called only after the setup asserts and the cleanup have finished, so a cleanup failure is a normal test
+    // failure and never satisfies the expected failure.
+    test.fail();
+    expect(afterSecondRun).toHaveLength(2);
   });
 });

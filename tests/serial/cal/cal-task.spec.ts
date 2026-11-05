@@ -221,6 +221,7 @@ test.describe("P2-CAL-TASK tasker (serial)", () => {
       const key = receiverHandle.key(testId);
       const track: { hookId?: string; uids: string[] } = { uids: [] };
       const ctx = { request, calAuth, cal, receiverHandle };
+      let deliveriesPerTask: number[] | undefined;
       try {
         await webhookAndBookings(ctx, testId, 4 + round * 5, 5, track);
         receiverHandle.receiver.setMode(key, { kind: "slow", delayMs: 1500 });
@@ -237,13 +238,15 @@ test.describe("P2-CAL-TASK tasker (serial)", () => {
           perUid.set(body.payload.uid, (perUid.get(body.payload.uid) ?? 0) + 1);
         }
         expect([...perUid.keys()].sort()).toEqual([...track.uids].sort());
-        // Finding B4 (per task): each booked task is delivered exactly once.
-        test.fail();
-        expect([...track.uids].map((uid) => perUid.get(uid) ?? 0)).toEqual([1, 1, 1, 1, 1]);
+        deliveriesPerTask = [...track.uids].map((uid) => perUid.get(uid) ?? 0);
       } finally {
         receiverHandle.receiver.setMode(key, { kind: "ok" });
         await cleanup(ctx, track);
       }
+      // Finding B4 (per task): each booked task is delivered exactly once. The marker is called only after the setup
+      // asserts and the cleanup have finished, so a cleanup failure is a normal test failure, never the expected one.
+      test.fail();
+      expect(deliveriesPerTask).toEqual([1, 1, 1, 1, 1]);
     });
   }
 });
