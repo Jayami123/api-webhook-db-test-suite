@@ -6,6 +6,7 @@ import { rowsById } from "../../../src/lanes/tw/rows.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
 import type { TwentyAuth } from "../../../src/auth/twenty.ts";
 import type { APIRequestContext } from "@playwright/test";
+import { expectedDefect } from "../../../src/ci/known-defect.ts";
 
 const OPPORTUNITIES = `${apiBaseUrl("twenty")}/rest/opportunities`;
 
@@ -94,9 +95,8 @@ test("P2-TW-CUR-001: amountMicros 9007199254740993 is rejected or round-trips ex
   // the setup asserts and the cleanup have finished, so a setup or cleanup failure is a normal test failure and
   // never satisfies the expected failure. Evidence and draft: docs/probes/2026-11-03-p2-lane-tw-probes.md,
   // section P2-TW-BUG-001.
-  test.fail(
-    true,
-    "P2-TW-BUG-001: 9007199254740993 is accepted (201) and stored as 9007199254740992",
+  expectedDefect(
+    "P2-TW-BUG-001: 9007199254740993 is accepted (201) and stored as 9007199254740992 (docs/probes/2026-11-03-p2-lane-tw-probes.md:77)",
   );
   if (id === undefined) {
     expect(res.status(), "rejected with a client error").toBeGreaterThanOrEqual(400);
@@ -181,9 +181,8 @@ test("P2-TW-CUR-001 (graphql): amountMicros 9007199254740993 is rejected or roun
   // Known product bug P2-TW-BUG-001, GraphQL half (probe record, section 4). GraphQL stores 9007199254740992 for this
   // input, the same as REST. The marker is called only after the setup asserts and the cleanup have finished, so a
   // cleanup failure is a normal test failure and never satisfies the expected failure.
-  test.fail(
-    true,
-    "P2-TW-BUG-001 (GraphQL): 9007199254740993 is accepted and stored as 9007199254740992",
+  expectedDefect(
+    "P2-TW-BUG-001: (GraphQL) 9007199254740993 is accepted and stored as 9007199254740992 (docs/probes/2026-11-03-p2-lane-tw-probes.md:77)",
   );
   if (id === undefined) {
     expect(made.body.errors, "rejected with a GraphQL error").toBeDefined();

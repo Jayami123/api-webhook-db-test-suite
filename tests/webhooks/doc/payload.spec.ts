@@ -7,6 +7,7 @@ import { ZWebhookPayloadSchema } from "../../../src/lanes/doc/webhook-schema.ts"
 import { verifyDocumenso } from "../../../src/webhooks/verify.ts";
 import { distributedEnvelope } from "../../fixtures/doc/distributed-envelope.ts";
 import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
+import { expectedDefect } from "../../../src/ci/known-defect.ts";
 
 /**
  * WH-005 (master plan): "Payload contract per event", priority P1. Oracle: every payload is valid, and no
@@ -82,9 +83,8 @@ test("P2-DOC-WH-005 every delivered payload matches the schema and carries no re
   // Oracle (expected to fail: P5-DOC-TOK-002), asserted only after the cleanup has finished, on the values captured in
   // setup. Under test.fail a cleanup error would count as the expected failure; here it fails the test before this line.
   // No recipient token may reach the webhook endpoint.
-  test.fail(
-    true,
-    "P5-DOC-TOK-002: every document payload carries every recipient's token (webhook-payload.ts:22-29, :84)",
+  expectedDefect(
+    "P5-DOC-TOK-002: every document payload carries every recipient's token (webhook-payload.ts:22-29, :84) (docs/probes/2026-11-02-p2-lane-documenso-probes.md:521)",
   );
   expect(tokensInPayloads).toEqual([]);
 });

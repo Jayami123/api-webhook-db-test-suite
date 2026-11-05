@@ -19,6 +19,7 @@ import {
 import { attendeeEmailFor } from "../../../src/lanes/cal/booking.ts";
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
 import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
+import { expectedDefect } from "../../../src/ci/known-defect.ts";
 
 const CONTRACT = "contracts/cal/openapi-v2.json";
 const db = (): ReturnType<typeof readOnlyDb> => readOnlyDb("cal");
@@ -36,7 +37,9 @@ test.describe("P2-CAL-CON contract cases", () => {
     expect(res.status()).toBe(200);
     // PB-CAL-OAS-1 (product documentation, proven): the committed 200 schema describes the inner `data` map as the
     // whole body, while the live body and the document own example are {status, data}. Evidence: docs/probes/2026-11-02-p2-lane-cal-live-probes.md L12.
-    test.fail();
+    expectedDefect(
+      "PB-CAL-OAS-1: GET /v2/slots 200 body does not validate against the committed OpenAPI (docs/probes/2026-11-02-p2-lane-cal-live-probes.md:325)",
+    );
     spec.assertValid(
       { method: "get", path: "/v2/slots" },
       { status: 200 },
@@ -114,7 +117,9 @@ test.describe("P2-CAL-CON contract cases", () => {
     // bookingFieldsResponses that the live body omits. Evidence: docs/probes/2026-11-02-p2-lane-cal-live-probes.md L12.
     // The marker is called only after the setup asserts and the cleanup have finished, so a cleanup failure is a
     // normal test failure and never satisfies the expected failure.
-    test.fail();
+    expectedDefect(
+      "PB-CAL-OAS-1: POST /v2/bookings 201 body does not validate against the committed OpenAPI (docs/probes/2026-11-02-p2-lane-cal-live-probes.md:325)",
+    );
     spec.assertValid({ method: "post", path: "/v2/bookings" }, { status: 201 }, created);
   });
 

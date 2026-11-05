@@ -5,6 +5,7 @@ import { loadSpec } from "../../../src/contracts/oas.ts";
 import { apiBaseUrl } from "../../../src/env.ts";
 import { twAuthHeaders } from "../../../src/lanes/tw/http.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
+import { expectedDefect } from "../../../src/ci/known-defect.ts";
 
 /**
  * The OpenAPI document is served only to an authenticated caller (P-TW-10: 403 without the bearer). The test saves the
@@ -111,9 +112,8 @@ for (const [label, route] of [
         "one id: only the known null violations",
       ).toEqual([]);
       // Evidence: docs/probes/2026-11-03-p2-lane-tw-probes.md, section 4, P2-TW-BUG-002.
-      test.fail(
-        true,
-        "P2-TW-BUG-002: OAS 3.1.1 declares non-nullable fields that the live responses return as null",
+      expectedDefect(
+        "P2-TW-BUG-002: OAS 3.1.1 declares non-nullable fields that the live responses return as null (docs/probes/2026-11-03-p2-lane-tw-probes.md:95)",
       );
       expect(result.errors).toEqual([]);
       expect(result.valid).toBe(true);

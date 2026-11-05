@@ -34,6 +34,7 @@ import {
 } from "../../../src/lanes/cal/cases.ts";
 import { currentRunPrefix, runScopedName } from "../../../src/run/prefix.ts";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { expectedDefect } from "../../../src/ci/known-defect.ts";
 
 const CONTRACT = "contracts/cal/openapi-v2.json";
 const db = (): ReturnType<typeof readOnlyDb> => readOnlyDb("cal");
@@ -194,6 +195,8 @@ test("P2-CAL-CON-005 the crawl pins every operation, undocumented status and inv
   expect(sorted(invalid)).toEqual(sorted(KNOWN_INVALID));
 
   // PB-CAL-OAS-1 (product documentation, proven): the 200 bodies of the listed routes do not validate against the committed spec.
-  test.fail();
+  expectedDefect(
+    "PB-CAL-OAS-1: the 200 bodies of the crawled routes do not validate against the committed OpenAPI (docs/probes/2026-11-02-p2-lane-cal-live-probes.md:325)",
+  );
   expect(invalid, "every 200 body validates against the committed spec").toEqual([]);
 });
