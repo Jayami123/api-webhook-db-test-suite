@@ -4,7 +4,11 @@ import {
 } from "../../../src/lanes/cal/availability.ts";
 import { test, expect } from "../../../src/fixtures/index.ts";
 import { readOnlyDb } from "../../../src/db/pg.ts";
-import { calBookingApi, attendeeEmailFor } from "../../../src/lanes/cal/booking.ts";
+import {
+  calBookingApi,
+  attendeeEmailFor,
+  cancelInCleanup,
+} from "../../../src/lanes/cal/booking.ts";
 import { eventTypeIdBySlug } from "../../../src/lanes/cal/event-types.ts";
 import {
   apiBase,
@@ -17,6 +21,7 @@ import {
 } from "../../../src/lanes/cal/cases.ts";
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
 import { POLL_INTERVALS } from "../../../src/slo.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
 
 const db = (): ReturnType<typeof readOnlyDb> => readOnlyDb("cal");
 const SLOT_MS = 30 * 60_000;
@@ -116,7 +121,9 @@ test.describe("P2-CAL-PROP slot properties", () => {
       }
       expect((await bookingRowsForEmail(db(), email)).map((r) => r.status)).toEqual(["accepted"]);
     } finally {
-      for (const uid of booked.uids) await api.cancel(uid, "P2 lane cleanup");
+      await runAllThenRethrow(
+        booked.uids.map((uid) => () => cancelInCleanup(api, uid, { cancelledByTest: false })),
+      );
     }
   });
 

@@ -1,6 +1,10 @@
 import { test, expect } from "../../../src/fixtures/index.ts";
 import { readOnlyDb } from "../../../src/db/pg.ts";
-import { calBookingApi, attendeeEmailFor } from "../../../src/lanes/cal/booking.ts";
+import {
+  calBookingApi,
+  attendeeEmailFor,
+  cancelInCleanup,
+} from "../../../src/lanes/cal/booking.ts";
 import { eventTypeIdBySlug } from "../../../src/lanes/cal/event-types.ts";
 import {
   apiBase,
@@ -12,6 +16,7 @@ import {
   slotStartsAhead,
 } from "../../../src/lanes/cal/cases.ts";
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
 
 const db = (): ReturnType<typeof readOnlyDb> => readOnlyDb("cal");
 
@@ -44,7 +49,9 @@ test.describe("P2-CAL-IDEM booking idempotency", () => {
       expect(rows.map((r) => r.uid)).toEqual(first.uids);
       expect(rows.map((r) => r.status)).toEqual(["accepted"]);
     } finally {
-      for (const uid of first.uids) await api.cancel(uid, "P2 lane cleanup");
+      await runAllThenRethrow(
+        first.uids.map((uid) => () => cancelInCleanup(api, uid, { cancelledByTest: false })),
+      );
     }
   });
 
@@ -96,8 +103,17 @@ test.describe("P2-CAL-IDEM booking idempotency", () => {
         { uid: firstUid, status: "pending" },
       ]);
     } finally {
-      if (firstUid !== "") await api.cancel(firstUid, "P2 lane cleanup");
-      expect(await deleteEventType(request, calAuth, typeId)).toBe(200);
+      await runAllThenRethrow([
+        ...(firstUid === ""
+          ? []
+          : [() => cancelInCleanup(api, firstUid, { cancelledByTest: false })]),
+        async () => {
+          expect(
+            await deleteEventType(request, calAuth, typeId),
+            "cleanup: delete the event type",
+          ).toBe(200);
+        },
+      ]);
     }
   });
 });

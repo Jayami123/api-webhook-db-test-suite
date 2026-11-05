@@ -4,7 +4,12 @@ import { readOnlyDb } from "../../../src/db/pg.ts";
 import { mintCal } from "../../../src/auth/cal.ts";
 import { loadAuthEnv } from "../../../src/auth/env.ts";
 import { revokeAndVerify } from "../../../src/auth/lifecycle.ts";
-import { attendeeEmailFor, calBookingApi } from "../../../src/lanes/cal/booking.ts";
+import {
+  attendeeEmailFor,
+  calBookingApi,
+  cancelInCleanup,
+} from "../../../src/lanes/cal/booking.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
 import {
   apiVersionFor,
   API_VERSION_HEADER,
@@ -84,19 +89,21 @@ test("P2-CAL-CON-005 the crawl pins every operation, undocumented status and inv
     attendeeEmail: attendeeEmailFor(currentRunPrefix(), "con-005"),
     attendeeName: "crawl",
   });
-  expect(booked.status).toBe(201);
-  const webhookId = await cal.webhooks.create({
-    subscriberUrl: `http://127.0.0.1:9/r/${currentRunPrefix()}/con-005`,
-    eventTriggers: ["BOOKING_CREATED"],
-    secret: `con005-${currentRunPrefix()}`,
-  });
-  const values: Record<string, string> = {
-    bookingUid: booked.uids[0] ?? "",
-    eventTypeId: String(eventTypeId),
-    webhookId,
-  };
   const results: Crawl[] = [];
+  let webhookId: string | undefined;
   try {
+    expect(booked.status).toBe(201);
+    // Created inside the try, so a failed create still cancels the booking and revokes the key in finally.
+    webhookId = await cal.webhooks.create({
+      subscriberUrl: `http://127.0.0.1:9/r/${currentRunPrefix()}/con-005`,
+      eventTriggers: ["BOOKING_CREATED"],
+      secret: `con005-${currentRunPrefix()}`,
+    });
+    const values: Record<string, string> = {
+      bookingUid: booked.uids[0] ?? "",
+      eventTypeId: String(eventTypeId),
+      webhookId,
+    };
     for (const op of ops) {
       if (op.params.some((p) => values[p] === undefined)) {
         results.push({
@@ -138,9 +145,12 @@ test("P2-CAL-CON-005 the crawl pins every operation, undocumented status and inv
       });
     }
   } finally {
-    await api.cancel(booked.uids[0] ?? "", "P2 lane cleanup");
-    await cal.webhooks.remove(webhookId);
-    await revokeAndVerify(key, () => key.isPresent());
+    const hookId = webhookId;
+    await runAllThenRethrow([
+      ...booked.uids.map((uid) => () => cancelInCleanup(api, uid, { cancelledByTest: false })),
+      ...(hookId === undefined ? [] : [() => cal.webhooks.remove(hookId)]),
+      () => revokeAndVerify(key, () => key.isPresent()),
+    ]);
   }
 
   // Measurement record: one entry per crawled operation, with the status, the body check and the version that was sent.

@@ -1,7 +1,12 @@
 import { test, expect } from "../../../src/fixtures/index.ts";
 import { loadSpec } from "../../../src/contracts/oas.ts";
 import { readOnlyDb } from "../../../src/db/pg.ts";
-import { apiHeaders, BOOKINGS_VERSION, calBookingApi } from "../../../src/lanes/cal/booking.ts";
+import {
+  apiHeaders,
+  BOOKINGS_VERSION,
+  calBookingApi,
+  cancelInCleanup,
+} from "../../../src/lanes/cal/booking.ts";
 import { eventTypeIdBySlug } from "../../../src/lanes/cal/event-types.ts";
 import {
   apiBase,
@@ -13,6 +18,7 @@ import {
 } from "../../../src/lanes/cal/cases.ts";
 import { attendeeEmailFor } from "../../../src/lanes/cal/booking.ts";
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
 
 const CONTRACT = "contracts/cal/openapi-v2.json";
 const db = (): ReturnType<typeof readOnlyDb> => readOnlyDb("cal");
@@ -102,7 +108,9 @@ test.describe("P2-CAL-CON contract cases", () => {
       test.fail();
       spec.assertValid({ method: "post", path: "/v2/bookings" }, { status: 201 }, JSON.parse(text));
     } finally {
-      if (uid !== "") await api.cancel(uid, "P2 lane cleanup");
+      await runAllThenRethrow(
+        uid === "" ? [] : [() => cancelInCleanup(api, uid, { cancelledByTest: false })],
+      );
     }
   });
 

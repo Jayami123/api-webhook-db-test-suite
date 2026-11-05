@@ -1,6 +1,11 @@
+import { randomSecret } from "../../../src/readiness/checks.ts";
 import { test, expect } from "../../../src/fixtures/index.ts";
 import { readOnlyDb } from "../../../src/db/pg.ts";
-import { calBookingApi, attendeeEmailFor } from "../../../src/lanes/cal/booking.ts";
+import {
+  calBookingApi,
+  attendeeEmailFor,
+  cancelInCleanup,
+} from "../../../src/lanes/cal/booking.ts";
 import { runTaskerOnce } from "../../../src/lanes/cal/cron.ts";
 import { taskRowsFor } from "../../../src/lanes/cal/tasks.ts";
 import {
@@ -14,6 +19,7 @@ import {
 import { eventTypeIdBySlug } from "../../../src/lanes/cal/event-types.ts";
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
 
 const db = (): ReturnType<typeof readOnlyDb> => readOnlyDb("cal");
 
@@ -30,7 +36,7 @@ test.describe("P2-CAL-REC recurring bookings", () => {
     const hookId = await cal.webhooks.create({
       subscriberUrl: receiverHandle.urlFor(testId),
       eventTriggers: ["BOOKING_CANCELLED"],
-      secret: "rec",
+      secret: randomSecret(),
     });
     const api = calBookingApi({ request, apiBaseUrl: apiBase(), auth: calAuth });
     const starts = await slotStartsAhead(request, calAuth, yogaId);
@@ -68,10 +74,14 @@ test.describe("P2-CAL-REC recurring bookings", () => {
       ]);
       expect(await taskRowsFor(db(), currentRunPrefix(), testId)).toHaveLength(1);
     } finally {
-      for (const r of await bookingRowsForEmail(db(), email)) {
-        if (r.status === "accepted") await api.cancel(r.uid, "P2 lane cleanup");
-      }
-      await cal.webhooks.remove(hookId);
+      // Only accepted rows are cancelled: the occurrence the test cancelled is skipped, so every cancel expects 200.
+      const accepted = (await bookingRowsForEmail(db(), email)).filter(
+        (r) => r.status === "accepted",
+      );
+      await runAllThenRethrow([
+        ...accepted.map((r) => () => cancelInCleanup(api, r.uid, { cancelledByTest: false })),
+        () => cal.webhooks.remove(hookId),
+      ]);
     }
   });
 });

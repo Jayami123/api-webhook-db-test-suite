@@ -13,8 +13,18 @@ import {
 } from "../../../src/lanes/cal/cases.ts";
 import { eventTypeIdBySlug } from "../../../src/lanes/cal/event-types.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
-import { attendeeEmailFor } from "../../../src/lanes/cal/booking.ts";
+import { attendeeEmailFor, utcIso } from "../../../src/lanes/cal/booking.ts";
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
+
+/** FC-003's refused booking starts this far ahead of the run (two weeks), so the instant is in the future on any date. */
+const FC3_LEAD_MS = 14 * 864e5;
+
+/** An ISO instant `leadMs` from now, truncated to the hour (UTC). */
+function futureOnTheHour(leadMs: number): string {
+  const at = new Date(Date.now() + leadMs);
+  at.setUTCMinutes(0, 0, 0);
+  return utcIso(at);
+}
 
 const db = (): ReturnType<typeof readOnlyDb> => readOnlyDb("cal");
 
@@ -89,7 +99,9 @@ test.describe("P2-CAL framework checks", () => {
         method: "POST",
         headers: { ...H, "content-type": "application/json" },
         data: JSON.stringify({
-          start: "2026-11-20T10:00:00.000Z",
+          // Two weeks ahead of now, on the hour: always a future instant, never a date that goes stale. The request is
+          // refused by the rate limit before any slot check, so the instant only needs to be a valid future start.
+          start: futureOnTheHour(FC3_LEAD_MS),
           eventTypeId,
           attendee: {
             name: "fc3",

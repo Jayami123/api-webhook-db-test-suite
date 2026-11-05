@@ -14,6 +14,7 @@ import {
   attendeeEmailFor,
   apiHeaders,
   BOOKINGS_VERSION,
+  cancelInCleanup,
 } from "../../../src/lanes/cal/booking.ts";
 import { eventTypeIdBySlug } from "../../../src/lanes/cal/event-types.ts";
 import { runTaskerOnce } from "../../../src/lanes/cal/cron.ts";
@@ -22,6 +23,7 @@ import { expectCalSignature, tamperOneByte } from "../../../src/lanes/cal/signat
 import { bookingWebhookErrors } from "../../../src/lanes/cal/webhook-schema.ts";
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
 
 const db = (): ReturnType<typeof readOnlyDb> => readOnlyDb("cal");
 const cronSecret = (): string => process.env["CRON_SECRET"] ?? "";
@@ -65,8 +67,10 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
       expect(expectCalSignature(must(delivery, "delivery"), secret)).toEqual({ ok: true });
       expect(must(delivery, "delivery").headers["x-cal-signature-256"]).toMatch(/^[0-9a-f]{64}$/);
     } finally {
-      for (const uid of booked.uids) await api.cancel(uid, "P2 lane cleanup");
-      await cal.webhooks.remove(hookId);
+      await runAllThenRethrow([
+        ...booked.uids.map((uid) => () => cancelInCleanup(api, uid, { cancelledByTest: false })),
+        () => cal.webhooks.remove(hookId),
+      ]);
     }
   });
 
@@ -110,8 +114,10 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
         reason: "signature-mismatch",
       });
     } finally {
-      for (const uid of booked.uids) await api.cancel(uid, "P2 lane cleanup");
-      await cal.webhooks.remove(hookId);
+      await runAllThenRethrow([
+        ...booked.uids.map((uid) => () => cancelInCleanup(api, uid, { cancelledByTest: false })),
+        () => cal.webhooks.remove(hookId),
+      ]);
     }
   });
 
@@ -152,8 +158,10 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
       expect(bookingWebhookErrors(body)).toEqual([]);
       expect((body as { triggerEvent: string }).triggerEvent).toBe("BOOKING_CREATED");
     } finally {
-      for (const uid of booked.uids) await api.cancel(uid, "P2 lane cleanup");
-      await cal.webhooks.remove(hookId);
+      await runAllThenRethrow([
+        ...booked.uids.map((uid) => () => cancelInCleanup(api, uid, { cancelledByTest: false })),
+        () => cal.webhooks.remove(hookId),
+      ]);
     }
   });
 
@@ -180,6 +188,7 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
       attendeeName: "wh2r",
     });
     const uids = [...booked.uids];
+    let rescheduled = false;
     try {
       expect(booked.status).toBe(201);
       const res = await request.fetch(
@@ -192,6 +201,8 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
         },
       );
       expect(res.status()).toBe(201);
+      // A reschedule cancels the original booking (probe record, L18): its cleanup cancel may answer already-cancelled.
+      rescheduled = true;
       const newUid = (JSON.parse(await res.text()) as { data: { uid: string } }).data.uid;
       uids.push(newUid);
       expect(await runTaskerOnce(request, webBase(), cronSecret())).toBe(200);
@@ -207,8 +218,12 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
       expect(bookingWebhookErrors(body)).toEqual([]);
       expect((body as { triggerEvent: string }).triggerEvent).toBe("BOOKING_RESCHEDULED");
     } finally {
-      for (const uid of uids) await api.cancel(uid, "P2 lane cleanup");
-      await cal.webhooks.remove(hookId);
+      await runAllThenRethrow([
+        ...uids.map(
+          (uid, i) => () => cancelInCleanup(api, uid, { cancelledByTest: i === 0 && rescheduled }),
+        ),
+        () => cal.webhooks.remove(hookId),
+      ]);
     }
   });
 
@@ -234,9 +249,11 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
       attendeeEmail: attendeeEmailFor(currentRunPrefix(), testId),
       attendeeName: "wh2x",
     });
+    let cancelledByTest = false;
     try {
       expect(booked.status).toBe(201);
       expect(await api.cancel(booked.uids[0] ?? "", "P2 lane cancel")).toBe(200);
+      cancelledByTest = true;
       expect(await runTaskerOnce(request, webBase(), cronSecret())).toBe(200);
       await expect
         .poll(() => receiverHandle.receiver.deliveries(key).length, {
@@ -250,8 +267,13 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
       expect(bookingWebhookErrors(body)).toEqual([]);
       expect((body as { triggerEvent: string }).triggerEvent).toBe("BOOKING_CANCELLED");
     } finally {
-      for (const uid of booked.uids) await api.cancel(uid, "P2 lane cleanup");
-      await cal.webhooks.remove(hookId);
+      await runAllThenRethrow([
+        ...booked.uids.map(
+          (uid, i) => () =>
+            cancelInCleanup(api, uid, { cancelledByTest: i === 0 && cancelledByTest }),
+        ),
+        () => cal.webhooks.remove(hookId),
+      ]);
     }
   });
 
@@ -307,8 +329,10 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
       expect(rows[0]).toMatchObject({ attempts: 1, succeeded: true, lastError: null });
     } finally {
       receiverHandle.receiver.setMode(made.key, { kind: "ok" });
-      for (const uid of made.uids) await api.cancel(uid, "P2 lane cleanup");
-      await cal.webhooks.remove(made.hookId);
+      await runAllThenRethrow([
+        ...made.uids.map((uid) => () => cancelInCleanup(api, uid, { cancelledByTest: false })),
+        () => cal.webhooks.remove(made.hookId),
+      ]);
     }
   });
 
@@ -335,8 +359,10 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
       expect(receiverHandle.receiver.deliveries(made.key)).toHaveLength(2);
     } finally {
       receiverHandle.receiver.setMode(made.key, { kind: "ok" });
-      for (const uid of made.uids) await api.cancel(uid, "P2 lane cleanup");
-      await cal.webhooks.remove(made.hookId);
+      await runAllThenRethrow([
+        ...made.uids.map((uid) => () => cancelInCleanup(api, uid, { cancelledByTest: false })),
+        () => cal.webhooks.remove(made.hookId),
+      ]);
     }
   });
 });

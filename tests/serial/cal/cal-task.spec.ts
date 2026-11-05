@@ -10,7 +10,11 @@ import {
   webBase,
   must,
 } from "../../../src/lanes/cal/cases.ts";
-import { calBookingApi, attendeeEmailFor } from "../../../src/lanes/cal/booking.ts";
+import {
+  calBookingApi,
+  attendeeEmailFor,
+  cancelInCleanup,
+} from "../../../src/lanes/cal/booking.ts";
 import { eventTypeIdBySlug } from "../../../src/lanes/cal/event-types.ts";
 import { runTaskerOnce } from "../../../src/lanes/cal/cron.ts";
 import { taskRowsFor } from "../../../src/lanes/cal/tasks.ts";
@@ -18,6 +22,7 @@ import { currentRunPrefix } from "../../../src/run/prefix.ts";
 import type { CalAuth } from "../../../src/auth/cal.ts";
 import type { ApiRequestLike } from "../../../src/clients/base.ts";
 import type { CalClient } from "../../../src/clients/cal.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
 
 const db = (): ReturnType<typeof readOnlyDb> => readOnlyDb("cal");
 let writerHandle: ReturnType<typeof createFixtureWriter> | undefined;
@@ -72,8 +77,13 @@ async function webhookAndBookings(
 
 async function cleanup(ctx: Ctx, track: { hookId?: string; uids: string[] }): Promise<void> {
   const api = calBookingApi({ request: ctx.request, apiBaseUrl: apiBase(), auth: ctx.calAuth });
-  for (const uid of track.uids) if (uid !== "") await api.cancel(uid, "P2 lane cleanup");
-  if (track.hookId !== undefined) await ctx.cal.webhooks.remove(track.hookId);
+  const hookId = track.hookId;
+  await runAllThenRethrow([
+    ...track.uids
+      .filter((uid) => uid !== "")
+      .map((uid) => () => cancelInCleanup(api, uid, { cancelledByTest: false })),
+    ...(hookId === undefined ? [] : [() => ctx.cal.webhooks.remove(hookId)]),
+  ]);
 }
 
 const rowsOf = (testId: string) => taskRowsFor(db(), currentRunPrefix(), testId);

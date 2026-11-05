@@ -1,5 +1,12 @@
 import type { ApiRequestLike } from "../../clients/base.ts";
 
+/**
+ * Request timeout for the two cron routes. Basis: a tasker pass returns only after processQueue has settled (api/cron.ts:12,
+ * task-processor.ts:37), so it lasts as long as the queued deliveries; the bound is the shared 60 s test timeout
+ * (playwright.config.ts), the longest any test that calls it may run unless it sets its own budget. A policy bound.
+ */
+export const CAL_CRON_REQUEST_TIMEOUT_MS = 60_000;
+
 /** Authorization for the tasker route: apps/web/app/api/tasks/cron/route.ts -> packages/features/tasker/api/cron.ts:8. */
 export function tasksAuthHeader(cronSecret: string | undefined): string {
   if (cronSecret === undefined || cronSecret.trim() === "") {
@@ -23,7 +30,7 @@ export async function runTaskerOnce(
     method: "GET",
     headers: { authorization: tasksAuthHeader(cronSecret) },
     failOnStatusCode: false,
-    timeout: 60_000,
+    timeout: CAL_CRON_REQUEST_TIMEOUT_MS,
   });
   return res.status();
 }
@@ -44,7 +51,7 @@ export async function fireScheduledTriggersOnce(
     method: "POST",
     headers: { authorization: cronApiKey },
     failOnStatusCode: false,
-    timeout: 60_000,
+    timeout: CAL_CRON_REQUEST_TIMEOUT_MS,
   });
   return res.status();
 }

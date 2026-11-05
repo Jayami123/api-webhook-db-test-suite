@@ -4,6 +4,14 @@ import type { ApiRequestLike } from "../../clients/base.ts";
 export const SLOTS_VERSION = "2024-09-04";
 export const BOOKINGS_VERSION = "2024-08-13";
 
+/**
+ * Per-request timeout for the API v2 slot, booking and cancel calls. Basis: Playwright's own default request timeout
+ * (30 s, APIRequestContext), stated here so the bound is visible, and half the shared 60 s test timeout
+ * (playwright.config.ts), so a hung call fails with its own request error inside the test rather than as a test timeout.
+ * A policy bound, not a measured latency.
+ */
+export const CAL_API_REQUEST_TIMEOUT_MS = 30_000;
+
 export interface BookingRequest {
   readonly eventTypeId: number;
   /** An ISO instant returned by slots() (never invented). */
@@ -46,9 +54,16 @@ export function calBookingApi(input: {
       const res = await request.fetch(url, {
         headers: apiHeaders(auth, SLOTS_VERSION),
         failOnStatusCode: false,
-        timeout: 30_000,
+        timeout: CAL_API_REQUEST_TIMEOUT_MS,
       });
-      const body = JSON.parse(await res.text()) as { data?: Record<string, { start: string }[]> };
+      const text = await res.text();
+      // Like slotInstantsBetween (cases.ts): a non-200 is a failure, never an empty slot list.
+      if (res.status() !== 200) {
+        throw new Error(
+          `slots answered ${String(res.status())} for ${q.fromIsoDate}..${q.toIsoDate} (${q.timeZone}); body ${String(text.length)} chars`,
+        );
+      }
+      const body = JSON.parse(text) as { data?: Record<string, { start: string }[]> };
       return Object.values(body.data ?? {})
         .flat()
         .map((s) => s.start);
@@ -63,7 +78,7 @@ export function calBookingApi(input: {
           attendee: { name: req.attendeeName, email: req.attendeeEmail, timeZone: "Europe/London" },
         }),
         failOnStatusCode: false,
-        timeout: 30_000,
+        timeout: CAL_API_REQUEST_TIMEOUT_MS,
       });
       const text = await res.text();
       const body = JSON.parse(text || "{}") as { data?: unknown };
@@ -85,7 +100,7 @@ export function calBookingApi(input: {
         headers: apiHeaders(auth, BOOKINGS_VERSION),
         data: JSON.stringify({ cancellationReason: reason }),
         failOnStatusCode: false,
-        timeout: 30_000,
+        timeout: CAL_API_REQUEST_TIMEOUT_MS,
       });
       return res.status();
     },
@@ -106,4 +121,30 @@ export function attendeeEmailFor(runPrefix: string, label: string): string {
 export function utcIso(instant: Date): string {
   if (Number.isNaN(instant.getTime())) throw new Error("TEST BUG: invalid Date");
   return instant.toISOString();
+}
+
+/**
+ * Status of `POST /v2/bookings/{uid}/cancel` for a booking that is already cancelled. Source: handleCancelBooking.ts:135-139
+ * at the pin throws HttpError 400 "This booking has already been cancelled."; measured live in the probe record
+ * (docs/probes/2026-11-02-p2-lane-cal-live-probes.md, L18).
+ */
+export const CAL_ALREADY_CANCELLED_STATUS = 400;
+
+/**
+ * Cancels a booking in cleanup and throws on any status it does not expect. 200 is the only success, except where the test
+ * itself cancelled the booking first (a cancel, or a reschedule, which cancels the original): there the measured
+ * already-cancelled status is accepted too. Pass `cancelledByTest: true` only for that booking, and only once the test's
+ * own cancel or reschedule succeeded.
+ */
+export async function cancelInCleanup(
+  api: { cancel(uid: string, reason: string): Promise<number> },
+  uid: string,
+  options: { readonly cancelledByTest: boolean },
+): Promise<void> {
+  const status = await api.cancel(uid, "P2 lane cleanup");
+  if (status === 200) return;
+  if (options.cancelledByTest && status === CAL_ALREADY_CANCELLED_STATUS) return;
+  throw new Error(
+    `cleanup: cancel booking ${uid} answered ${String(status)} (expected 200${options.cancelledByTest ? ` or ${String(CAL_ALREADY_CANCELLED_STATUS)}, already cancelled by the test` : ""})`,
+  );
 }
