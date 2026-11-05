@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { describe, test } from "node:test";
 
@@ -356,4 +357,55 @@ describe("lane workflow checker: fixtures", () => {
       );
     });
   }
+});
+
+describe("p2-med Stripe test-key gate", () => {
+  /** The run script of one step, dedented: the same bash script the job runs for it. */
+  function stepScript(name: string): string {
+    const lines = readFileSync(".github/workflows/p2-med.yml", "utf8").split("\n");
+    const start = lines.indexOf(`      - name: ${name}`);
+    assert.ok(start >= 0, `step: ${name}`);
+    const body: string[] = [];
+    let inRun = false;
+    for (const line of lines.slice(start + 1)) {
+      if (/^ {6}- name: /.test(line)) break;
+      if (line === "        run: |") {
+        inRun = true;
+        continue;
+      }
+      if (inRun) body.push(line.startsWith("          ") ? line.slice(10) : line);
+    }
+    assert.ok(body.length > 0, `run block of ${name}`);
+    return body.join("\n");
+  }
+
+  function runGate(stripeKey: string | undefined) {
+    const env: NodeJS.ProcessEnv = { PATH: process.env["PATH"] ?? "" };
+    if (stripeKey !== undefined) env["STRIPE_API_KEY"] = stripeKey;
+    const res = spawnSync("bash", ["-c", stepScript("Require the Stripe test key")], {
+      env,
+      encoding: "utf8",
+    });
+    return { status: res.status, output: res.stdout + res.stderr };
+  }
+
+  test("a missing secret fails with the missing-secret message", () => {
+    const res = runGate(undefined);
+    assert.notEqual(res.status, 0);
+    assert.match(res.output, /::error title=STRIPE_API_KEY missing::/);
+  });
+
+  test("a live key fails before the harness starts, and neither the value nor a fragment of it is printed", () => {
+    const res = runGate("sk_live_unitfixture");
+    assert.notEqual(res.status, 0);
+    assert.match(res.output, /::error title=STRIPE_API_KEY is not a test-mode key::/);
+    assert.ok(!res.output.includes("unitfixture"), "the key value is never echoed");
+  });
+
+  test("a test-mode key passes, and the value is not printed", () => {
+    const res = runGate("sk_test_unitfixture");
+    assert.equal(res.status, 0, res.output);
+    assert.match(res.output, /STRIPE_API_KEY is a test-mode key \(value not printed\)/);
+    assert.ok(!res.output.includes("unitfixture"), "the key value is never echoed");
+  });
 });

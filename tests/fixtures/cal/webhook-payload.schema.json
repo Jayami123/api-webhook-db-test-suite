@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cal outgoing webhook body (BOOKING_* triggers)",
+  "x-derived": "observed 2026-11-02 on the pinned Cal fork c2b7ac4 through API v2 bookings (BOOKING_CREATED, BOOKING_RESCHEDULED, BOOKING_CANCELLED); not from upstream docs",
+  "type": "object",
+  "required": ["triggerEvent", "createdAt", "payload"],
+  "properties": {
+    "triggerEvent": {
+      "type": "string",
+      "enum": ["BOOKING_CREATED", "BOOKING_RESCHEDULED", "BOOKING_CANCELLED"]
+    },
+    "createdAt": {
+      "type": "string"
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "bookerUrl",
+        "title",
+        "startTime",
+        "endTime",
+        "type",
+        "organizer",
+        "attendees",
+        "additionalNotes",
+        "description",
+        "eventTypeId",
+        "hideOrganizerEmail",
+        "schedulingType",
+        "seatsPerTimeSlot",
+        "seatsShowAttendees",
+        "customReplyToEmail",
+        "customInputs",
+        "responses",
+        "userFieldsResponses",
+        "location",
+        "destinationCalendar",
+        "iCalUID",
+        "iCalSequence",
+        "requiresConfirmation",
+        "hideBranding",
+        "uid",
+        "eventTitle",
+        "eventDescription",
+        "price",
+        "currency",
+        "length",
+        "bookingId",
+        "status"
+      ],
+      "properties": {
+        "bookerUrl": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "startTime": {
+          "type": "string"
+        },
+        "endTime": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "organizer": {
+          "type": "object"
+        },
+        "attendees": {
+          "type": "array"
+        },
+        "additionalNotes": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "eventTypeId": {
+          "type": "number"
+        },
+        "hideOrganizerEmail": {
+          "type": "boolean"
+        },
+        "schedulingType": {
+          "type": "null"
+        },
+        "seatsPerTimeSlot": {
+          "type": "null"
+        },
+        "seatsShowAttendees": {
+          "type": "boolean"
+        },
+        "customReplyToEmail": {
+          "type": "null"
+        },
+        "customInputs": {
+          "type": "object"
+        },
+        "responses": {
+          "type": "object"
+        },
+        "userFieldsResponses": {
+          "type": "object"
+        },
+        "location": {
+          "type": "string"
+        },
+        "destinationCalendar": {
+          "type": ["array", "null"]
+        },
+        "iCalUID": {
+          "type": "string"
+        },
+        "iCalSequence": {
+          "type": "number"
+        },
+        "requiresConfirmation": {
+          "type": ["boolean", "null"]
+        },
+        "hideBranding": {
+          "type": "boolean"
+        },
+        "uid": {
+          "type": "string"
+        },
+        "eventTitle": {
+          "type": "string"
+        },
+        "eventDescription": {
+          "type": "null"
+        },
+        "price": {
+          "type": ["null", "number"]
+        },
+        "currency": {
+          "type": "string"
+        },
+        "length": {
+          "type": "number"
+        },
+        "bookingId": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

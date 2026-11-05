@@ -1,24 +1,120 @@
-# P2 cal lane workflow (stub). Owned by the cal lane; the only workflow file the cal lane edits.
-# Inert until the lane builds its job: manual trigger only, and the job is skipped (if: ${{ false }}).
-# Gate when the lane goes live: `needs` cannot cross workflow files, so replace the trigger with
-#   on: workflow_run: { workflows: [api], types: [completed] }
-# and run the job only when github.event.workflow_run.conclusion == 'success' and
-# github.event.workflow_run.head_repository.full_name == github.repository, checking out
-# github.event.workflow_run.head_sha. See docs/lane-ownership.md.
+# P2 cal lane workflow. Owned by the cal lane; the only workflow file the cal lane edits.
+# Live-lane gate (docs/lane-ownership.md, "Gate for lane workflows"): the job runs on pull_request and
+# on workflow_dispatch. pull_request runs only for PRs whose head repository is this repository, so fork
+# PRs never start a stack or receive secrets. A workflow_run trigger is not used: GitHub runs it only
+# from the default branch. tests/unit/ci/workflow.test.ts enforces this shape and the allowed secret names.
 name: p2-cal
 
 on:
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: p2-cal-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+  PRODUCTS_ROOT: ${{ github.workspace }}/../products
+  TASKER_ENABLE_WEBHOOKS: "1"
+  # STRIPE_API_KEY is not set here: only the three steps that need it (the gate, harness up and the lane tests) get it
+  # in their own step env, so no other step (install, bootstrap, leak check, upload) can read it.
+
 jobs:
   cal-api:
     name: cal-api
-    if: ${{ false }}
+    # Same-repo PRs and manual runs only. Forks never start a stack or get the secret.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Stub, replaced by the cal lane job
-        run: echo "stub"
+      - name: Checkout
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        timeout-minutes: 5
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install
+        timeout-minutes: 5
+        run: npm ci
+      - name: Require the Stripe test key (never printed)
+        timeout-minutes: 2
+        env:
+          STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${STRIPE_API_KEY:-}" ]; then
+            echo "::error::STRIPE_API_KEY is not set. Add the test-mode key as a repository secret (plan OD-STRIPE); the cal lane stops here by design."
+            exit 1
+          fi
+          # Test mode only: a live key must never reach the lane. The value is matched, never printed.
+          case "$STRIPE_API_KEY" in
+            sk_test_*) ;;
+            *)
+              echo "::error::STRIPE_API_KEY must be a Stripe test-mode secret key (it starts with sk_test_). The stored value does not, so the cal lane was not started. Replace the secret with the test-mode key and re-run. The value is not printed."
+              exit 1
+              ;;
+          esac
+          echo "STRIPE_API_KEY is a test-mode key (value not printed)."
+      - name: Generate per-job values (masked, written to the job environment only)
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          for name in P2_QA_RO_PASSWORD P2_QA_FIXTURE_PASSWORD CRON_API_KEY CRON_SECRET; do
+            value="$(openssl rand -hex 24)"
+            echo "::add-mask::$value"
+            echo "$name=$value" >> "$GITHUB_ENV"
+          done
+          daily="$(openssl rand -base64 32)"
+          echo "::add-mask::$daily"
+          echo "DAILY_WEBHOOK_SECRET=$daily" >> "$GITHUB_ENV"
+          # One run prefix for the tests and the leak check (playwright.config.ts uses a preset P2_RUN_ID as is).
+          echo "P2_RUN_ID=p2-qa-$(date -u +%Y%m%dt%H%M%Sz)-$(openssl rand -hex 4)" >> "$GITHUB_ENV"
+      - name: Bootstrap the Cal product at its pinned ref
+        timeout-minutes: 15
+        run: bash scripts/bootstrap.sh cal
+      - name: Harness up (cal)
+        timeout-minutes: 16
+        env:
+          STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
+        run: node node_modules/qa-portfolio-harness/scripts/up.mjs cal
+      - name: Provision the P2 database roles
+        timeout-minutes: 3
+        run: npm run db:roles:provision -- cal
+      - name: Lane tests (cal-api, then cal-serial)
+        timeout-minutes: 10
+        env:
+          STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          npx playwright test --project=cal-api --project=cal-serial
+      - name: Lane leak check (fails on any violation; runs even when the tests fail)
+        if: always()
+        timeout-minutes: 3
+        run: node src/lanes/cal/leak-check.ts
+      - name: Upload report, JUnit and receiver and fixture logs
+        if: always()
+        timeout-minutes: 5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cal-api-report
+          path: |
+            results/junit.xml
+            playwright-report/
+            receiver-logs/
+            fixture-logs/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Harness down (always)
+        if: always()
+        timeout-minutes: 5
+        run: node node_modules/qa-portfolio-harness/scripts/down.mjs cal
