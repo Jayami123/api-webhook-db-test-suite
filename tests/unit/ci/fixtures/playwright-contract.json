@@ -1,0 +1,601 @@
+{
+  "config": {
+    "argv": [
+      "/usr/local/bin/node",
+      "<repo>/node_modules/.bin/playwright",
+      "test",
+      "--config=scratch/p2-summary-probe/playwright.config.ts"
+    ],
+    "configFile": "<repo>/scratch/p2-summary-probe/playwright.config.ts",
+    "rootDir": "<repo>/scratch/p2-summary-probe",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "<repo>/test-results",
+        "repeatEach": 1,
+        "retries": 1,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "summary-probe",
+        "name": "summary-probe",
+        "testDir": "<repo>/scratch/p2-summary-probe",
+        "testIgnore": [],
+        "testMatch": ["contract.spec.ts"],
+        "timeout": 30000
+      }
+    ],
+    "filteredProjects": [
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "<repo>/test-results",
+        "repeatEach": 1,
+        "retries": 1,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "summary-probe",
+        "testDir": "<repo>/scratch/p2-summary-probe",
+        "snapshotDir": "<repo>/scratch/p2-summary-probe",
+        "testIgnore": [],
+        "testMatch": "contract.spec.ts",
+        "timeout": 30000,
+        "use": {},
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": "summary-probe"
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "json",
+        {
+          "outputFile": "<repo>/scratch/p2-summary-probe/report.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "default",
+    "updateSourceMethod": "patch",
+    "version": "1.64.0",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "contract.spec.ts",
+      "file": "contract.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "pass",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [
+                {
+                  "type": "invariant-sweep",
+                  "description": "probe: 2 rules, 0 violations"
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "summary-probe",
+              "projectName": "summary-probe",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 9,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T19:50:50.313Z",
+                  "annotations": [
+                    {
+                      "type": "invariant-sweep",
+                      "description": "probe: 2 rules, 0 violations"
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "90a218284ea7aefb289c-f738ce49e736750ae390",
+          "file": "contract.spec.ts",
+          "line": 14,
+          "column": 1
+        },
+        {
+          "title": "xfail",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [
+                {
+                  "type": "issue",
+                  "description": "PROBE-ONLY: scratch reporter check"
+                },
+                {
+                  "type": "fail",
+                  "description": "PROBE-ONLY: scratch reporter check",
+                  "location": {
+                    "file": "<repo>/scratch/p2-summary-probe/contract.spec.ts",
+                    "line": 18,
+                    "column": 8
+                  }
+                },
+                {
+                  "type": "invariant-sweep",
+                  "description": "probe: 2 rules, 0 violations"
+                }
+              ],
+              "expectedStatus": "failed",
+              "projectId": "summary-probe",
+              "projectName": "summary-probe",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 6,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m2\u001b[39m\nReceived: \u001b[31m1\u001b[39m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m2\u001b[39m\nReceived: \u001b[31m1\u001b[39m\n    at <repo>/scratch/p2-summary-probe/contract.spec.ts:19:13",
+                    "location": {
+                      "file": "<repo>/scratch/p2-summary-probe/contract.spec.ts",
+                      "column": 13,
+                      "line": 19
+                    },
+                    "snippet": "  17 |   test.info().annotations.push({ type: \"issue\", description: \"PROBE-ONLY: scratch reporter check\" });\n  18 |   test.fail(true, \"PROBE-ONLY: scratch reporter check\");\n> 19 |   expect(1).toBe(2);\n     |             ^\n  20 | });\n  21 |\n  22 | test(\"unexpected-pass\", () => {"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "<repo>/scratch/p2-summary-probe/contract.spec.ts",
+                        "column": 13,
+                        "line": 19
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m2\u001b[39m\nReceived: \u001b[31m1\u001b[39m\n\n  17 |   test.info().annotations.push({ type: \"issue\", description: \"PROBE-ONLY: scratch reporter check\" });\n  18 |   test.fail(true, \"PROBE-ONLY: scratch reporter check\");\n> 19 |   expect(1).toBe(2);\n     |             ^\n  20 | });\n  21 |\n  22 | test(\"unexpected-pass\", () => {\n    at <repo>/scratch/p2-summary-probe/contract.spec.ts:19:13"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T19:50:50.380Z",
+                  "annotations": [
+                    {
+                      "type": "issue",
+                      "description": "PROBE-ONLY: scratch reporter check"
+                    },
+                    {
+                      "type": "fail",
+                      "description": "PROBE-ONLY: scratch reporter check",
+                      "location": {
+                        "file": "<repo>/scratch/p2-summary-probe/contract.spec.ts",
+                        "line": 18,
+                        "column": 8
+                      }
+                    },
+                    {
+                      "type": "invariant-sweep",
+                      "description": "probe: 2 rules, 0 violations"
+                    }
+                  ],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "<repo>/test-results/contract-xfail-summary-probe/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "<repo>/scratch/p2-summary-probe/contract.spec.ts",
+                    "column": 13,
+                    "line": 19
+                  }
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "90a218284ea7aefb289c-ef9bc19dac9b9e4ba931",
+          "file": "contract.spec.ts",
+          "line": 16,
+          "column": 1
+        },
+        {
+          "title": "unexpected-pass",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [
+                {
+                  "type": "fail",
+                  "description": "PROBE-ONLY: unexpected pass",
+                  "location": {
+                    "file": "<repo>/scratch/p2-summary-probe/contract.spec.ts",
+                    "line": 23,
+                    "column": 8
+                  }
+                },
+                {
+                  "type": "invariant-sweep",
+                  "description": "probe: 2 rules, 0 violations"
+                }
+              ],
+              "expectedStatus": "failed",
+              "projectId": "summary-probe",
+              "projectName": "summary-probe",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T19:50:50.410Z",
+                  "annotations": [
+                    {
+                      "type": "fail",
+                      "description": "PROBE-ONLY: unexpected pass",
+                      "location": {
+                        "file": "<repo>/scratch/p2-summary-probe/contract.spec.ts",
+                        "line": 23,
+                        "column": 8
+                      }
+                    },
+                    {
+                      "type": "invariant-sweep",
+                      "description": "probe: 2 rules, 0 violations"
+                    }
+                  ],
+                  "attachments": []
+                },
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 1,
+                  "startTime": "2026-11-05T19:50:50.976Z",
+                  "annotations": [
+                    {
+                      "type": "fail",
+                      "description": "PROBE-ONLY: unexpected pass",
+                      "location": {
+                        "file": "<repo>/scratch/p2-summary-probe/contract.spec.ts",
+                        "line": 23,
+                        "column": 8
+                      }
+                    },
+                    {
+                      "type": "invariant-sweep",
+                      "description": "probe: 2 rules, 0 violations"
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "90a218284ea7aefb289c-09b60271525d2eb214e0",
+          "file": "contract.spec.ts",
+          "line": 22,
+          "column": 1
+        },
+        {
+          "title": "ordinary-failure",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [
+                {
+                  "type": "invariant-sweep",
+                  "description": "probe: 2 rules, 0 violations"
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "summary-probe",
+              "projectName": "summary-probe",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 11,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m2\u001b[39m\nReceived: \u001b[31m1\u001b[39m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m2\u001b[39m\nReceived: \u001b[31m1\u001b[39m\n    at <repo>/scratch/p2-summary-probe/contract.spec.ts:26:42",
+                    "location": {
+                      "file": "<repo>/scratch/p2-summary-probe/contract.spec.ts",
+                      "column": 42,
+                      "line": 26
+                    },
+                    "snippet": "  24 | });\n  25 |\n> 26 | test(\"ordinary-failure\", () => expect(1).toBe(2));\n     |                                          ^\n  27 |\n  28 | test.skip(\"skipped\", () => {});\n  29 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "<repo>/scratch/p2-summary-probe/contract.spec.ts",
+                        "column": 42,
+                        "line": 26
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m2\u001b[39m\nReceived: \u001b[31m1\u001b[39m\n\n  24 | });\n  25 |\n> 26 | test(\"ordinary-failure\", () => expect(1).toBe(2));\n     |                                          ^\n  27 |\n  28 | test.skip(\"skipped\", () => {});\n  29 |\n    at <repo>/scratch/p2-summary-probe/contract.spec.ts:26:42"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T19:50:51.616Z",
+                  "annotations": [
+                    {
+                      "type": "invariant-sweep",
+                      "description": "probe: 2 rules, 0 violations"
+                    }
+                  ],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "<repo>/test-results/contract-ordinary-failure-summary-probe/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "<repo>/scratch/p2-summary-probe/contract.spec.ts",
+                    "column": 42,
+                    "line": 26
+                  }
+                },
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 16,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m2\u001b[39m\nReceived: \u001b[31m1\u001b[39m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m2\u001b[39m\nReceived: \u001b[31m1\u001b[39m\n    at <repo>/scratch/p2-summary-probe/contract.spec.ts:26:42",
+                    "location": {
+                      "file": "<repo>/scratch/p2-summary-probe/contract.spec.ts",
+                      "column": 42,
+                      "line": 26
+                    },
+                    "snippet": "  24 | });\n  25 |\n> 26 | test(\"ordinary-failure\", () => expect(1).toBe(2));\n     |                                          ^\n  27 |\n  28 | test.skip(\"skipped\", () => {});\n  29 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "<repo>/scratch/p2-summary-probe/contract.spec.ts",
+                        "column": 42,
+                        "line": 26
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m2\u001b[39m\nReceived: \u001b[31m1\u001b[39m\n\n  24 | });\n  25 |\n> 26 | test(\"ordinary-failure\", () => expect(1).toBe(2));\n     |                                          ^\n  27 |\n  28 | test.skip(\"skipped\", () => {});\n  29 |\n    at <repo>/scratch/p2-summary-probe/contract.spec.ts:26:42"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 1,
+                  "startTime": "2026-11-05T19:50:52.264Z",
+                  "annotations": [
+                    {
+                      "type": "invariant-sweep",
+                      "description": "probe: 2 rules, 0 violations"
+                    }
+                  ],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "<repo>/test-results/contract-ordinary-failure-summary-probe-retry1/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "<repo>/scratch/p2-summary-probe/contract.spec.ts",
+                    "column": 42,
+                    "line": 26
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "90a218284ea7aefb289c-cb1dc2433b7fb14f68e4",
+          "file": "contract.spec.ts",
+          "line": 26,
+          "column": 1
+        },
+        {
+          "title": "skipped",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [
+                {
+                  "type": "skip",
+                  "location": {
+                    "file": "<repo>/scratch/p2-summary-probe/contract.spec.ts",
+                    "line": 28,
+                    "column": 6
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "summary-probe",
+              "projectName": "summary-probe",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "skipped",
+                  "duration": 0,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T19:50:52.907Z",
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "location": {
+                        "file": "<repo>/scratch/p2-summary-probe/contract.spec.ts",
+                        "line": 28,
+                        "column": 6
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "90a218284ea7aefb289c-315d1a990253c48e7550",
+          "file": "contract.spec.ts",
+          "line": 28,
+          "column": 6
+        },
+        {
+          "title": "flaky",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [
+                {
+                  "type": "invariant-sweep",
+                  "description": "probe: 2 rules, 0 violations"
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "summary-probe",
+              "projectName": "summary-probe",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 11,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m1\u001b[39m\nReceived: \u001b[31m0\u001b[39m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m1\u001b[39m\nReceived: \u001b[31m0\u001b[39m\n    at <repo>/scratch/p2-summary-probe/contract.spec.ts:30:47",
+                    "location": {
+                      "file": "<repo>/scratch/p2-summary-probe/contract.spec.ts",
+                      "column": 47,
+                      "line": 30
+                    },
+                    "snippet": "  28 | test.skip(\"skipped\", () => {});\n  29 |\n> 30 | test(\"flaky\", () => expect(test.info().retry).toBe(1));\n     |                                               ^\n  31 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "<repo>/scratch/p2-summary-probe/contract.spec.ts",
+                        "column": 47,
+                        "line": 30
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m1\u001b[39m\nReceived: \u001b[31m0\u001b[39m\n\n  28 | test.skip(\"skipped\", () => {});\n  29 |\n> 30 | test(\"flaky\", () => expect(test.info().retry).toBe(1));\n     |                                               ^\n  31 |\n    at <repo>/scratch/p2-summary-probe/contract.spec.ts:30:47"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T19:50:52.908Z",
+                  "annotations": [
+                    {
+                      "type": "invariant-sweep",
+                      "description": "probe: 2 rules, 0 violations"
+                    }
+                  ],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "<repo>/test-results/contract-flaky-summary-probe/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "<repo>/scratch/p2-summary-probe/contract.spec.ts",
+                    "column": 47,
+                    "line": 30
+                  }
+                },
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 8,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 1,
+                  "startTime": "2026-11-05T19:50:53.435Z",
+                  "annotations": [
+                    {
+                      "type": "invariant-sweep",
+                      "description": "probe: 2 rules, 0 violations"
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "flaky"
+            }
+          ],
+          "id": "90a218284ea7aefb289c-9a1a88cf73913c3b3f80",
+          "file": "contract.spec.ts",
+          "line": 30,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-11-05T19:50:49.806Z",
+    "duration": 3705.8269999999998,
+    "expected": 2,
+    "skipped": 1,
+    "unexpected": 2,
+    "flaky": 1
+  }
+}
