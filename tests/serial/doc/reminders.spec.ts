@@ -15,6 +15,14 @@ import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
 
 /** Poll interval for the cron wait: a 15-minute sweep needs a coarse poll, not a fixed sleep. */
 const TICK_POLL_MS = 5_000;
+/**
+ * Slack after the tick deadline (tickDeadlineMs already includes CRON_TICK_MARGIN_MS, cron.ts:4): the sweep writes the
+ * reminder job at the tick and the local job client sends it at once (probe B-35, no back-off), so the mail lands
+ * inside this slack. A judgement, not a measured worst case; a longer delay fails the poll and is worth reading.
+ */
+const TICK_POLL_SLACK_MS = 60_000;
+/** How long before now a recipient's reminder is due, so the sweep picks it up at the next tick. */
+const REMINDER_DUE_IN_PAST_MS = 60_000;
 
 /**
  * Per-test budget from named parts (the file-wide 25 min is gone). Each part is a real wait or a named SLO:
@@ -26,7 +34,7 @@ const TICK_POLL_MS = 5_000;
 function reminderBudgetMs(nowMs: number, quietMs: number): number {
   return (
     SLO.docWebhookDelivery.ms +
-    (tickDeadlineMs(nowMs) + 60_000) +
+    (tickDeadlineMs(nowMs) + TICK_POLL_SLACK_MS) +
     quietMs +
     SLO.docWebhookDelivery.ms
   );
@@ -56,12 +64,12 @@ test("P2-DOC-REM-001 one reminder per interval (one cron tick)", async ({
     const mailbox = mailboxOf(target.email);
     const before = (await listMail(mailbox)).length;
     expect(before).toBe(1); // the signing mail from distribute
-    const due = new Date(Date.now() - 60_000);
+    const due = new Date(Date.now() - REMINDER_DUE_IN_PAST_MS);
     await setRecipientNextReminderAt(w, target.recipientId, due, "P2-DOC-REM-001");
     // Wait for the real condition: the sweep sends one reminder (one quarter-hour tick).
     await expect
       .poll(async () => (await listMail(mailbox)).length, {
-        timeout: tickDeadlineMs(Date.now()) + 60_000,
+        timeout: tickDeadlineMs(Date.now()) + TICK_POLL_SLACK_MS,
         intervals: [TICK_POLL_MS],
         message: "one reminder after one tick",
       })
@@ -123,19 +131,19 @@ test("P2-DOC-REM-002 a recipient who signed gets no reminder (one cron tick)", a
     await setRecipientNextReminderAt(
       w,
       signed.recipientId,
-      new Date(Date.now() - 60_000),
+      new Date(Date.now() - REMINDER_DUE_IN_PAST_MS),
       "P2-DOC-REM-002",
     );
     await setRecipientNextReminderAt(
       w,
       pending.recipientId,
-      new Date(Date.now() - 60_000),
+      new Date(Date.now() - REMINDER_DUE_IN_PAST_MS),
       "P2-DOC-REM-002",
     );
     // The sweep has run when the pending recipient gets its reminder; only then is the signed count checked.
     await expect
       .poll(async () => (await listMail(pendingMailbox)).length, {
-        timeout: tickDeadlineMs(Date.now()) + 60_000,
+        timeout: tickDeadlineMs(Date.now()) + TICK_POLL_SLACK_MS,
         intervals: [TICK_POLL_MS],
         message: "pending recipient reminded",
       })

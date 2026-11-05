@@ -1,5 +1,21 @@
 import type { Slo } from "../slo.ts";
 
+/** Measured on this VM on 2026-11-05 (probe B-48): Gotenberg restart to a 200 on /health, the slowest of three cycles. */
+const GOTENBERG_HEALTH_SAMPLE_MAX_MS = 700;
+/**
+ * Allowance for a shared CI runner over the measured VM. No CI runner has been measured for this answer, so the factor
+ * is a judgement, not a measurement: 100x lets a runner that is far slower than this VM pass, and a container that is
+ * really stuck still fails within 70 s, inside the 90 s recovery budget that follows it.
+ */
+const RUNNER_SLOWDOWN_FACTOR = 100;
+/** The circuit's open window after a real conversion failure: circuit-breaker.ts:14 (`const COOLDOWN_MS = 30_000`). */
+const CONVERSION_CIRCUIT_COOLDOWN_MS = 30_000;
+/**
+ * Slack after the cooldown for the half-open upload and one poll interval of the recovery poll. A poll that needs more
+ * than this after the cooldown has a real delay, not a timing one; the value is a judgement, not a measurement.
+ */
+const HALF_OPEN_POLL_SLACK_MS = 60_000;
+
 /** Owned by the documenso lane. Merged into SLO in ../slo.ts. */
 export const documensoSlo = {
   docWebhookTimeoutChain: {
@@ -33,14 +49,14 @@ export const documensoSlo = {
       "a refused attempt returns at once (connection refused on a stopped container); the conversion timeout is 30 s (packages/lib/constants/document-conversion.ts:6), so 5 s separates the refusal from the timeout path",
   },
   docConvertHealth: {
-    ms: 120_000,
+    ms: GOTENBERG_HEALTH_SAMPLE_MAX_MS * RUNNER_SLOWDOWN_FACTOR,
     basis:
-      "Gotenberg restart to a 200 on /health: 210, 201 and 700 ms over three cycles (probe B-48, 2026-11-05); 120 s is about 170 times the slowest sample, headroom for a slower runner",
+      "GOTENBERG_HEALTH_SAMPLE_MAX_MS (700 ms, probe B-48: restart to a 200 on /health, samples 210, 201, 700 ms) times RUNNER_SLOWDOWN_FACTOR (100, a judgement for a shared runner); the harness compose overlay defines no healthcheck budget to reuse",
   },
   docConvertRecover: {
-    ms: 90_000,
+    ms: CONVERSION_CIRCUIT_COOLDOWN_MS + HALF_OPEN_POLL_SLACK_MS,
     basis:
-      "circuit cooldown 30 s (circuit-breaker.ts:14) + 60 s margin for the half-open upload and poll interval",
+      "CONVERSION_CIRCUIT_COOLDOWN_MS (circuit-breaker.ts:14) + HALF_OPEN_POLL_SLACK_MS (the half-open upload and one poll interval)",
   },
   docCronTick: {
     ms: 17 * 60_000,
