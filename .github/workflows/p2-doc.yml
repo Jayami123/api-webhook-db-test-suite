@@ -8,6 +8,10 @@
 # down commands run on Node 24 (NODE24). Each is found once and pinned by absolute path in GITHUB_ENV, so
 # the PATH order of later steps never changes which Node runs a command.
 #
+# The serial project (cron-tick reminders, sweeps) is not in this file any more: it runs in p2-doc-serial.yml on a
+# schedule and on manual dispatch (docs/plans/2026-11-06-p2-run-summary-nightly.md). The PR path runs the API and
+# billing jobs only.
+#
 # Why workflow_call and not pull_request: ci.yml is the one place that sees pull_request and push events,
 # so one run lists every job. A lane file cannot be the PR's own trigger any more.
 name: p2-doc
@@ -37,11 +41,12 @@ env:
 
 jobs:
   doc-api:
-    # One stack for the API project and its serial twin (the serial project depends on doc-api).
-    name: doc-api and doc-serial
+    # One stack for the API project. The serial project runs in p2-doc-serial.yml (nightly and manual).
+    name: doc-api
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    # DOC_API_JOB basis: 8 min 44 s without serial (run 42081000668, a subtraction); 30 min matches the cal lane budget (p2-cal.yml).
+    timeout-minutes: 30
     steps:
       - name: Checkout the commit under test
         timeout-minutes: 5
@@ -108,21 +113,19 @@ jobs:
           "$NODE22" scripts/db-roles.ts provision documenso
 
       - name: API project
-        timeout-minutes: 60
+        # DOC_API_STEP basis: 2 min 51 s measured (run 42081000668), about 5x headroom.
+        timeout-minutes: 15
+        env:
+          P2_JSON_FILE: results/playwright-doc-api.json
         run: |
           "$NODE22" node_modules/@playwright/test/cli.js test --project=doc-api
 
-      # The serial project depends on doc-api in Playwright, so a red doc-api would skip it. Run it on its own
-      # after doc-api regardless of that result; the job still fails from the doc-api step if it is red.
-      - name: Serial project (runs after the API project, with or without its result)
-        if: ${{ always() }}
-        timeout-minutes: 60
-        env:
-          # Its own report files: the API step's junit.xml and playwright-report/ are kept, not overwritten.
-          P2_JUNIT_FILE: results/junit-serial.xml
-          P2_HTML_DIR: playwright-report-serial
+      - name: Job summary (doc-api)
+        if: ${{ !cancelled() }}
+        # SUMMARY_STEP basis: P1 e2e.yml:256-261 gives its job-summary step the same 2-minute budget.
+        timeout-minutes: 2
         run: |
-          "$NODE22" node_modules/@playwright/test/cli.js test --project=doc-serial --no-deps
+          "$NODE22" scripts/write-ci-job-summary.ts "doc-api" results/playwright-doc-api.json
 
       - name: Stop the stack (always)
         if: ${{ always() }}
@@ -139,7 +142,6 @@ jobs:
           path: |
             results/
             playwright-report/
-            playwright-report-serial/
           if-no-files-found: ignore
           retention-days: 7
 
@@ -239,6 +241,7 @@ jobs:
         timeout-minutes: 30
         env:
           STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
+          P2_JSON_FILE: results/playwright-doc-billing.json
         run: |
           "$NODE22" node_modules/@playwright/test/cli.js test --project=doc-billing-api
 
@@ -247,6 +250,13 @@ jobs:
         timeout-minutes: 10
         run: |
           "$NODE24" node_modules/qa-portfolio-harness/scripts/down.mjs documenso
+
+      - name: Job summary (doc-billing)
+        if: ${{ !cancelled() }}
+        # SUMMARY_STEP basis: P1 e2e.yml:256-261 gives its job-summary step the same 2-minute budget.
+        timeout-minutes: 2
+        run: |
+          "$NODE22" scripts/write-ci-job-summary.ts "doc-billing" results/playwright-doc-billing.json
 
       - name: Results (JUnit and HTML report)
         if: ${{ always() }}

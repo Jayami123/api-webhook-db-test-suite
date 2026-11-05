@@ -150,7 +150,7 @@ export function checkLaneWorkflow(file: string, text: string): string[] {
   }
   const inert = triggers.length === 1 && triggers[0] === "workflow_dispatch";
   const allowed = new Set(
-    file === "tw-study.yml"
+    (SCHEDULE_ONLY as readonly string[]).includes(file)
       ? ["schedule", "workflow_dispatch"]
       : ["workflow_call", "workflow_dispatch"],
   );
@@ -229,8 +229,18 @@ export function checkLaneWorkflow(file: string, text: string): string[] {
  * Each lane owns one workflow file (docs/lane-ownership.md). A file is an inert stub until its lane
  * goes live; a live lane must pass the checker. api.yml never gains lane jobs.
  */
+/** Scheduled or manual files that are never called from ci.yml (tw-study.yml, p2-doc-serial.yml). */
+const SCHEDULE_ONLY = ["tw-study.yml", "p2-doc-serial.yml"] as const;
+
 describe("per-lane workflows", () => {
-  const lanes = ["p2-cal.yml", "p2-med.yml", "p2-doc.yml", "p2-tw.yml", "tw-study.yml"];
+  const lanes = [
+    "p2-cal.yml",
+    "p2-med.yml",
+    "p2-doc.yml",
+    "p2-tw.yml",
+    "tw-study.yml",
+    "p2-doc-serial.yml",
+  ];
 
   test("each lane workflow is either an inert stub or a safe live lane", () => {
     for (const file of lanes) {
@@ -240,7 +250,7 @@ describe("per-lane workflows", () => {
   });
 
   test("every lane workflow is callable and has no pull_request or push trigger", () => {
-    for (const file of lanes.filter((f) => f !== "tw-study.yml")) {
+    for (const file of lanes.filter((f) => !(SCHEDULE_ONLY as readonly string[]).includes(f))) {
       const triggers =
         triggersOf(readFileSync(`.github/workflows/${file}`, "utf8").split("\n")) ?? [];
       assert.ok(triggers.includes("workflow_call"), file);
@@ -796,5 +806,104 @@ describe("ci.yml gate block (executed)", () => {
     const res = runGate(ALL_PASS, { P2_TW: "" });
     assert.notEqual(res.status, 0);
     assert.match(res.output, /lane flag is ''/);
+  });
+});
+
+describe("nightly documenso serial workflow (p2-doc-serial.yml)", () => {
+  const SERIAL = ".github/workflows/p2-doc-serial.yml";
+  const serialText = readFileSync(SERIAL, "utf8");
+  const serialLive = serialText.split("\n").filter((line) => !line.trimStart().startsWith("#"));
+  const classifyPaths = (event: string, paths: string[]): Record<string, string> => {
+    const res = spawnSync("bash", ["scripts/ci-changes.sh"], {
+      input: paths.join("\n"),
+      env: { PATH: process.env["PATH"] ?? "", EVENT_NAME: event },
+      encoding: "utf8",
+    });
+    assert.equal(res.status, 0, res.stderr);
+    return Object.fromEntries(
+      res.stdout
+        .trim()
+        .split("\n")
+        .map((line) => line.split("=") as [string, string]),
+    );
+  };
+
+  test("W2 the triggers are exactly schedule and workflow_dispatch, with the nightly cron", () => {
+    assert.deepEqual(triggersOf(serialLive), ["schedule", "workflow_dispatch"]);
+    assert.ok(
+      serialLive.includes(
+        '    - cron: "37 2 * * *" # RD-7: 02:37 UTC = 08:07 Asia/Colombo, outside the tw-study window (Mon 05:17 UTC).',
+      ),
+    );
+  });
+
+  test("W3 the file has no workflow_call, no pull_request or push, no secret and no PR guard", () => {
+    const body = serialLive.join("\n");
+    assert.doesNotMatch(body, /workflow_call/);
+    assert.doesNotMatch(body, /pull_request|push:/);
+    assert.doesNotMatch(body, /secrets\./);
+    assert.doesNotMatch(body, /github\.event\.pull_request/);
+  });
+
+  test("W4 ci.yml does not call the serial file", () => {
+    assert.equal(
+      readFileSync(".github/workflows/ci.yml", "utf8").includes("p2-doc-serial.yml"),
+      false,
+    );
+  });
+
+  test("W5 the file carries the required source commands and no placeholder", () => {
+    for (const needle of [
+      "command -v pdfsig",
+      "db-roles.ts provision documenso",
+      "--project=doc-serial --no-deps",
+    ]) {
+      assert.ok(serialText.includes(needle), needle);
+    }
+    assert.equal(
+      serialLive.some((line) => line.trim() === "true"),
+      false,
+      "no placeholder true step",
+    );
+    assert.equal(/TODO/.test(serialText), false, "no TODO");
+  });
+
+  test("W6 each named budget comment sits on the line before its timeout", () => {
+    const budgets: [string, string, RegExp][] = [
+      ["p2-doc.yml", "DOC_API_JOB", /# DOC_API_JOB[^\n]*\n\s*timeout-minutes: 30\s*$/m],
+      ["p2-doc.yml", "DOC_API_STEP", /# DOC_API_STEP[^\n]*\n\s*timeout-minutes: 15\s*$/m],
+      [
+        SERIAL.replace(".github/workflows/", ""),
+        "DOC_SERIAL_JOB",
+        /# DOC_SERIAL_JOB[^\n]*\n\s*timeout-minutes: 90\s*$/m,
+      ],
+      [
+        SERIAL.replace(".github/workflows/", ""),
+        "SERIAL_STEP",
+        /# SERIAL_STEP[^\n]*\n\s*timeout-minutes: 60\s*$/m,
+      ],
+    ];
+    for (const [file, marker, pattern] of budgets) {
+      const text = readFileSync(`.github/workflows/${file}`, "utf8");
+      assert.match(text, pattern, `${file}: ${marker}`);
+    }
+    for (const file of ["p2-cal.yml", "p2-med.yml", "p2-tw.yml", "p2-doc.yml"]) {
+      const text = readFileSync(`.github/workflows/${file}`, "utf8");
+      const markers = [...text.matchAll(/# SUMMARY_STEP[^\n]*\n\s*timeout-minutes: 2\s*$/gm)]
+        .length;
+      assert.ok(
+        markers >= 1,
+        `${file}: at least one SUMMARY_STEP budget on the line before its timeout`,
+      );
+    }
+  });
+
+  test("G15 a change to the serial file runs only the doc lane", () => {
+    assert.deepEqual(classifyPaths("pull_request", [SERIAL]), {
+      p2_cal: "false",
+      p2_doc: "true",
+      p2_med: "false",
+      p2_tw: "false",
+    });
   });
 });

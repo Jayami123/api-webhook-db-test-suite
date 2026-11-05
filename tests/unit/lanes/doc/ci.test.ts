@@ -44,15 +44,17 @@ function unmaskedGeneratedSecrets(text: string): string[] {
 }
 
 describe("documenso lane workflow (.github/workflows/p2-doc.yml)", () => {
-  test("it has the doc-api job (API and serial steps) and the doc-billing-api job", () => {
+  test("it has the doc-api job (API step only) and the doc-billing-api job; serial lives in p2-doc-serial.yml", () => {
     assert.ok(WORKFLOW.includes("\n  doc-api:\n"));
     assert.ok(WORKFLOW.includes("test --project=doc-api\n"));
-    // Serial runs on its own, with no dependency on doc-api, and always runs after the API step.
-    assert.ok(WORKFLOW.includes("test --project=doc-serial --no-deps"));
-    const serialStep = WORKFLOW.slice(WORKFLOW.indexOf("Serial project"));
-    assert.ok(serialStep.slice(0, 400).includes("if: ${{ always() }}"));
+    // The serial project moved to p2-doc-serial.yml (nightly and manual). It is never a step of this file.
+    assert.equal(WORKFLOW.includes("Serial project"), false);
+    assert.equal(WORKFLOW.includes("--project=doc-serial"), false);
     assert.ok(WORKFLOW.includes("\n  doc-billing-api:\n"));
     assert.match(WORKFLOW, /--project=doc-billing-api/);
+    const serial = readFileSync(path.join(".github", "workflows", "p2-doc-serial.yml"), "utf8");
+    assert.ok(serial.includes("test --project=doc-serial --no-deps"));
+    assert.ok(serial.includes("if: ${{ always() }}"));
   });
 
   test("it is called by ci.yml (workflow_call) and never triggers on pull_request, push or workflow_run", () => {
@@ -78,13 +80,17 @@ describe("documenso lane workflow (.github/workflows/p2-doc.yml)", () => {
     assert.equal(count, 2, "both jobs carry the same-repository gate");
   });
 
-  test("the Playwright config names every project this workflow runs", () => {
+  test("the Playwright config names every project, and each workflow runs its own", () => {
     for (const name of ["doc-api", "doc-serial", "doc-billing-api"]) {
       assert.ok(
         CONFIG.includes(`"${name}"`) || CONFIG.includes(`name: "${name}"`),
         `${name} not in config`,
       );
     }
+    assert.ok(WORKFLOW.includes("--project=doc-api"));
+    assert.ok(WORKFLOW.includes("--project=doc-billing-api"));
+    const serial = readFileSync(path.join(".github", "workflows", "p2-doc-serial.yml"), "utf8");
+    assert.ok(serial.includes("--project=doc-serial --no-deps"));
   });
 
   test("every generated secret is masked before it reaches GITHUB_ENV or GITHUB_OUTPUT", () => {

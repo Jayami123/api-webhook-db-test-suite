@@ -8,7 +8,7 @@ set -euo pipefail
 
 re_cal='^(src/lanes/cal/|tests/unit/lanes/cal/|tests/contracts/cal/|tests/integration/cal/|tests/webhooks/cal/|tests/serial/cal/|tests/fixtures/cal/|contracts/cal/|src/invariants/lanes/cal\.ts$|\.github/workflows/p2-cal\.yml$)'
 re_med='^(src/lanes/med/|tests/unit/lanes/med/|tests/contracts/med/|tests/integration/med/|tests/webhooks/med/|tests/serial/med/|contracts/med/|src/invariants/lanes/medusa\.ts$|src/slo/medusa\.ts$|\.github/workflows/p2-med\.yml$)'
-re_doc='^(src/lanes/doc/|tests/unit/lanes/doc/|tests/contracts/doc/|tests/integration/doc/|tests/webhooks/doc/|tests/serial/doc/|tests/billing/doc/|tests/fixtures/doc/|contracts/doc/|src/invariants/lanes/documenso\.ts$|src/slo/documenso\.ts$|\.github/workflows/p2-doc\.yml$)'
+re_doc='^(src/lanes/doc/|tests/unit/lanes/doc/|tests/contracts/doc/|tests/integration/doc/|tests/webhooks/doc/|tests/serial/doc/|tests/billing/doc/|tests/fixtures/doc/|contracts/doc/|src/invariants/lanes/documenso\.ts$|src/slo/documenso\.ts$|\.github/workflows/p2-doc\.yml$|\.github/workflows/p2-doc-serial\.yml$)'
 re_tw='^(src/lanes/tw/|tests/unit/lanes/tw/|tests/contracts/tw/|tests/integration/tw/|tests/webhooks/tw/|tests/serial/tw/|src/clients/twenty\.ts$|\.github/workflows/p2-tw\.yml$|\.github/workflows/tw-study\.yml$)'
 re_neutral='^(docs/|README\.md$)'
 
