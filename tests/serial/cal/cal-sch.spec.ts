@@ -14,12 +14,15 @@ import {
   calBookingApi,
   attendeeEmailFor,
   type BookingResult,
+  cancelInCleanup,
 } from "../../../src/lanes/cal/booking.ts";
 import { eventTypeIdBySlug } from "../../../src/lanes/cal/event-types.ts";
 import { fireScheduledTriggersOnce } from "../../../src/lanes/cal/cron.ts";
 import {
+  CAL_QUIET_POLL_TIMEOUT_MS,
   CAL_QUIET_TEST_BUDGET_MS,
   CAL_QUIET_WINDOW_MS,
+  CAL_SCH002_ROW_POLL_MS,
   quietState,
 } from "../../../src/lanes/cal/quiet.ts";
 import {
@@ -32,6 +35,7 @@ import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 import type { CalAuth } from "../../../src/auth/cal.ts";
 import type { ApiRequestLike } from "../../../src/clients/base.ts";
 import type { CalClient } from "../../../src/clients/cal.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
 
 const db = (): ReturnType<typeof readOnlyDb> => readOnlyDb("cal");
 let writerHandle: ReturnType<typeof createFixtureWriter> | undefined;
@@ -45,6 +49,13 @@ const cronKey = (): string => process.env["CRON_API_KEY"] ?? "";
 test.afterAll(async () => {
   await writerHandle?.close();
 });
+
+interface Track {
+  hookId?: string;
+  uid?: string;
+  /** Set once the test's own cancel returned 200 (SCH-001), so the cleanup cancel may answer already-cancelled. */
+  cancelled?: boolean;
+}
 
 interface Ctx {
   request: ApiRequestLike;
@@ -82,10 +93,16 @@ async function hookAndBooking(
   return { rowIds: rows.map((r) => r.id), url, api };
 }
 
-async function cleanup(ctx: Ctx, track: { hookId?: string; uid?: string }): Promise<void> {
+/** One step each (src/shared/cleanup.ts): the booking cancel, then the webhook. `cancelled`: the test cancelled it first. */
+async function cleanup(ctx: Ctx, track: Track): Promise<void> {
   const api = calBookingApi({ request: ctx.request, apiBaseUrl: apiBase(), auth: ctx.calAuth });
-  if (track.uid !== undefined && track.uid !== "") await api.cancel(track.uid, "P2 lane cleanup");
-  if (track.hookId !== undefined) await ctx.cal.webhooks.remove(track.hookId);
+  const { uid, hookId } = track;
+  await runAllThenRethrow([
+    ...(uid === undefined || uid === ""
+      ? []
+      : [() => cancelInCleanup(api, uid, { cancelledByTest: track.cancelled === true })]),
+    ...(hookId === undefined ? [] : [() => ctx.cal.webhooks.remove(hookId)]),
+  ]);
 }
 
 test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
@@ -96,10 +113,11 @@ test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
     receiverHandle,
   }) => {
     const ctx = { request, calAuth, cal, receiverHandle };
-    const track: { hookId?: string; uid?: string } = {};
+    const track: Track = {};
     try {
       const made = await hookAndBooking(ctx, "cal-sch-001", 6, track);
       expect(await made.api.cancel(track.uid ?? "", "P2 lane cancel")).toBe(200);
+      track.cancelled = true;
       await expect
         .poll(async () => (await scheduledRowsForBooking(db(), track.uid ?? "")).length, {
           timeout: SLO.calWebhookDelivery.ms,
@@ -121,7 +139,7 @@ test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
     // Holds a quiet window (one cron tick plus margin): its own budget, the shared 60 s limit is unchanged (quiet.ts).
     test.setTimeout(CAL_QUIET_TEST_BUDGET_MS);
     const ctx = { request, calAuth, cal, receiverHandle };
-    const track: { hookId?: string; uid?: string } = {};
+    const track: Track = {};
     const testId = "cal-sch-002c";
     const key = ctx.receiverHandle.key(testId);
     try {
@@ -151,7 +169,7 @@ test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
               CAL_QUIET_WINDOW_MS,
             ),
           {
-            timeout: CAL_QUIET_WINDOW_MS + 2_000,
+            timeout: CAL_QUIET_POLL_TIMEOUT_MS,
             intervals: POLL_INTERVALS,
             message: "exactly one delivery, held through the quiet window",
           },
@@ -159,7 +177,7 @@ test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
         .toBe("quiet");
       await expect
         .poll(async () => (await scheduledRowsForHook(db(), track.uid ?? "", made.url)).length, {
-          timeout: SLO.calWebhookDelivery.ms,
+          timeout: CAL_SCH002_ROW_POLL_MS,
           intervals: POLL_INTERVALS,
         })
         .toBe(0);
@@ -177,7 +195,7 @@ test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
     // Holds a quiet window (one cron tick plus margin): its own budget, the shared 60 s limit is unchanged (quiet.ts).
     test.setTimeout(CAL_QUIET_TEST_BUDGET_MS);
     const ctx = { request, calAuth, cal, receiverHandle };
-    const track: { hookId?: string; uid?: string } = {};
+    const track: Track = {};
     const testId = "cal-sch-003c";
     const key = ctx.receiverHandle.key(testId);
     try {
@@ -207,7 +225,7 @@ test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
               CAL_QUIET_WINDOW_MS,
             ),
           {
-            timeout: CAL_QUIET_WINDOW_MS + 2_000,
+            timeout: CAL_QUIET_POLL_TIMEOUT_MS,
             intervals: POLL_INTERVALS,
             message: "exactly one delivery, held through the quiet window",
           },
@@ -227,7 +245,7 @@ test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
     // Holds a quiet window (one cron tick plus margin): its own budget, the shared 60 s limit is unchanged (quiet.ts).
     test.setTimeout(CAL_QUIET_TEST_BUDGET_MS);
     const ctx = { request, calAuth, cal, receiverHandle };
-    const track: { hookId?: string; uid?: string } = {};
+    const track: Track = {};
     const testId = "cal-sch-003p";
     const key = ctx.receiverHandle.key(testId);
     try {
@@ -258,7 +276,7 @@ test.describe("P2-CAL-SCH scheduled triggers (serial)", () => {
               CAL_QUIET_WINDOW_MS,
             ),
           {
-            timeout: CAL_QUIET_WINDOW_MS + 2_000,
+            timeout: CAL_QUIET_POLL_TIMEOUT_MS,
             intervals: POLL_INTERVALS,
             message: "no delivery, held through the quiet window",
           },
