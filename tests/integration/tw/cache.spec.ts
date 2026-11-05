@@ -6,16 +6,18 @@ import { twAuthHeaders } from "../../../src/lanes/tw/http.ts";
 import { requireTwEnv } from "../../../src/lanes/tw/gates.ts";
 import { POLL_INTERVALS } from "../../../src/slo.ts";
 import { readOnlyDb } from "../../../src/db/pg.ts";
-import { TW_STUDY_DELIVERY_MS } from "../../../src/lanes/tw/slo.ts";
+import { TW_COMMITTED_READ_BUDGET_MS } from "../../../src/lanes/tw/slo.ts";
 import { REPLICA_B_URL, CACHE_VISIBLE_BUDGET_MS } from "../../../src/lanes/tw/replicas.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
 import type { TwentyAuth } from "../../../src/auth/twenty.ts";
 
+/** One metadata GraphQL call, asserted HTTP 200 (the status every call in this case expects); GraphQL errors are returned to the caller. */
 async function metadata(request: APIRequestContext, base: string, auth: TwentyAuth, query: string) {
   const res = await request.post(`${base}/metadata`, {
     headers: { ...twAuthHeaders(auth), "content-type": "application/json" },
     data: { query },
   });
+  expect(res.status(), `metadata ${base}: HTTP 200`).toBe(200);
   return (await res.json()) as {
     data?: Record<string, unknown> | null;
     errors?: { message: string }[];
@@ -99,7 +101,7 @@ test("P2-TW-CACHE-001 @replicas: a custom field added on replica A is visible on
               )
             )[0]?.n,
           {
-            timeout: TW_STUDY_DELIVERY_MS,
+            timeout: TW_COMMITTED_READ_BUDGET_MS,
             intervals: POLL_INTERVALS,
             message: "cleanup: no field row remains",
           },

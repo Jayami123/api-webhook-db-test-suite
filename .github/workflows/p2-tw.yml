@@ -1,6 +1,7 @@
 # P2 Twenty lane workflow (owned by the twenty lane; see docs/lane-ownership.md).
-# Two jobs, each with its own Twenty stack (harness v0.3.1): tw-api (the default stack, every case without the
-# @multiws tag) and tw-multiws (the @multiws cases, on a multi-workspace stack).
+# Three jobs, each with its own Twenty stack (harness v0.3.1): tw-api (the default stack, every case tagged neither
+# @multiws nor @replicas), tw-multiws (the @multiws cases, on a multi-workspace stack) and tw-cache (the @replicas
+# cases, on a stack with a second server replica, TWENTY_SERVER_REPLICAS=2).
 # Gate (docs/lane-ownership.md, "Gate for lane workflows"): the workflow runs on pull_request and workflow_dispatch.
 # Each job is guarded by the same-repo check, so a fork PR never starts a stack or receives secrets.
 # tests/unit/ci/workflow.test.ts enforces this shape for every lane workflow.

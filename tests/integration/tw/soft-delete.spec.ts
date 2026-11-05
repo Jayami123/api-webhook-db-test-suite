@@ -5,7 +5,7 @@ import { readOnlyDb } from "../../../src/db/pg.ts";
 import { twAuthHeaders } from "../../../src/lanes/tw/http.ts";
 import { rowsById } from "../../../src/lanes/tw/rows.ts";
 import { softRemovePerson } from "../../../src/lanes/tw/soft-delete.ts";
-import { TW_STUDY_DELIVERY_MS } from "../../../src/lanes/tw/slo.ts";
+import { POLL_INTERVALS, TW_COMMITTED_READ_BUDGET_MS } from "../../../src/lanes/tw/slo.ts";
 import type { TwentyAuth } from "../../../src/auth/twenty.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
 
@@ -71,7 +71,8 @@ test("P2-TW-DEL-002: a soft-deleted person is absent from the REST list and from
     await expect
       .poll(() => searchIds(request, twAuth, name), {
         message: "control: search finds the person before the delete",
-        timeout: TW_STUDY_DELIVERY_MS,
+        timeout: TW_COMMITTED_READ_BUDGET_MS,
+        intervals: POLL_INTERVALS,
       })
       .toContain(id);
 
@@ -88,7 +89,8 @@ test("P2-TW-DEL-002: a soft-deleted person is absent from the REST list and from
     await expect
       .poll(() => searchIds(request, twAuth, name), {
         message: "oracle: absent from search",
-        timeout: TW_STUDY_DELIVERY_MS,
+        timeout: TW_COMMITTED_READ_BUDGET_MS,
+        intervals: POLL_INTERVALS,
       })
       .not.toContain(id);
   } finally {

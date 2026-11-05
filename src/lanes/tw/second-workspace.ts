@@ -3,6 +3,7 @@ import type { TwentyAuth } from "../../auth/twenty.ts";
 import { SecretString } from "../../auth/secret.ts";
 import { metadataGql, exchangeToken } from "./workspaces.ts";
 import { runScopedName } from "../../run/prefix.ts";
+import { runAllThenRethrow } from "../../shared/cleanup.ts";
 
 /**
  * A second workspace for multi-workspace cases (moved from tests/integration/tw/workspace.spec.ts, STR-002 setup).
@@ -61,41 +62,6 @@ export async function activateSecondWorkspace(base: string, ws: SecondWorkspace)
 }
 
 /**
- * Runs every step, in order, even after one fails. Then it rethrows the FIRST error, with each later error attached as
- * its `cause` (several later errors: an AggregateError). No error is swallowed.
- */
-export async function runAllThenRethrow(steps: readonly (() => Promise<unknown>)[]): Promise<void> {
-  const failures: Error[] = [];
-  for (const step of steps) {
-    try {
-      await step();
-    } catch (error) {
-      failures.push(
-        error instanceof Error ? error : new Error(`non-error failure: ${JSON.stringify(error)}`),
-      );
-    }
-  }
-  const [first, ...later] = failures;
-  if (first === undefined) return;
-  if (later.length > 0) {
-    first.cause = later.length === 1 ? later[0] : new AggregateError(later, "later failures");
-  }
-  throw first;
-}
-
-/** Revokes a key. Throws on any error the product returns (the caller decides what the failure means). */
-async function revokeKey(base: string, access: string, keyId: string): Promise<void> {
-  const res = await metadataGql(
-    base,
-    "mutation($i:RevokeApiKeyInput!){ revokeApiKey(input:$i){ id } }",
-    { i: { id: keyId } },
-    access,
-  );
-  if (res.body.errors !== undefined)
-    throw new Error(`revoke the workspace key: ${JSON.stringify(res.body.errors)}`);
-}
-
-/**
  * An API key bound to the workspace of `loginToken` (Admin role), the same steps as mintTwenty (src/auth/twenty.ts).
  * The key is created and generated through the metadata endpoint; revoke() revokes it.
  */
@@ -106,6 +72,8 @@ export async function mintKeyForWorkspace(
 ): Promise<TwentyAuth> {
   const access = await exchangeToken(base, ws.loginToken, ws.origin);
   const roles = await metadataGql(base, "query { getRoles { id label } }", {}, access);
+  if (roles.body.errors !== undefined)
+    throw new Error(`ENV or TEST BUG: get roles: ${JSON.stringify(roles.body.errors)}`);
   const admin = (
     roles.body.data as { getRoles: { id: string; label: string }[] } | null | undefined
   )?.getRoles.find((r) => r.label === "Admin");
@@ -117,6 +85,8 @@ export async function mintKeyForWorkspace(
     { i: { name: label, expiresAt, roleId: admin.id } },
     access,
   );
+  if (created.body.errors !== undefined)
+    throw new Error(`ENV or TEST BUG: create api key: ${JSON.stringify(created.body.errors)}`);
   const keyId = (created.body.data as { createApiKey: { id: string } }).createApiKey.id;
   const minted = await metadataGql(
     base,
@@ -124,21 +94,21 @@ export async function mintKeyForWorkspace(
     { id: keyId, e: expiresAt },
     access,
   );
-  const token = (minted.body.data as { generateApiKeyToken?: { token: string } } | null | undefined)
-    ?.generateApiKeyToken?.token;
-  if (minted.body.errors !== undefined || token === undefined) {
-    // The key exists but has no token: revoke it, so it is not left live. The setup error is the one thrown;
-    // a revoke failure is attached to it as its cause.
+  if (minted.body.errors !== undefined) {
+    // The key exists but has no token: revoke it, so it is not left live. The setup error is the one thrown; a
+    // revoke failure is attached to it as its cause (runAllThenRethrow, src/shared/cleanup.ts).
     await runAllThenRethrow([
       () =>
         Promise.reject(
           new Error(
-            `ENV or TEST BUG: generate api key token: ${JSON.stringify(minted.body.errors ?? minted.body)}`,
+            `ENV or TEST BUG: generate api key token: ${JSON.stringify(minted.body.errors)}`,
           ),
         ),
       () => revokeKey(base, access, keyId),
     ]);
   }
+  const token = (minted.body.data as { generateApiKeyToken: { token: string } }).generateApiKeyToken
+    .token;
   let revoked = false;
   return {
     product: "twenty",
@@ -157,6 +127,18 @@ export async function mintKeyForWorkspace(
       await revokeKey(base, access, keyId);
     },
   };
+}
+
+/** Revokes a key. Throws on any error the product returns; the caller decides what the failure means. */
+async function revokeKey(base: string, access: string, keyId: string): Promise<void> {
+  const res = await metadataGql(
+    base,
+    "mutation($i:RevokeApiKeyInput!){ revokeApiKey(input:$i){ id } }",
+    { i: { id: keyId } },
+    access,
+  );
+  if (res.body.errors !== undefined)
+    throw new Error(`cleanup: revoke the workspace key: ${JSON.stringify(res.body.errors)}`);
 }
 
 /** Soft-deletes the workspace through the product (deleteCurrentWorkspace). Throws on any error. */

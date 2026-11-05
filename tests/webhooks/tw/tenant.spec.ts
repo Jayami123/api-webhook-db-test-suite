@@ -23,6 +23,8 @@ import {
   TW_QUIET_WINDOW_MS,
 } from "../../../src/lanes/tw/slo.ts";
 import { runScopedName, currentRunPrefix } from "../../../src/run/prefix.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
+import { tenantCleanupSteps } from "../../../src/lanes/tw/cleanup-steps.ts";
 
 /** Signs the test user in to the first workspace and returns a workspace token that can create workspaces. */
 async function userToken(base: string): Promise<string> {
@@ -32,6 +34,8 @@ async function userToken(base: string): Promise<string> {
     "mutation($e:String!,$p:String!){ signIn(email:$e,password:$p){ availableWorkspaces{ availableWorkspacesForSignIn{ loginToken workspaceUrls{ subdomainUrl } } } } }",
     { e: env.TWENTY_EMAIL, p: env.TWENTY_PASSWORD },
   );
+  if (signIn.body.errors !== undefined)
+    throw new Error(`ENV or TEST BUG: sign in: ${JSON.stringify(signIn.body.errors)}`);
   const first = (
     signIn.body.data as {
       signIn: {
@@ -143,29 +147,39 @@ test("P2-TW-WH-009 @multiws: a webhook delivers only inside its own workspace", 
       )
       .toBe("quiet");
   } finally {
-    try {
-      for (const id of createdInA) await tw.people.remove(id);
-      if (twB !== undefined) for (const id of createdInB) await twB.people.remove(id);
-      await hookA.remove();
-      if (hookB !== undefined) await hookB.remove();
-      if (keyBAuth !== undefined) await keyBAuth.revoke();
-      if (ws !== undefined) {
-        // A pending workspace cannot be deleted through the product (probe record, B-P16 and BUG-004). If setup never
-        // activated it, activate it first, so a failure is reported as the setup cause and not as a delete error.
-        if (!activatedB) await activateSecondWorkspace(base, ws);
-        await softDeleteSecondWorkspace(base, ws);
-        deletedB = true;
-      }
-    } finally {
-      if (ws !== undefined) {
-        // Teardown, asserted: B's row keeps deletedAt (soft delete), and no live row for this run is left.
-        const rows = await readOnlyDb("twenty").select<{ deletedAt: string | null }>(
-          `SELECT "deletedAt"::text AS "deletedAt" FROM core.workspace WHERE id = $1`,
-          [ws.id],
-        );
-        expect(rows[0]?.deletedAt, "teardown: B is soft-deleted").not.toBeNull();
-        expect(deletedB, "teardown: deleteCurrentWorkspace ran").toBe(true);
-      }
+    // One step per resource (src/shared/cleanup.ts): a failed hook removal or key revoke still deletes workspace B.
+    const wsB = ws;
+    const clientB = twB;
+    await runAllThenRethrow(
+      tenantCleanupSteps({
+        createdInA,
+        removeInA: (id) => tw.people.remove(id),
+        createdInB,
+        removeInB: clientB === undefined ? undefined : (id) => clientB.people.remove(id),
+        hookA,
+        hookB,
+        keyB: keyBAuth,
+        deleteWorkspaceB:
+          wsB === undefined
+            ? undefined
+            : async () => {
+                // A pending workspace cannot be deleted through the product (probe record, B-P16 and BUG-004). If
+                // setup never activated it, activate it first, so a failure is reported as the setup cause and not
+                // as a delete error.
+                if (!activatedB) await activateSecondWorkspace(base, wsB);
+                await softDeleteSecondWorkspace(base, wsB);
+                deletedB = true;
+              },
+      }),
+    );
+    if (wsB !== undefined) {
+      // Teardown, asserted after every cleanup step ran: B's row keeps deletedAt (soft delete), then the delete ran.
+      const rows = await readOnlyDb("twenty").select<{ deletedAt: string | null }>(
+        `SELECT "deletedAt"::text AS "deletedAt" FROM core.workspace WHERE id = $1`,
+        [wsB.id],
+      );
+      expect(rows[0]?.deletedAt, "teardown: B is soft-deleted").not.toBeNull();
+      expect(deletedB, "teardown: deleteCurrentWorkspace ran").toBe(true);
     }
   }
 });

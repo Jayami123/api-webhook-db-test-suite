@@ -13,9 +13,16 @@ import {
   TW_STUDY_DELIVERY_MS,
   TW_STUDY_IDLE_MS,
 } from "../../../src/lanes/tw/slo.ts";
+import {
+  finishStudyCase,
+  type CaseRecord,
+  type StudyMode,
+} from "../../../src/lanes/tw/study-case.ts";
 import { composeServiceContainer } from "../../../src/webhooks/docker-net.ts";
 import { TWENTY_COMPOSE_PROJECT } from "../../../src/webhooks/reach.ts";
 import { currentRunPrefix, runScopedName } from "../../../src/run/prefix.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
+import { removeEach } from "../../../src/lanes/tw/cleanup-steps.ts";
 
 /**
  * P2-TW-WH-010: a MEASUREMENT of the B1 drop (SUSPECTED intermittent product bug), not a gate. It runs only in the
@@ -24,8 +31,7 @@ import { currentRunPrefix, runScopedName } from "../../../src/run/prefix.ts";
  */
 const exec = promisify(execFile);
 
-/** idle12: controlled idle gap before the webhook; warm0: no gap after the previous case; prime: one priming event first. */
-export type StudyMode = "idle12" | "warm0" | "prime";
+export type { StudyMode };
 
 /** The fixed batch: 20 idle12, 20 warm0, 10 prime, in this order on every run. */
 export const STUDY_CASES: readonly { readonly n: number; readonly mode: StudyMode }[] = [
@@ -34,17 +40,6 @@ export const STUDY_CASES: readonly { readonly n: number; readonly mode: StudyMod
   ...Array.from({ length: 10 }, (_, i) => ({ n: 41 + i, mode: "prime" as const })),
 ];
 
-interface CaseRecord {
-  readonly n: number;
-  readonly mode: StudyMode;
-  readonly sent: boolean;
-  readonly sentAt: string;
-  readonly deliveries: number;
-  readonly delivered: boolean;
-  readonly observedMs: number;
-  readonly cleaned: boolean;
-  readonly workerLog: string | null;
-}
 const records: CaseRecord[] = [];
 
 test.afterAll(async () => {
@@ -104,6 +99,7 @@ for (const c of STUDY_CASES) {
     let sentId: string | undefined;
     let sentAt = "";
     let observedMs = 0;
+    let bodyFailure: { readonly error: unknown } | undefined;
     try {
       if (c.mode === "idle12") {
         // CONTROLLED VARIABLE: the fixed idle gap (TW_STUDY_IDLE_MS). A time condition with an explicit deadline.
@@ -140,30 +136,30 @@ for (const c of STUDY_CASES) {
         )
         .toBe(true);
       observedMs = Date.now() - observeFrom;
-    } finally {
-      const sent = sentAt !== "";
-      const deliveries =
-        sentId === undefined ? 0 : deliveriesOf(receiverHandle.receiver, key, sentId).length;
-      const workerLog = sent && deliveries === 0 ? await workerLogSince(sinceIso) : null;
-      let cleaned = false;
-      try {
-        // No catch: a failed removal fails the case, and the record says it was not cleaned.
-        for (const id of created) await tw.people.remove(id);
-        if (hook) await hook.remove();
-        cleaned = true;
-      } finally {
-        records.push({
-          n: c.n,
-          mode: c.mode,
-          sent,
-          sentAt,
-          deliveries,
-          delivered: deliveries > 0,
-          observedMs,
-          cleaned,
-          workerLog,
-        });
-      }
+    } catch (error) {
+      bodyFailure = { error };
     }
+    // Always runs: capture, cleanup and the record. Its own failures are rethrown after all three, never swallowed.
+    await finishStudyCase(
+      {
+        n: c.n,
+        mode: c.mode,
+        sentAt,
+        observedMs,
+        countDeliveries: () =>
+          sentId === undefined ? 0 : deliveriesOf(receiverHandle.receiver, key, sentId).length,
+        captureWorkerLog: () => workerLogSince(sinceIso),
+        // No catch: a failed removal fails the case, and the record says it was not cleaned.
+        cleanup: async () => {
+          const made = hook;
+          await runAllThenRethrow([
+            ...removeEach(created, (id) => tw.people.remove(id)),
+            ...(made === undefined ? [] : [() => made.remove()]),
+          ]);
+        },
+      },
+      records,
+      bodyFailure,
+    );
   });
 }

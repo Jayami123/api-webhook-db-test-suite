@@ -13,6 +13,8 @@ import {
 } from "../../../src/lanes/tw/slo.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
 import type { Delivery } from "../../../src/webhooks/receiver.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
+import { removeEach } from "../../../src/lanes/tw/cleanup-steps.ts";
 
 const eventOf = (d: Delivery): string =>
   (JSON.parse(d.rawBody.toString("utf8")) as { eventName: string }).eventName;
@@ -97,10 +99,9 @@ test("P2-TW-WH-003: person.created, person.updated and person.deleted each arriv
       "person.updated",
     ]);
   } finally {
-    try {
-      for (const id of created) await tw.people.remove(id);
-    } finally {
-      await hook.remove();
-    }
+    await runAllThenRethrow([
+      ...removeEach(created, (id) => tw.people.remove(id)),
+      () => hook.remove(),
+    ]);
   }
 });

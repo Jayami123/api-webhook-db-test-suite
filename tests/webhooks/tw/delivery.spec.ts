@@ -11,6 +11,8 @@ import {
   TW_QUIET_WINDOW_MS,
 } from "../../../src/lanes/tw/slo.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
+import { removeEach } from "../../../src/lanes/tw/cleanup-steps.ts";
 
 test("P2-TW-WH-004: a receiver 500 gets exactly one request for the event (no retry)", async ({
   tw,
@@ -66,11 +68,10 @@ test("P2-TW-WH-004: a receiver 500 gets exactly one request for the event (no re
       )
       .toBe("quiet");
   } finally {
-    try {
-      for (const id of created) await tw.people.remove(id);
-    } finally {
-      await hook.remove();
-    }
+    await runAllThenRethrow([
+      ...removeEach(created, (id) => tw.people.remove(id)),
+      () => hook.remove(),
+    ]);
   }
 });
 
@@ -140,11 +141,10 @@ for (const [name, delayMs] of [
         )
         .toBe("quiet");
     } finally {
-      try {
-        for (const id of created) await tw.people.remove(id);
-      } finally {
-        await hook.remove();
-      }
+      await runAllThenRethrow([
+        ...removeEach(created, (id) => tw.people.remove(id)),
+        () => hook.remove(),
+      ]);
     }
   });
 }
@@ -219,10 +219,9 @@ test("P2-TW-WH-006: the delivered body carries the created webhook id, the event
     );
     expect(bodyErrors(body)).toEqual([]);
   } finally {
-    try {
-      for (const id of created) await tw.people.remove(id);
-    } finally {
-      await hook.remove();
-    }
+    await runAllThenRethrow([
+      ...removeEach(created, (id) => tw.people.remove(id)),
+      () => hook.remove(),
+    ]);
   }
 });

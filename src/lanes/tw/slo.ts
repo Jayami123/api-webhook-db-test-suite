@@ -10,6 +10,14 @@ export const TW_QUIET_TIMEOUT_MS = TW_QUIET_WINDOW_MS + 1_000;
 export const TW_VISIBLE_TIMEOUT_MS = TWENTY_WEBHOOK_MEMO_MS + CANARY_MARGIN_MS;
 /** Study delivery budget (P2-TW-WH-010): the 5 s outbound timeout plus a 10 s margin. Measured arrivals were within 0.2 s (P-TW-2a/b/c). */
 export const TW_STUDY_DELIVERY_MS = TW_OUTBOUND_TIMEOUT_MS + 10_000;
+/**
+ * Read-after-write budget for a change the product commits before it answers, with no job or cache in between. Basis
+ * (fork 7cbdfec): search matches the person's `searchVector`, a STORED generated column (generate-column-definitions.util.ts:113,
+ * queried in search.service.ts:354), so a create or soft delete is searchable once its request returns; deleteOneField runs
+ * its workspace migration before it returns (field-metadata.service.ts:88), so the field row is gone by then. The first
+ * read is expected to pass; the 5 s is a policy bound for a few request round trips on a CI runner, not a wait for a job.
+ */
+export const TW_COMMITTED_READ_BUDGET_MS = 5_000;
 /** CONTROLLED VARIABLE of the study: the idle gap before each `idle12` case (the experiment's independent variable). It is a FIXED WAIT, not a condition: memo expiry is time-based and emits no observable event, so the gap is a set time (memo window 10 s, workspace-cache.service.ts:56, plus 2 s), identical for every idle12 case. */
 export const TW_STUDY_IDLE_MS = TWENTY_WEBHOOK_MEMO_MS + 2_000;
 /** P2 receiver policy for |timestamp - receipt| (TW-WH-001). The product documents no tolerance. */
