@@ -155,15 +155,17 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Stripe test-mode key is set (the billing cases cannot run without it)
+      - name: Stripe test-mode key gate (fails unless the key starts with sk_test_)
         timeout-minutes: 2
         env:
           STRIPE_KEY: ${{ secrets.STRIPE_API_KEY }}
         run: |
-          if [ -z "$STRIPE_KEY" ]; then
-            echo "::error::STRIPE_API_KEY is not set; the billing cases need a test-mode key"
-            exit 1
-          fi
+          # The value is never printed: only the outcome is reported.
+          case "$STRIPE_KEY" in
+            sk_test_*) ;;
+            "") echo "::error::STRIPE_API_KEY is not set; the billing project needs a Stripe test-mode key"; exit 1 ;;
+            *) echo "::error::STRIPE_API_KEY is not a Stripe test-mode key (it must start with sk_test_)"; exit 1 ;;
+          esac
 
       - name: Node 22 for the repository (install, tests)
         timeout-minutes: 5
@@ -224,7 +226,7 @@ jobs:
         env:
           NEXT_PUBLIC_FEATURE_BILLING_ENABLED: "true"
           NEXT_PRIVATE_STRIPE_WEBHOOK_SECRET: ${{ env.P2_STRIPE_TEST_WH_SECRET }}
-          NEXT_PRIVATE_STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY || 'p2-placeholder-stripe-key' }}
+          NEXT_PRIVATE_STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
         run: timeout 1500 "$NODE24" node_modules/qa-portfolio-harness/scripts/up.mjs documenso
 
       - name: Provision the read-only and fixture roles
@@ -232,7 +234,7 @@ jobs:
         run: |
           "$NODE22" scripts/db-roles.ts provision documenso
 
-      - name: Billing project (the Stripe rows skip with a named condition without the key)
+      - name: Billing project (the key gate above has already required a test-mode key)
         timeout-minutes: 30
         env:
           STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
