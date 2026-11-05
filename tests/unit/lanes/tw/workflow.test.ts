@@ -43,6 +43,24 @@ function triggerViolations(text: string, allowed: readonly string[]): string[] {
   return bad;
 }
 
+/** Each job under `jobs:`: its id and its block of lines (up to the next job header). */
+function jobBlocks(text: string): Map<string, string> {
+  const lines = text.split("\n");
+  const start = lines.indexOf("jobs:");
+  const blocks = new Map<string, string[]>();
+  let current: string[] | null = null;
+  for (const line of lines.slice(start + 1)) {
+    const header = /^ {2}([a-z][a-z0-9-]*):\s*$/.exec(line);
+    if (header?.[1] !== undefined) {
+      current = [];
+      blocks.set(header[1], current);
+    } else {
+      current?.push(line);
+    }
+  }
+  return new Map([...blocks].map(([id, body]) => [id, body.join("\n")]));
+}
+
 /** The `if:` line of each job under `jobs:` (job id to its condition, or undefined when it has none). */
 function jobIfs(text: string): Map<string, string | undefined> {
   const lines = text.split("\n");
@@ -90,15 +108,31 @@ describe("twenty lane workflows", () => {
     }
   });
 
-  test("each lane job ends with an always() harness down step, and each triggers only on its own events", () => {
+  test("every job's last step is an always() harness down, and each triggers only on its own events", () => {
+    for (const file of LANE_FILES) {
+      const jobs = jobBlocks(live(file));
+      assert.ok(jobs.size >= 1, `${file}: has jobs`);
+      for (const [id, body] of jobs) {
+        const last = steps(body).at(-1) ?? "";
+        assert.match(
+          last,
+          /^- name: Harness down/,
+          `${file} job ${id}: the last step is the harness down`,
+        );
+        assert.match(
+          last,
+          /^ {8}if: always\(\)\s*$/m,
+          `${file} job ${id}: down runs even after a failure`,
+        );
+        assert.match(
+          last,
+          /node node_modules\/qa-portfolio-harness\/scripts\/down\.mjs twenty/,
+          `${file} job ${id}: the down call`,
+        );
+      }
+    }
     const lane = live(".github/workflows/p2-tw.yml");
     const study = live(".github/workflows/tw-study.yml");
-    for (const text of [lane, study]) {
-      const last = steps(text).at(-1) ?? "";
-      assert.match(last, /^- name: Harness down/, "the last step is the harness down");
-      assert.match(last, /^ {8}if: always\(\)\s*$/m, "down runs even after a failure");
-      assert.match(last, /node node_modules\/qa-portfolio-harness\/scripts\/down\.mjs twenty/);
-    }
     assert.deepEqual(
       triggersIn(lane),
       [...LANE_TRIGGERS],
