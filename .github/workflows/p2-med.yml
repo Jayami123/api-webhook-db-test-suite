@@ -1,13 +1,14 @@
-# P2 medusa lane workflow (stub). Owned by the medusa lane; the only workflow file the medusa lane edits.
-# Inert until the lane builds its job: manual trigger only, and the job is skipped (if: ${{ false }}).
-# Gate when the lane goes live: `needs` cannot cross workflow files, so replace the trigger with
-#   on: workflow_run: { workflows: [api], types: [completed] }
-# and run the job only when github.event.workflow_run.conclusion == 'success' and
-# github.event.workflow_run.head_repository.full_name == github.repository, checking out
-# github.event.workflow_run.head_sha. See docs/lane-ownership.md.
+# P2 medusa lane workflow. Owned by the medusa lane (the only workflow file the lane edits).
+# Runs the lane's med-api suite against harness v0.3.1 on pull requests from this repository, and on
+# manual dispatch. Gate (docs/lane-ownership.md, "Gate for lane workflows"): the job runs only when the
+# pull request head is this repository, so fork PRs never start a stack or receive secrets. There is no
+# cross-file `needs`: this job runs alongside `api`.
+# Secrets: STRIPE_API_KEY only (the allowlist in tests/unit/ci/workflow.test.ts). Per-run secrets are
+# generated in the job, masked, and never printed.
 name: p2-med
 
 on:
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -16,9 +17,130 @@ permissions:
 jobs:
   med-api:
     name: med-api
-    if: ${{ false }}
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 75
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
     steps:
-      - name: Stub, replaced by the medusa lane job
-        run: echo "stub"
+      - name: Checkout
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        timeout-minutes: 5
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install locked dependencies
+        timeout-minutes: 10
+        run: npm ci
+
+      - name: Require the Stripe test key
+        timeout-minutes: 2
+        env:
+          STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${STRIPE_API_KEY:-}" ]; then
+            echo "::error title=STRIPE_API_KEY missing::The repository secret STRIPE_API_KEY is not set. The Stripe payment provider cannot load without it, so the medusa lane cannot run. Add the secret (test mode) and re-run."
+            exit 1
+          fi
+          # Test mode only: a live key must never reach the lane. The value is matched, never printed.
+          case "$STRIPE_API_KEY" in
+            sk_test_*) ;;
+            *)
+              echo "::error title=STRIPE_API_KEY is not a test-mode key::The repository secret STRIPE_API_KEY must be a Stripe test-mode secret key (it starts with sk_test_). The stored value does not, so the medusa lane was not started. Replace the secret with the test-mode key and re-run. The value is not printed."
+              exit 1
+              ;;
+          esac
+          echo "STRIPE_API_KEY is a test-mode key (value not printed)."
+
+      - name: Generate per-run secrets (masked, never printed)
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          run_id="p2-qa-$(date -u +%Y%m%dt%H%M%Sz)-$(openssl rand -hex 4)"
+          webhook_secret="whsec_$(openssl rand -hex 24)"
+          admin_password="$(openssl rand -hex 16)"
+          echo "::add-mask::$webhook_secret"
+          echo "::add-mask::$admin_password"
+          {
+            echo "P2_RUN_ID=$run_id"
+            echo "STRIPE_WEBHOOK_SECRET=$webhook_secret"
+            echo "MEDUSA_ADMIN_EMAIL=p2-admin-$(openssl rand -hex 4)@example.test"
+            echo "MEDUSA_ADMIN_PASSWORD=$admin_password"
+            echo "PRODUCTS_ROOT=$RUNNER_TEMP/products"
+            echo "MEDUSA_REDIS=1"
+            echo "MEDUSA_STRIPE=1"
+            echo "MEDUSA_FF_CACHING=true"
+          } >> "$GITHUB_ENV"
+          echo "per-run values written to the job environment"
+
+      - name: Generate the database role passwords
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          npm run -s qa:passwords
+          for key in P2_QA_RO_PASSWORD P2_QA_FIXTURE_PASSWORD; do
+            value="$(grep -E "^${key}=" .env | head -1 | cut -d= -f2-)"
+            if [ -z "$value" ]; then
+              echo "::error::${key} was not written to .env by qa:passwords"
+              exit 1
+            fi
+            echo "::add-mask::$value"
+            echo "${key}=${value}" >> "$GITHUB_ENV"
+          done
+
+      - name: Put pnpm on PATH for the harness (pinned to the bootstrap version)
+        timeout-minutes: 5
+        run: npm install -g pnpm@10.11.1 && pnpm --version
+
+      - name: Bootstrap the product at its pinned ref
+        timeout-minutes: 25
+        run: bash scripts/bootstrap.sh medusa
+
+      - name: Harness up (Redis, Stripe, caching)
+        timeout-minutes: 32
+        env:
+          STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
+        run: timeout 1800 node node_modules/qa-portfolio-harness/scripts/up.mjs medusa
+
+      - name: Provision the database roles
+        timeout-minutes: 5
+        run: npm run -s db:roles:provision -- medusa
+
+      - name: Seed the admin user
+        timeout-minutes: 5
+        run: node scripts/harness-seed.mjs medusa
+
+      - name: Run the lane (med-api)
+        timeout-minutes: 30
+        env:
+          STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
+        run: npx playwright test --project=med-api
+
+      - name: Upload the report, junit and logs
+        if: always()
+        timeout-minutes: 5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: med-api-artifacts
+          path: |
+            playwright-report/
+            results/
+            receiver-logs/
+            fixture-logs/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Harness down (always)
+        if: always()
+        timeout-minutes: 5
+        env:
+          MEDUSA_DOWN_VOLUMES: "1"
+        run: node node_modules/qa-portfolio-harness/scripts/down.mjs medusa
