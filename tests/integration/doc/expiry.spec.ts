@@ -36,6 +36,22 @@ async function waitEnvelopeCompleted(
     .toBe("COMPLETED");
 }
 
+/**
+ * The cleanup itself is asserted: after the product's remove, the envelope reads back as deleted (a soft delete sets
+ * deletedAt; a hard delete removes the row). A remove that changed nothing leaves a live envelope, and fails here.
+ */
+async function assertReadsDeleted(
+  db: ReturnType<typeof readOnlyDb>,
+  envelopeId: string,
+): Promise<void> {
+  const rows = await db.select<{ deletedAt: Date | null }>(
+    `SELECT "deletedAt" AS "deletedAt" FROM "Envelope" WHERE "id" = $1`,
+    [envelopeId],
+  );
+  const gone = rows.length === 0 || rows[0]?.deletedAt != null;
+  expect(gone, "the envelope reads back as deleted after the product's remove").toBe(true);
+}
+
 test("P2-DOC-EXP-001 signing before expiry succeeds", async ({ doc, request, docAuth }) => {
   const runPrefix = currentRunPrefix();
   const db = readOnlyDb("documenso");
@@ -92,6 +108,7 @@ test("P2-DOC-EXP-001 signing before expiry succeeds", async ({ doc, request, doc
   } finally {
     await w.close();
     await doc.envelopes.remove(env.envelopeId);
+    await assertReadsDeleted(db, env.envelopeId);
   }
 });
 
@@ -208,5 +225,6 @@ test("P2-DOC-EXP-003 a recipient moved back into its window signs again", async 
   } finally {
     await w.close();
     await doc.envelopes.remove(env.envelopeId);
+    await assertReadsDeleted(db, env.envelopeId);
   }
 });
