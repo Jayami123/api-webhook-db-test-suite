@@ -75,6 +75,7 @@ test("P2-TW-CUR-001: amountMicros 9007199254740993 is rejected or round-trips ex
       ? (JSON.parse(text) as { data: { createOpportunity: { id: string } } }).data.createOpportunity
           .id
       : undefined;
+  let stored: unknown[] | undefined;
   try {
     if (id !== undefined) {
       const rows = await rowsById(
@@ -84,27 +85,23 @@ test("P2-TW-CUR-001: amountMicros 9007199254740993 is rejected or round-trips ex
         `"amountAmountMicros"::text AS micros`,
       );
       expect(rows, "setup: exactly one stored row for the created id").toHaveLength(1);
-    }
-    // Known product bug P2-TW-BUG-001 (silent rounding of an amount above 2^53-1). The marker sits right before the
-    // product assertion, so the setup above still fails as a normal test failure. Evidence and draft:
-    // docs/probes/2026-11-03-p2-lane-tw-probes.md, section P2-TW-BUG-001.
-    test.fail(
-      true,
-      "P2-TW-BUG-001: 9007199254740993 is accepted (201) and stored as 9007199254740992",
-    );
-    if (id === undefined) {
-      expect(res.status(), "rejected with a client error").toBeGreaterThanOrEqual(400);
-    } else {
-      const rows = await rowsById(
-        readOnlyDb("twenty"),
-        "opportunity",
-        id,
-        `"amountAmountMicros"::text AS micros`,
-      );
-      expect(rows.map((r) => r["micros"])).toEqual(["9007199254740993"]);
+      stored = rows.map((r) => r["micros"]);
     }
   } finally {
     if (id !== undefined) await deleteOpportunity(request, twAuth, id);
+  }
+  // Known product bug P2-TW-BUG-001 (silent rounding of an amount above 2^53-1). The marker is called only after
+  // the setup asserts and the cleanup have finished, so a setup or cleanup failure is a normal test failure and
+  // never satisfies the expected failure. Evidence and draft: docs/probes/2026-11-03-p2-lane-tw-probes.md,
+  // section P2-TW-BUG-001.
+  test.fail(
+    true,
+    "P2-TW-BUG-001: 9007199254740993 is accepted (201) and stored as 9007199254740992",
+  );
+  if (id === undefined) {
+    expect(res.status(), "rejected with a client error").toBeGreaterThanOrEqual(400);
+  } else {
+    expect(stored).toEqual(["9007199254740993"]);
   }
 });
 
@@ -118,15 +115,20 @@ async function createOpportunityGql(
   const res = await request.post(`${apiBaseUrl("twenty")}/graphql`, {
     headers: { ...twAuthHeaders(auth), "content-type": "application/json" },
     data: {
-      query: `mutation { createOpportunity(data: { name: "${runScopedName(label)}", amount: { amountMicros: ${digits}, currencyCode: "USD" } }) { id } }`,
+      query: `mutation { createOpportunity(data: { name: "${runScopedName(label)}", amount: { amountMicros: ${digits}, currencyCode: "USD" } }) { id amount { amountMicros } } }`,
     },
   });
   const text = await res.text();
   const body = JSON.parse(text) as {
-    data?: { createOpportunity?: { id: string } } | null;
+    data?: { createOpportunity?: { id: string; amount?: { amountMicros?: unknown } } } | null;
     errors?: unknown;
   };
-  return { status: res.status(), body, id: body.data?.createOpportunity?.id };
+  return {
+    status: res.status(),
+    body,
+    id: body.data?.createOpportunity?.id,
+    amountMicros: body.data?.createOpportunity?.amount?.amountMicros,
+  };
 }
 
 test("P2-TW-CUR-001 (graphql): amountMicros 9007199254740991 round-trips exactly", async ({
@@ -139,6 +141,8 @@ test("P2-TW-CUR-001 (graphql): amountMicros 9007199254740991 round-trips exactly
   const id = made.id;
   expect(id, "create returned an id").toEqual(expect.any(String));
   try {
+    // BigFloat is serialized as a JSON number (parseFloat); 2^53-1 is a safe integer, so the parsed value is exact.
+    expect(made.amountMicros, "create response amountMicros").toBe(9007199254740991);
     const rows = await rowsById(
       readOnlyDb("twenty"),
       "opportunity",
@@ -159,6 +163,7 @@ test("P2-TW-CUR-001 (graphql): amountMicros 9007199254740993 is rejected or roun
   // Setup, asserted before the known-bug marker: the request got a server answer, and an accepted create stored one row.
   expect(made.status, "setup: the request reached the server").toBeLessThan(500);
   const id = made.id;
+  let stored: unknown[] | undefined;
   try {
     if (id !== undefined) {
       const rows = await rowsById(
@@ -168,25 +173,21 @@ test("P2-TW-CUR-001 (graphql): amountMicros 9007199254740993 is rejected or roun
         `"amountAmountMicros"::text AS micros`,
       );
       expect(rows, "setup: exactly one stored row for the created id").toHaveLength(1);
-    }
-    // Known product bug P2-TW-BUG-001, GraphQL half (probe record, section 4). GraphQL stores 9007199254740992 for this
-    // input, the same as REST. The marker sits after the setup asserts.
-    test.fail(
-      true,
-      "P2-TW-BUG-001 (GraphQL): 9007199254740993 is accepted and stored as 9007199254740992",
-    );
-    if (id === undefined) {
-      expect(made.body.errors, "rejected with a GraphQL error").toBeDefined();
-    } else {
-      const rows = await rowsById(
-        readOnlyDb("twenty"),
-        "opportunity",
-        id,
-        `"amountAmountMicros"::text AS micros`,
-      );
-      expect(rows.map((r) => r["micros"])).toEqual(["9007199254740993"]);
+      stored = rows.map((r) => r["micros"]);
     }
   } finally {
     if (id !== undefined) await deleteOpportunity(request, twAuth, id);
+  }
+  // Known product bug P2-TW-BUG-001, GraphQL half (probe record, section 4). GraphQL stores 9007199254740992 for this
+  // input, the same as REST. The marker is called only after the setup asserts and the cleanup have finished, so a
+  // cleanup failure is a normal test failure and never satisfies the expected failure.
+  test.fail(
+    true,
+    "P2-TW-BUG-001 (GraphQL): 9007199254740993 is accepted and stored as 9007199254740992",
+  );
+  if (id === undefined) {
+    expect(made.body.errors, "rejected with a GraphQL error").toBeDefined();
+  } else {
+    expect(stored).toEqual(["9007199254740993"]);
   }
 });
