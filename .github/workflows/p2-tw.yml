@@ -1,24 +1,227 @@
-# P2 twenty lane workflow (stub). Owned by the twenty lane; the only workflow file the twenty lane edits
-# apart from tw-study.yml. Inert until the lane builds its job: manual trigger only, and the job is
-# skipped (if: ${{ false }}). Gate when the lane goes live: `needs` cannot cross workflow files, so
-# replace the trigger with on: workflow_run: { workflows: [api], types: [completed] } and run the job
-# only when github.event.workflow_run.conclusion == 'success' and
-# github.event.workflow_run.head_repository.full_name == github.repository, checking out
-# github.event.workflow_run.head_sha. See docs/lane-ownership.md.
+# P2 Twenty lane workflow (owned by the twenty lane; see docs/lane-ownership.md).
+# Three jobs, each with its own Twenty stack (harness v0.3.1): tw-api (the default stack, every case tagged neither
+# @multiws nor @replicas), tw-multiws (the @multiws cases, on a multi-workspace stack) and tw-cache (the @replicas
+# cases, on a stack with a second server replica, TWENTY_SERVER_REPLICAS=2).
+# Gate (docs/lane-ownership.md, "Gate for lane workflows"): the workflow runs on pull_request and workflow_dispatch.
+# Each job is guarded by the same-repo check, so a fork PR never starts a stack or receives secrets.
+# tests/unit/ci/workflow.test.ts enforces this shape for every lane workflow.
+# The B1 drop study is NOT in this file: it is tw-study.yml, a scheduled measurement and never a required check.
 name: p2-tw
 
 on:
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: p2-tw-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  # Playwright 1.64 has no install script; this only guards against a future one. No browsers.
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
 jobs:
   tw-api:
     name: tw-api
-    if: ${{ false }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      PRODUCTS_ROOT: ${{ github.workspace }}/../products
+      OUTBOUND_HTTP_ALLOWED_INTERNAL_HOSTS: host.docker.internal,172.17.0.1
     steps:
-      - name: Stub, replaced by the twenty lane job
-        run: echo "stub"
+      - name: Checkout
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        timeout-minutes: 5
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install
+        timeout-minutes: 10
+        run: npm ci
+      - name: Generate DB role passwords (per job, masked)
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          ro="$(openssl rand -hex 16)"; fx="$(openssl rand -hex 16)"
+          echo "::add-mask::$ro"; echo "::add-mask::$fx"
+          echo "P2_QA_RO_PASSWORD=$ro" >> "$GITHUB_ENV"; echo "P2_QA_FIXTURE_PASSWORD=$fx" >> "$GITHUB_ENV"
+      - name: Bootstrap Twenty at the pinned ref
+        timeout-minutes: 12
+        run: bash scripts/bootstrap.sh twenty
+      - name: Harness up (one stack)
+        timeout-minutes: 16
+        run: timeout 900 node node_modules/qa-portfolio-harness/scripts/up.mjs twenty
+      - name: Seed Twenty (harness seed)
+        timeout-minutes: 5
+        run: node scripts/harness-seed.mjs twenty
+      - name: Provision roles
+        timeout-minutes: 3
+        run: npm run db:roles:provision -- twenty
+      - name: Run the lane (tw-api)
+        timeout-minutes: 12
+        run: npx playwright test --project=tw-api --grep-invert "@multiws|@replicas"
+      - name: Upload report, junit, receiver logs
+        if: always()
+        timeout-minutes: 5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tw-lane
+          path: |
+            results/junit.xml
+            playwright-report/
+            receiver-logs/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Harness down
+        if: always()
+        timeout-minutes: 5
+        run: node node_modules/qa-portfolio-harness/scripts/down.mjs twenty
+
+  # tw-multiws runs the @multiws cases: WH-009 (a webhook delivers only inside its own workspace), whose setup
+  # creates and activates a second workspace and whose teardown soft-deletes it. It needs a multi-workspace stack: a fresh database for the run
+  # (TWENTY_DOWN_VOLUMES=1 down before up), IS_MULTIWORKSPACE_ENABLED=true, and TWENTY_BASE_URL on a hostname. An IP
+  # base URL resolves no workspace on sign-in (WORKSPACE_NOT_FOUND, measured); see the probe record for the evidence.
+  tw-multiws:
+    name: tw-multiws
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PRODUCTS_ROOT: ${{ github.workspace }}/../products
+      OUTBOUND_HTTP_ALLOWED_INTERNAL_HOSTS: host.docker.internal,172.17.0.1
+      IS_MULTIWORKSPACE_ENABLED: "true"
+      TWENTY_BASE_URL: http://localhost:3002
+    steps:
+      - name: Checkout
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        timeout-minutes: 5
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install
+        timeout-minutes: 10
+        run: npm ci
+      - name: Generate DB role passwords (per job, masked)
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          ro="$(openssl rand -hex 16)"; fx="$(openssl rand -hex 16)"
+          echo "::add-mask::$ro"; echo "::add-mask::$fx"
+          echo "P2_QA_RO_PASSWORD=$ro" >> "$GITHUB_ENV"; echo "P2_QA_FIXTURE_PASSWORD=$fx" >> "$GITHUB_ENV"
+      - name: Bootstrap Twenty at the pinned ref
+        timeout-minutes: 12
+        run: bash scripts/bootstrap.sh twenty
+      - name: Fresh database for this run (volumes removed)
+        timeout-minutes: 5
+        run: TWENTY_DOWN_VOLUMES=1 node node_modules/qa-portfolio-harness/scripts/down.mjs twenty
+      - name: Harness up (multi-workspace stack)
+        timeout-minutes: 16
+        run: timeout 900 node node_modules/qa-portfolio-harness/scripts/up.mjs twenty
+      - name: Seed Twenty (harness seed)
+        timeout-minutes: 5
+        run: node scripts/harness-seed.mjs twenty
+      - name: Provision roles
+        timeout-minutes: 3
+        run: npm run db:roles:provision -- twenty
+      - name: Run the @multiws cases (WH-009)
+        timeout-minutes: 8
+        run: npx playwright test --project=tw-api --grep "@multiws"
+      - name: Upload report and junit
+        if: always()
+        timeout-minutes: 5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tw-multiws
+          path: |
+            results/junit.xml
+            playwright-report/
+            receiver-logs/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Harness down
+        if: always()
+        timeout-minutes: 5
+        run: node node_modules/qa-portfolio-harness/scripts/down.mjs twenty
+
+  # CACHE-001 (a custom field added on replica A is visible on replica B). Its own job: TWENTY_SERVER_REPLICAS=2 makes the
+  # harness start server-2 on 127.0.0.1:3003 (ADR 0003). Not in tw-multiws: server-2 copies its environment by hand and gets no passthrough.
+  tw-cache:
+    name: tw-cache
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PRODUCTS_ROOT: ${{ github.workspace }}/../products
+      OUTBOUND_HTTP_ALLOWED_INTERNAL_HOSTS: host.docker.internal,172.17.0.1
+      TWENTY_SERVER_REPLICAS: "2"
+    steps:
+      - name: Checkout
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        timeout-minutes: 5
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install
+        timeout-minutes: 10
+        run: npm ci
+      - name: Generate DB role passwords (per job, masked)
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          ro="$(openssl rand -hex 16)"; fx="$(openssl rand -hex 16)"
+          echo "::add-mask::$ro"; echo "::add-mask::$fx"
+          echo "P2_QA_RO_PASSWORD=$ro" >> "$GITHUB_ENV"; echo "P2_QA_FIXTURE_PASSWORD=$fx" >> "$GITHUB_ENV"
+      - name: Bootstrap Twenty at the pinned ref
+        timeout-minutes: 12
+        run: bash scripts/bootstrap.sh twenty
+      - name: Harness up (two-replica stack)
+        timeout-minutes: 16
+        run: timeout 900 node node_modules/qa-portfolio-harness/scripts/up.mjs twenty
+      - name: Seed Twenty (harness seed)
+        timeout-minutes: 5
+        run: node scripts/harness-seed.mjs twenty
+      - name: Provision roles
+        timeout-minutes: 3
+        run: npm run db:roles:provision -- twenty
+      - name: Run the @replicas cases (CACHE-001)
+        timeout-minutes: 8
+        run: npx playwright test --project=tw-api --grep "@replicas"
+      - name: Upload report and junit
+        if: always()
+        timeout-minutes: 5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tw-cache
+          path: |
+            results/junit.xml
+            playwright-report/
+            receiver-logs/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Harness down
+        if: always()
+        timeout-minutes: 5
+        run: node node_modules/qa-portfolio-harness/scripts/down.mjs twenty
