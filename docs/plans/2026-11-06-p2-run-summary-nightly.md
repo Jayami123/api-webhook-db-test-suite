@@ -32,6 +32,28 @@ Nothing in this session builds, opens a PR, merges, tags or dispatches a workflo
 | OD-1 to OD-4 and the approval contradiction | 3 (one place, one rule) |
 | Non-blocking nits | 4.3 (escaping, fail-fast, one report per call), 10 (green commits), 6 (doc set), 13 (Node floor) |
 
+### 1.3 Citation corrections (authority for the build; checked against base `47c507e`)
+
+Where a line number elsewhere in this plan differs from this table, this table wins. Match by YAML node
+(job id, step name), not by stale line alone.
+
+| File (base `47c507e`) | Node | Correct lines |
+|---|---|---|
+| `p2-doc.yml` | job id `doc-api:` | 39 |
+| `p2-doc.yml` | comment "One stack for the API project ..." | 40 |
+| `p2-doc.yml` | `name: doc-api and doc-serial` (rename to `name: doc-api`) | 41 |
+| `p2-doc.yml` | same-repo guard `if:` (unchanged) | 42 |
+| `p2-doc.yml` | job `timeout-minutes: 120` (replaced by 30) | 44 |
+| `p2-doc.yml` | step "API project" | 110-113 |
+| `p2-doc.yml` | step "Serial project ..." (removed) | 115-125 (comment 115-116, step 117-125) |
+| `p2-doc.yml` | step "Billing project ..." | 238-243 |
+| `p2-cal.yml` | step "Lane tests (cal-api, then cal-serial)" | 91-98 |
+| `p2-cal.yml` | step "Lane leak check ..." | 99-102 |
+| `p2-cal.yml` | step "Upload report, JUnit and receiver and fixture logs" (starts) | 103-115 (`path:` 109-113) |
+| `p2-med.yml` | job `env:` block | 22-23 |
+| `p2-med.yml` | step "Run the lane (med-api)" | 120-124 |
+| `p2-med.yml` | step "Upload the report, junit and logs" (starts) | 126 |
+
 ## 2. Facts checked
 
 ### 2.1 Verified on `origin/main` at `47c507e`
