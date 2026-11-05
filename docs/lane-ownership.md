@@ -13,7 +13,7 @@ Lane codes match the Playwright project names and the folder codes: `cal`, `med`
 |---|---|---|---|
 | cal (Cal) | `src/lanes/cal/`, `tests/unit/lanes/cal/`, `tests/contracts/cal/`, `tests/integration/cal/`, `tests/webhooks/cal/`, `tests/serial/cal/`, `contracts/cal/`, `tests/fixtures/cal/` | `src/invariants/lanes/cal.ts` | `.github/workflows/p2-cal.yml` |
 | med (Medusa) | `src/lanes/med/`, `tests/unit/lanes/med/`, `tests/contracts/med/`, `tests/integration/med/`, `tests/webhooks/med/`, `tests/serial/med/`, `contracts/med/` | `src/invariants/lanes/medusa.ts`, `src/slo/medusa.ts` | `.github/workflows/p2-med.yml` |
-| doc (Documenso) | `src/lanes/doc/`, `tests/unit/lanes/doc/`, `tests/contracts/doc/`, `tests/integration/doc/`, `tests/webhooks/doc/`, `tests/serial/doc/`, `tests/billing/doc/`, `contracts/doc/`, `tests/fixtures/doc/` | `src/invariants/lanes/documenso.ts`, `src/slo/documenso.ts` | `.github/workflows/p2-doc.yml` |
+| doc (Documenso) | `src/lanes/doc/`, `tests/unit/lanes/doc/`, `tests/contracts/doc/`, `tests/integration/doc/`, `tests/webhooks/doc/`, `tests/serial/doc/`, `tests/billing/doc/`, `contracts/doc/`, `tests/fixtures/doc/` | `src/invariants/lanes/documenso.ts`, `src/slo/documenso.ts` | `.github/workflows/p2-doc.yml`, and `.github/workflows/p2-doc-serial.yml` (its serial project, nightly and manual, never called) |
 | tw (Twenty) | `src/lanes/tw/`, `tests/unit/lanes/tw/`, `tests/contracts/tw/`, `tests/integration/tw/`, `tests/webhooks/tw/`, `tests/serial/tw/` | none (its rules and budgets stay in the foundation index) | `.github/workflows/p2-tw.yml`, and `.github/workflows/tw-study.yml` (its study, never a required check) |
 
 The `.gitkeep` files in those folders are placeholders. A lane may delete its own `.gitkeep` when it
@@ -51,7 +51,8 @@ is false. A fork PR never calls a lane, so a fork PR that changes a lane path is
 Each lane job's `if:` and each lane's job guard require the same-repo check, so a fork never
 starts a stack or receives a secret. The shape is enforced by `tests/unit/ci/workflow.test.ts`, which
 also lists the allowed secret names (currently `STRIPE_API_KEY`). `tw-study.yml` is a scheduled
-measurement, never called from `ci.yml`, and never a required check.
+measurement, never called from `ci.yml`, and never a required check. `p2-doc-serial.yml` runs on a schedule and on
+manual dispatch only, and `ci.yml` never calls it.
 
 ## Shared changes made in this PR
 
