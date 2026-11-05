@@ -66,6 +66,23 @@ describe("mintKeyForWorkspace", () => {
     ]);
   });
 
+  test("a getRoles error fails with ENV or TEST BUG and no key is created", async () => {
+    const { operations } = stubMetadata({
+      ...SESSION,
+      getRoles: { data: null, errors: [{ message: "forbidden" }] },
+      createApiKey: { data: { createApiKey: { id: "key-0" } } },
+    });
+    await assert.rejects(
+      mintKeyForWorkspace("https://base.example.invalid", WS, "label-r"),
+      (err: unknown) => {
+        assert.ok(err instanceof Error);
+        assert.match(err.message, /^ENV or TEST BUG: get roles: .*forbidden/);
+        return true;
+      },
+    );
+    assert.ok(!operations.includes("createApiKey"), "no key is created after a failed getRoles");
+  });
+
   test("a createApiKey error fails with ENV or TEST BUG before any data is read", async () => {
     const { operations } = stubMetadata({
       ...SESSION,

@@ -71,6 +71,8 @@ export async function mintKeyForWorkspace(
 ): Promise<TwentyAuth> {
   const access = await exchangeToken(base, ws.loginToken, ws.origin);
   const roles = await metadataGql(base, "query { getRoles { id label } }", {}, access);
+  if (roles.body.errors !== undefined)
+    throw new Error(`ENV or TEST BUG: get roles: ${JSON.stringify(roles.body.errors)}`);
   const admin = (
     roles.body.data as { getRoles: { id: string; label: string }[] } | null | undefined
   )?.getRoles.find((r) => r.label === "Admin");
