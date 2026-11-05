@@ -81,7 +81,7 @@ function jobIfs(text: string): Map<string, string | undefined> {
 
 const SAME_REPO = "github.event.pull_request.head.repo.full_name == github.repository";
 const DISPATCH = "github.event_name == 'workflow_dispatch'";
-const LANE_TRIGGERS = ["pull_request", "workflow_dispatch"] as const;
+const LANE_TRIGGERS = ["workflow_call", "workflow_dispatch"] as const;
 
 describe("twenty lane workflows", () => {
   test("every step has a timeout, every action is pinned to a 40-hex commit, and each job has a 30 minute limit", () => {
@@ -136,7 +136,7 @@ describe("twenty lane workflows", () => {
     assert.deepEqual(
       triggersIn(lane),
       [...LANE_TRIGGERS],
-      "the lane allows exactly pull_request and workflow_dispatch",
+      "the lane allows exactly workflow_call and workflow_dispatch",
     );
     assert.deepEqual(
       triggerViolations(lane, LANE_TRIGGERS),

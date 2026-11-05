@@ -1,14 +1,13 @@
 # P2 medusa lane workflow. Owned by the medusa lane (the only workflow file the lane edits).
-# Runs the lane's med-api suite against harness v0.3.1 on pull requests from this repository, and on
-# manual dispatch. Gate (docs/lane-ownership.md, "Gate for lane workflows"): the job runs only when the
-# pull request head is this repository, so fork PRs never start a stack or receive secrets. There is no
-# cross-file `needs`: this job runs alongside `api`.
-# Secrets: STRIPE_API_KEY only (the allowlist in tests/unit/ci/workflow.test.ts). Per-run secrets are
-# generated in the job, masked, and never printed.
+# Called by ci.yml (workflow_call) with secrets: inherit, and runs only when the med flag is true
+# (scripts/ci-changes.sh). workflow_dispatch runs the lane by hand. Gate: the job runs only when the pull request
+# head is this repository (or on a manual or called run), so fork PRs never start a stack or receive secrets.
+# Secrets: STRIPE_API_KEY only (the allowlist in tests/unit/ci/workflow.test.ts). Per-run secrets are generated
+# in the job, masked, and never printed.
 name: p2-med
 
 on:
-  pull_request:
+  workflow_call:
   workflow_dispatch:
 
 permissions:

@@ -1,18 +1,19 @@
 # P2 documenso lane workflow. Owned by the documenso lane (docs/lane-ownership.md); the only workflow file it edits.
-# Runs on pull requests from this repository and on manual dispatch. Each job checks out the same commit,
-# starts the Documenso stack with qa-portfolio-harness v0.3.1 (pinned in package-lock.json), runs its
-# Playwright projects and always stops the stack. Nothing here merges, tags or changes main.
+# Called by ci.yml (workflow_call) with secrets: inherit, and runs only when the doc flag is true
+# (scripts/ci-changes.sh). workflow_dispatch runs it by hand. Each job checks out the same commit, starts the
+# Documenso stack with qa-portfolio-harness v0.3.1 (pinned in package-lock.json), runs its Playwright projects and
+# always stops the stack. Nothing here merges, tags or changes main.
 #
 # Runtimes: the repository's test runner and install steps run on Node 22 (.nvmrc). The harness's up and
 # down commands run on Node 24 (NODE24). Each is found once and pinned by absolute path in GITHUB_ENV, so
 # the PATH order of later steps never changes which Node runs a command.
 #
-# Why pull_request and not workflow_run: a workflow_run trigger only fires for a workflow file already on
-# the default branch, so it would not run on this lane's PR branch. The api workflow still runs alongside.
+# Why workflow_call and not pull_request: ci.yml is the one place that sees pull_request and push events,
+# so one run lists every job. A lane file cannot be the PR's own trigger any more.
 name: p2-doc
 
 on:
-  pull_request:
+  workflow_call:
   workflow_dispatch:
 
 permissions:

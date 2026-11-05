@@ -45,6 +45,10 @@ describe("api.yml foundation shape", () => {
     }
   });
 
+  test("api.yml triggers are workflow_call and workflow_dispatch only", () => {
+    assert.deepEqual(triggersOf(live.split("\n")), ["workflow_call", "workflow_dispatch"]);
+  });
+
   test("permissions are read-only and the dangerous triggers and flags are absent", () => {
     assert.match(live, /^permissions:\n {2}contents: read\n/m);
     assert.ok(!/pull_request_target/.test(live));
@@ -145,11 +149,11 @@ export function checkLaneWorkflow(file: string, text: string): string[] {
     return violations;
   }
   const inert = triggers.length === 1 && triggers[0] === "workflow_dispatch";
-  const allowed = new Set([
-    "pull_request",
-    "workflow_dispatch",
-    ...(file === "tw-study.yml" ? ["schedule"] : []),
-  ]);
+  const allowed = new Set(
+    file === "tw-study.yml"
+      ? ["schedule", "workflow_dispatch"]
+      : ["workflow_call", "workflow_dispatch"],
+  );
   for (const trigger of triggers) {
     if (!allowed.has(trigger)) fail(`trigger "${trigger}" is not allowed in this file`);
   }
@@ -161,6 +165,11 @@ export function checkLaneWorkflow(file: string, text: string): string[] {
     fail("top-level permissions must be exactly `contents: read`");
 
   if (/continue-on-error/.test(body)) fail("continue-on-error is not allowed");
+  for (const line of live) {
+    if (/\bif:/.test(line) && line.includes("github.event_name == 'workflow_call'")) {
+      fail("dead workflow_call clause in an if: (event_name is never workflow_call in a callee)");
+    }
+  }
 
   for (const line of live) {
     if (/^\s*-?\s*uses:/.test(line) && !PINNED_USES.test(line)) {
@@ -191,8 +200,8 @@ export function checkLaneWorkflow(file: string, text: string): string[] {
       if (ifLine !== "${{ false }}") fail(`job ${job.id} is not skipped (if: \${{ false }})`);
       continue;
     }
-    if (triggers.includes("pull_request") && !(ifLine ?? "").includes(SAME_REPO_GUARD)) {
-      fail(`job ${job.id} runs on pull_request without the same-repo guard in its if:`);
+    if (triggers.includes("workflow_call") && !(ifLine ?? "").includes(SAME_REPO_GUARD)) {
+      fail(`job ${job.id} is callable (workflow_call) without the same-repo guard in its if:`);
     }
     const steps = splitSteps(job.lines);
     for (const step of steps) {
@@ -230,6 +239,15 @@ describe("per-lane workflows", () => {
     }
   });
 
+  test("every lane workflow is callable and has no pull_request or push trigger", () => {
+    for (const file of lanes.filter((f) => f !== "tw-study.yml")) {
+      const triggers =
+        triggersOf(readFileSync(`.github/workflows/${file}`, "utf8").split("\n")) ?? [];
+      assert.ok(triggers.includes("workflow_call"), file);
+      assert.ok(!triggers.includes("pull_request") && !triggers.includes("push"), file);
+    }
+  });
+
   test("api.yml keeps only the foundation jobs; no lane job is defined there", () => {
     assert.deepEqual([...jobs().keys()], ["check", "unit", "db-guard", "specs", "foundation"]);
     for (const file of lanes) assert.ok(!live.includes(`/${file}`), file);
@@ -240,7 +258,7 @@ describe("lane workflow checker: fixtures", () => {
   const safeLive = [
     "name: p2-fixture",
     "on:",
-    "  pull_request:",
+    "  workflow_call:",
     "permissions:",
     "  contents: read",
     "jobs:",
@@ -294,13 +312,13 @@ describe("lane workflow checker: fixtures", () => {
   const mutations: [name: string, from: string, to: string, reason: string][] = [
     [
       "pull_request_target trigger",
-      "  pull_request:",
+      "  workflow_call:",
       "  pull_request_target:",
       'trigger "pull_request_target"',
     ],
     [
       "workflow_run trigger",
-      "  pull_request:",
+      "  workflow_call:",
       "  workflow_run:\n    workflows: [api]\n    types: [completed]",
       'trigger "workflow_run"',
     ],
@@ -346,6 +364,18 @@ describe("lane workflow checker: fixtures", () => {
       "",
       "without an always() step",
     ],
+    [
+      "pull_request re-added",
+      "  workflow_call:",
+      "  workflow_call:\n  pull_request:",
+      'trigger "pull_request" is not allowed',
+    ],
+    [
+      "lane job guard contains the dead workflow_call clause",
+      "    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}\n",
+      "    if: ${{ github.event_name == 'workflow_call' || github.event.pull_request.head.repo.full_name == github.repository }}\n",
+      "dead workflow_call clause",
+    ],
   ];
   for (const [name, from, to, reason] of mutations) {
     test(`fails: ${name}`, () => {
@@ -361,8 +391,8 @@ describe("lane workflow checker: fixtures", () => {
 
 describe("p2-med Stripe test-key gate", () => {
   /** The run script of one step, dedented: the same bash script the job runs for it. */
-  function stepScript(name: string): string {
-    const lines = readFileSync(".github/workflows/p2-med.yml", "utf8").split("\n");
+  function stepScript(file: string, name: string): string {
+    const lines = readFileSync(file, "utf8").split("\n");
     const start = lines.indexOf(`      - name: ${name}`);
     assert.ok(start >= 0, `step: ${name}`);
     const body: string[] = [];
@@ -382,10 +412,14 @@ describe("p2-med Stripe test-key gate", () => {
   function runGate(stripeKey: string | undefined) {
     const env: NodeJS.ProcessEnv = { PATH: process.env["PATH"] ?? "" };
     if (stripeKey !== undefined) env["STRIPE_API_KEY"] = stripeKey;
-    const res = spawnSync("bash", ["-c", stepScript("Require the Stripe test key")], {
-      env,
-      encoding: "utf8",
-    });
+    const res = spawnSync(
+      "bash",
+      ["-c", stepScript(".github/workflows/p2-med.yml", "Require the Stripe test key")],
+      {
+        env,
+        encoding: "utf8",
+      },
+    );
     return { status: res.status, output: res.stdout + res.stderr };
   }
 

@@ -1,12 +1,11 @@
 # P2 cal lane workflow. Owned by the cal lane; the only workflow file the cal lane edits.
-# Live-lane gate (docs/lane-ownership.md, "Gate for lane workflows"): the job runs on pull_request and
-# on workflow_dispatch. pull_request runs only for PRs whose head repository is this repository, so fork
-# PRs never start a stack or receive secrets. A workflow_run trigger is not used: GitHub runs it only
-# from the default branch. tests/unit/ci/workflow.test.ts enforces this shape and the allowed secret names.
+# Called by ci.yml (workflow_call), which passes secrets: inherit and runs this file only when the cal
+# flag is true (scripts/ci-changes.sh). workflow_dispatch runs the lane by hand. There is no pull_request
+# or push trigger here: ci.yml owns those (docs/lane-ownership.md, "Gate for lane workflows").
 name: p2-cal
 
 on:
-  pull_request:
+  workflow_call:
   workflow_dispatch:
 
 permissions:
