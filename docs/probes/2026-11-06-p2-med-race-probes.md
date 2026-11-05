@@ -6,8 +6,8 @@ Times: Asia/Colombo (UTC+05:30). Branch `feat/2026-11-05-p2-discovery-probes`. H
 
 | Run | Times | What | Result | Cause |
 |---|---|---|---|---|
-| 1 | 00:00:01 to 00:04:25 | `up medusa`, `npm run db:roles:provision -- med`, tests | 23 failed: `password authentication failed for user "qa_ro"` | ENV/command: `med` is not a valid provisioning target (usage: `cal|documenso|medusa|twenty|all`). The role was never created. |
-| 2 | ended 00:04:25 (start time not logged separately) | same with `medusa` target | 23 failed: `TEST BUG: auth step "medusa login" failed (HTTP 401)` | Admin account not created: `up` does not seed Medusa (`scripts/harness-seed.mjs:2`). |
+| 1 | 00:00:01 to 00:04:25 | `up medusa`, `npm run db:roles:provision -- med` (my typo; the plan's command is `-- medusa`, plan line 1172), tests | 23 failed: `password authentication failed for user "qa_ro"` | My command error: `med` is not a valid provisioning target (usage: `cal\|documenso\|medusa\|twenty\|all`). The role was never created. |
+| 2 | ended 00:04:25 (start time not logged separately) | same with `medusa` target, without the seed step | 23 failed: `TEST BUG: auth step "medusa login" failed (HTTP 401)` | Admin account not created: `up` does not seed Medusa (`scripts/harness-seed.mjs:2`). The plan requires the seed after each `up` (plan lines 1050, 1174); I omitted it. |
 | 3 (diagnostic) | 00:06:26 to 00:06:29 | `up`, direct login probe, one test | Direct `POST /auth/user/emailpass` on `127.0.0.1:9000` returned `401` with the per-run credentials; `EB-002` failed with HTTP 401 | Same cause as run 2 (no admin user). Confirms it is not a fixture mismatch. |
 | 4 (final) | 00:07:52 to 00:10:28 | `up medusa` (`UP_RC=0`, 60 s warm); `node scripts/harness-seed.mjs medusa` (`SEED_RC=0`, `harness seed medusa ok`); `db:roles:provision -- medusa` (`PROVISION_RC=0`); `npx playwright test --project=med-api -g "P2-MED-(WH-008\|EB-002\|CACHE-001)"`; `down` with `MEDUSA_DOWN_VOLUMES=1` (`DOWN_RC=0`, `PS_AFTER 0`) | **23 passed (2.5 min)**, `TEST_RC=0` | Clean |
 
