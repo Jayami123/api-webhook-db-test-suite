@@ -1,25 +1,260 @@
-# P2 documenso lane workflow (stub). Owned by the documenso lane; the only workflow file the documenso lane edits.
-# Inert until the lane builds its jobs: manual trigger only, and the job is skipped (if: ${{ false }}).
-# Gate when the lane goes live: `needs` cannot cross workflow files, so replace the trigger with
-#   on: workflow_run: { workflows: [api], types: [completed] }
-# and run the jobs only when github.event.workflow_run.conclusion == 'success' and
-# github.event.workflow_run.head_repository.full_name == github.repository, checking out
-# github.event.workflow_run.head_sha. The lane adds doc-serial and doc-billing-api here too.
-# See docs/lane-ownership.md.
+# P2 documenso lane workflow. Owned by the documenso lane (docs/lane-ownership.md); the only workflow file it edits.
+# Runs on pull requests from this repository and on manual dispatch. Each job checks out the same commit,
+# starts the Documenso stack with qa-portfolio-harness v0.3.1 (pinned in package-lock.json), runs its
+# Playwright projects and always stops the stack. Nothing here merges, tags or changes main.
+#
+# Runtimes: the repository's test runner and install steps run on Node 22 (.nvmrc). The harness's up and
+# down commands run on Node 24 (NODE24). Each is found once and pinned by absolute path in GITHUB_ENV, so
+# the PATH order of later steps never changes which Node runs a command.
+#
+# Why pull_request and not workflow_run: a workflow_run trigger only fires for a workflow file already on
+# the default branch, so it would not run on this lane's PR branch. The api workflow still runs alongside.
 name: p2-doc
 
 on:
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: p2-doc-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  # Playwright 1.64 has no install script; this only guards against a future one. No browsers.
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+  # Harness v0.3.1: DOCUMENSO_GOTENBERG=1 opts into the Gotenberg conversion service (documenso.adapter.ts).
+  DOCUMENSO_GOTENBERG: "1"
+  NEXT_PRIVATE_WEBHOOK_SSRF_BYPASS_HOSTS: "p2-receiver.test"
+  PRODUCTS_ROOT: ${{ github.workspace }}/../products
+
 jobs:
   doc-api:
-    name: doc-api
-    if: ${{ false }}
+    # One stack for the API project and its serial twin (the serial project depends on doc-api).
+    name: doc-api and doc-serial
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 120
     steps:
-      - name: Stub, replaced by the documenso lane job
-        run: echo "stub"
+      - name: Checkout the commit under test
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Node 22 for the repository (install, tests)
+        timeout-minutes: 5
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Pin the Node 22 path
+        timeout-minutes: 5
+        run: echo "NODE22=$(command -v node)" >> "$GITHUB_ENV"
+
+      - name: PDF tools for the signature checks (pdfsig, pdftotext)
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          if ! command -v pdfsig >/dev/null || ! command -v pdftotext >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y poppler-utils
+          fi
+          command -v pdfsig
+          command -v pdftotext
+
+      - name: Install locked dependencies
+        timeout-minutes: 10
+        run: npm ci
+
+      - name: Node 24 for the harness (up and down)
+        timeout-minutes: 5
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Pin the Node 24 path
+        timeout-minutes: 5
+        run: echo "NODE24=$(command -v node)" >> "$GITHUB_ENV"
+
+      - name: Clone the pinned Documenso fork and install its dependencies
+        timeout-minutes: 30
+        env:
+          P2_BOOTSTRAP_PRODUCTS: documenso
+          NODE24: ${{ env.NODE24 }}
+        run: bash scripts/bootstrap.sh documenso
+
+      - name: Receiver hostname in the hosts file
+        timeout-minutes: 2
+        run: bash scripts/ensure-receiver-hostname.sh
+
+      - name: Read-only and fixture database passwords (generated for this job)
+        timeout-minutes: 2
+        run: bash scripts/qa-passwords.sh
+
+      - name: Start the Documenso stack (harness v0.3.1)
+        timeout-minutes: 30
+        run: timeout 1500 "$NODE24" node_modules/qa-portfolio-harness/scripts/up.mjs documenso
+
+      - name: Provision the read-only and fixture roles
+        timeout-minutes: 5
+        run: |
+          "$NODE22" scripts/db-roles.ts provision documenso
+
+      - name: API project
+        timeout-minutes: 60
+        run: |
+          "$NODE22" node_modules/@playwright/test/cli.js test --project=doc-api
+
+      # The serial project depends on doc-api in Playwright, so a red doc-api would skip it. Run it on its own
+      # after doc-api regardless of that result; the job still fails from the doc-api step if it is red.
+      - name: Serial project (runs after the API project, with or without its result)
+        if: ${{ always() }}
+        timeout-minutes: 60
+        env:
+          # Its own report files: the API step's junit.xml and playwright-report/ are kept, not overwritten.
+          P2_JUNIT_FILE: results/junit-serial.xml
+          P2_HTML_DIR: playwright-report-serial
+        run: |
+          "$NODE22" node_modules/@playwright/test/cli.js test --project=doc-serial --no-deps
+
+      - name: Stop the stack (always)
+        if: ${{ always() }}
+        timeout-minutes: 10
+        run: |
+          "$NODE24" node_modules/qa-portfolio-harness/scripts/down.mjs documenso
+
+      - name: Results (JUnit and HTML report)
+        if: ${{ always() }}
+        timeout-minutes: 5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: p2-doc-api-results
+          path: |
+            results/
+            playwright-report/
+            playwright-report-serial/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  doc-billing-api:
+    # Billing on breaks document creation (foundation P1.3), so the Stripe rows run in their own stack.
+    name: doc-billing-api
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout the commit under test
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Stripe test-mode key gate (fails unless the key starts with sk_test_)
+        timeout-minutes: 2
+        env:
+          STRIPE_KEY: ${{ secrets.STRIPE_API_KEY }}
+        run: |
+          # The value is never printed: only the outcome is reported.
+          case "$STRIPE_KEY" in
+            sk_test_*) ;;
+            "") echo "::error::STRIPE_API_KEY is not set; the billing project needs a Stripe test-mode key"; exit 1 ;;
+            *) echo "::error::STRIPE_API_KEY is not a Stripe test-mode key (it must start with sk_test_)"; exit 1 ;;
+          esac
+
+      - name: Node 22 for the repository (install, tests)
+        timeout-minutes: 5
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Pin the Node 22 path
+        timeout-minutes: 5
+        run: echo "NODE22=$(command -v node)" >> "$GITHUB_ENV"
+
+      - name: PDF tools (pdfsig, pdftotext)
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          if ! command -v pdfsig >/dev/null || ! command -v pdftotext >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y poppler-utils
+          fi
+
+      - name: Install locked dependencies
+        timeout-minutes: 10
+        run: npm ci
+
+      - name: Node 24 for the harness (up and down)
+        timeout-minutes: 5
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Pin the Node 24 path
+        timeout-minutes: 5
+        run: echo "NODE24=$(command -v node)" >> "$GITHUB_ENV"
+
+      - name: Clone the pinned Documenso fork and install its dependencies
+        timeout-minutes: 30
+        env:
+          P2_BOOTSTRAP_PRODUCTS: documenso
+          NODE24: ${{ env.NODE24 }}
+        run: bash scripts/bootstrap.sh documenso
+
+      - name: Receiver hostname in the hosts file
+        timeout-minutes: 2
+        run: bash scripts/ensure-receiver-hostname.sh
+
+      - name: Read-only and fixture database passwords (generated for this job)
+        timeout-minutes: 2
+        run: bash scripts/qa-passwords.sh
+
+      - name: Per-run webhook secret for the billing stack (never printed)
+        timeout-minutes: 2
+        run: |
+          v="$(openssl rand -hex 24)"
+          echo "::add-mask::$v"
+          echo "P2_STRIPE_TEST_WH_SECRET=$v" >> "$GITHUB_ENV"
+
+      - name: Start the Documenso stack with billing on (harness v0.3.1)
+        timeout-minutes: 30
+        env:
+          NEXT_PUBLIC_FEATURE_BILLING_ENABLED: "true"
+          NEXT_PRIVATE_STRIPE_WEBHOOK_SECRET: ${{ env.P2_STRIPE_TEST_WH_SECRET }}
+          NEXT_PRIVATE_STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
+        run: timeout 1500 "$NODE24" node_modules/qa-portfolio-harness/scripts/up.mjs documenso
+
+      - name: Provision the read-only and fixture roles
+        timeout-minutes: 5
+        run: |
+          "$NODE22" scripts/db-roles.ts provision documenso
+
+      - name: Billing project (the key gate above has already required a test-mode key)
+        timeout-minutes: 30
+        env:
+          STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
+        run: |
+          "$NODE22" node_modules/@playwright/test/cli.js test --project=doc-billing-api
+
+      - name: Stop the stack (always)
+        if: ${{ always() }}
+        timeout-minutes: 10
+        run: |
+          "$NODE24" node_modules/qa-portfolio-harness/scripts/down.mjs documenso
+
+      - name: Results (JUnit and HTML report)
+        if: ${{ always() }}
+        timeout-minutes: 5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: p2-doc-billing-results
+          path: |
+            results/
+            playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7

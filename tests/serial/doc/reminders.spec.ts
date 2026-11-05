@@ -1,0 +1,155 @@
+import { test, expect } from "../../../src/fixtures/index.ts";
+import { readOnlyDb } from "../../../src/db/pg.ts";
+import { completeRecipient, signField } from "../../../src/lanes/doc/envelope.ts";
+import { bodyOf, listMail, mailboxOf } from "../../../src/lanes/doc/mail.ts";
+import {
+  documensoFixtureWriter,
+  setRecipientNextReminderAt,
+} from "../../../src/lanes/doc/fixtures.ts";
+import { tickDeadlineMs } from "../../../src/lanes/doc/cron.ts";
+import { currentRunPrefix } from "../../../src/run/prefix.ts";
+import { distributedEnvelope } from "../../fixtures/doc/distributed-envelope.ts";
+import { holdQuiet } from "../../fixtures/doc/quiet-window.ts";
+import { SLO } from "../../../src/slo.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
+
+/** Poll interval for the cron wait: a 15-minute sweep needs a coarse poll, not a fixed sleep. */
+const TICK_POLL_MS = 5_000;
+/**
+ * Slack after the tick deadline (tickDeadlineMs already includes CRON_TICK_MARGIN_MS, cron.ts:4): the sweep writes the
+ * reminder job at the tick and the local job client sends it at once (probe B-35, no back-off), so the mail lands
+ * inside this slack. A judgement, not a measured worst case; a longer delay fails the poll and is worth reading.
+ */
+const TICK_POLL_SLACK_MS = 60_000;
+/** How long before now a recipient's reminder is due, so the sweep picks it up at the next tick. */
+const REMINDER_DUE_IN_PAST_MS = 60_000;
+
+/**
+ * Per-test budget from named parts (the file-wide 25 min is gone). Each part is a real wait or a named SLO:
+ * - setup: distribute and the first mail, bounded by the lane's delivery budget (SLO.docWebhookDelivery);
+ * - the cron wait: tickDeadlineMs (the next quarter hour plus its margin) and the poll's own 60 s slack, as the poll uses;
+ * - quietMs: the quiet window after the send, if the test holds one;
+ * - the final read: one more delivery budget.
+ */
+function reminderBudgetMs(nowMs: number, quietMs: number): number {
+  return (
+    SLO.docWebhookDelivery.ms +
+    (tickDeadlineMs(nowMs) + TICK_POLL_SLACK_MS) +
+    quietMs +
+    SLO.docWebhookDelivery.ms
+  );
+}
+
+test("P2-DOC-REM-001 one reminder per interval (one cron tick)", async ({
+  doc,
+  request,
+  docAuth,
+}) => {
+  test.setTimeout(reminderBudgetMs(Date.now(), SLO.docJobQuiet.ms));
+  const runPrefix = currentRunPrefix();
+  const db = readOnlyDb("documenso");
+  const w = documensoFixtureWriter(runPrefix);
+  const env = await distributedEnvelope({
+    label: "rem-001",
+    signers: 2,
+    doc,
+    request,
+    authorization: () => docAuth.headerValue.reveal(),
+    db,
+    runPrefix,
+  });
+  try {
+    const target = env.prepared.signers[0];
+    if (target === undefined) throw new Error("TEST BUG: no signer");
+    const mailbox = mailboxOf(target.email);
+    const before = (await listMail(mailbox)).length;
+    expect(before).toBe(1); // the signing mail from distribute
+    const due = new Date(Date.now() - REMINDER_DUE_IN_PAST_MS);
+    await setRecipientNextReminderAt(w, target.recipientId, due, "P2-DOC-REM-001");
+    // Wait for the real condition: the sweep sends one reminder (one quarter-hour tick).
+    await expect
+      .poll(async () => (await listMail(mailbox)).length, {
+        timeout: tickDeadlineMs(Date.now()) + TICK_POLL_SLACK_MS,
+        intervals: [TICK_POLL_MS],
+        message: "one reminder after one tick",
+      })
+      .toBe(before + 1);
+    const next = await db.select<{ nextReminderAt: Date | null }>(
+      `SELECT "nextReminderAt" AS "nextReminderAt" FROM "Recipient" WHERE "id" = $1`,
+      [target.recipientId],
+    );
+    // A6: hold a quiet window after the one reminder. A second tick is 15 min away and cannot fit this test's
+    // 25 min budget, so this window only catches an immediate extra send (see the report, REM-001 limit).
+    await holdQuiet(
+      async () => (await listMail(mailbox)).length,
+      before + 1,
+      SLO.docJobQuiet.ms,
+      "no second reminder",
+    );
+    expect(next[0]?.nextReminderAt).not.toBeNull();
+    expect((next[0]?.nextReminderAt?.getTime() ?? 0) > due.getTime()).toBe(true);
+    const mails = await listMail(mailbox);
+    const latest = mails[0];
+    if (latest === undefined) throw new Error("TEST BUG: no mail listed");
+    expect(await bodyOf(mailbox, latest.id)).toContain(target.token);
+  } finally {
+    await runAllThenRethrow([() => w.close(), () => doc.envelopes.remove(env.envelopeId)]);
+  }
+});
+
+test("P2-DOC-REM-002 a recipient who signed gets no reminder (one cron tick)", async ({
+  doc,
+  request,
+  docAuth,
+}) => {
+  test.setTimeout(reminderBudgetMs(Date.now(), 0));
+  const runPrefix = currentRunPrefix();
+  const db = readOnlyDb("documenso");
+  const w = documensoFixtureWriter(runPrefix);
+  const env = await distributedEnvelope({
+    label: "rem-002",
+    signers: 2,
+    doc,
+    request,
+    authorization: () => docAuth.headerValue.reveal(),
+    db,
+    runPrefix,
+  });
+  try {
+    const [signed, pending] = env.prepared.signers;
+    if (signed === undefined || pending === undefined)
+      throw new Error("TEST BUG: need two signers");
+    // The first recipient completes (signed); the second stays pending and is due for a reminder.
+    // Sign the field first: completing a recipient without a signed field is refused (400).
+    if (signed.fieldId === undefined) throw new Error("TEST BUG: recipient has no signature field");
+    expect(await signField(env.http, signed)).toBe(200);
+    expect(await completeRecipient(env.http, env.prepared, signed)).toBe(200);
+    const signedMailbox = mailboxOf(signed.email);
+    const pendingMailbox = mailboxOf(pending.email);
+    const signedBefore = (await listMail(signedMailbox)).length;
+    const pendingBefore = (await listMail(pendingMailbox)).length;
+    await setRecipientNextReminderAt(
+      w,
+      signed.recipientId,
+      new Date(Date.now() - REMINDER_DUE_IN_PAST_MS),
+      "P2-DOC-REM-002",
+    );
+    await setRecipientNextReminderAt(
+      w,
+      pending.recipientId,
+      new Date(Date.now() - REMINDER_DUE_IN_PAST_MS),
+      "P2-DOC-REM-002",
+    );
+    // The sweep has run when the pending recipient gets its reminder; only then is the signed count checked.
+    await expect
+      .poll(async () => (await listMail(pendingMailbox)).length, {
+        timeout: tickDeadlineMs(Date.now()) + TICK_POLL_SLACK_MS,
+        intervals: [TICK_POLL_MS],
+        message: "pending recipient reminded",
+      })
+      .toBe(pendingBefore + 1);
+    expect((await listMail(signedMailbox)).length).toBe(signedBefore);
+  } finally {
+    await runAllThenRethrow([() => w.close(), () => doc.envelopes.remove(env.envelopeId)]);
+  }
+});

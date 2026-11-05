@@ -1,7 +1,7 @@
 import { test as base } from "@playwright/test";
 import { readOnlyDb } from "../db/pg.ts";
 import { currentRunPrefix } from "../run/prefix.ts";
-import { sweepAfterTest } from "./after-test.ts";
+import { sweepAfterTest, sweepAnnotation } from "./after-test.ts";
 import { RetainRegistry } from "./engine.ts";
 import { productOfProject, rulesFor } from "./rules.ts";
 
@@ -28,12 +28,17 @@ export const test = base.extend<{ dbInvariants: undefined }>({
       await use(undefined);
       const product = productOfProject(testInfo.project.name);
       if (product === undefined) return;
+      const rules = rulesFor(product);
       const outcome = await sweepAfterTest({
         db: readOnlyDb(product),
-        rules: rulesFor(product),
+        rules,
         runPrefix: currentRunPrefix(),
         retained,
       });
+      // Written on every covered test, clean or not, so a JUnit report shows that the sweep ran and what it found.
+      testInfo.annotations.push(
+        sweepAnnotation(product, rules.length, outcome?.violations.length ?? 0),
+      );
       if (outcome === undefined) return;
       await testInfo.attach("p2-x-db-001-violations.txt", {
         body: outcome.report,

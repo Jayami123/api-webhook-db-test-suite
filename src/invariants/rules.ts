@@ -310,6 +310,9 @@ export function rulesFor(product: ProductId): readonly Rule[] {
 const PROJECT_PRODUCT: Readonly<Record<string, ProductId>> = {
   "cal-api": "cal",
   "doc-api": "documenso",
+  // The billing project is swept too: it creates the run user (prefixed email), which the leak rule must see (and
+  // retain while live, tests/fixtures/doc/stripe-run.ts). Before this line the sweep skipped it silently.
+  "doc-billing-api": "documenso",
   "med-api": "medusa",
   "tw-api": "twenty",
   "cal-serial": "cal",
