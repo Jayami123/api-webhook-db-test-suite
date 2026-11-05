@@ -1,9 +1,8 @@
 import { test, expect } from "../../../src/fixtures/index.ts";
-import { laneOf } from "../../../src/lanes/med/lane-client.ts";
+import { cleanupLabel, laneOf } from "../../../src/lanes/med/lane-client.ts";
 import { openPaidSession } from "../../../src/lanes/med/cart-flow.ts";
 import { isWithinPrecision, toMinor } from "../../../src/lanes/med/money.ts";
 import { orderTotalMinor, paymentSessionAmountText } from "../../../src/lanes/med/oracle.ts";
-import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
 
 /**
  * Minor units end to end through the system provider: the cart total, the payment session amount and

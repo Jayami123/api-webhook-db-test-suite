@@ -1,7 +1,7 @@
 import { randomInt } from "node:crypto";
 import { test, expect } from "../../../src/fixtures/index.ts";
-import { laneOf } from "../../../src/lanes/med/lane-client.ts";
-import { cleanupLabel, runAllThenRethrow } from "../../../src/lanes/med/cleanup.ts";
+import { cleanupLabel, laneOf } from "../../../src/lanes/med/lane-client.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
 import { openPaidSession } from "../../../src/lanes/med/cart-flow.ts";
 import { liveOrdersLinkedToCart } from "../../../src/lanes/med/oracle.ts";
 import {
@@ -73,11 +73,14 @@ test.describe("medusa inventory model", () => {
           ).toBe(1);
         } else {
           const index = liveOrders.map((o) => o.qty).lastIndexOf(op.qty);
-          const [order] = liveOrders.splice(index, 1);
+          const order = liveOrders[index];
+          expect(order, `${detail}: a live order of this quantity`).toBeDefined();
           const cancel = await lane.admin("POST", `/admin/orders/${order?.orderId ?? ""}/cancel`, {
             body: {},
           });
           expect(cancel.status, `${detail}: cancellation`).toBe(200);
+          // Only a cancelled order leaves the cleanup list; a failed cancel keeps it for the finally.
+          liveOrders.splice(index, 1);
         }
         model = apply(model, op);
 

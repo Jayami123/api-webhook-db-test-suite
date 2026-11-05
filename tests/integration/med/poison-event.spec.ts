@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { isStripeTestKey, laneEnvGate } from "../../../src/lanes/med/env-gate.ts";
 import { test, expect } from "../../../src/fixtures/index.ts";
-import { laneOf } from "../../../src/lanes/med/lane-client.ts";
+import { cleanupLabel, laneOf } from "../../../src/lanes/med/lane-client.ts";
 import {
   buildPaymentEvent,
   openSessionFor,
@@ -10,7 +10,6 @@ import {
 } from "../../../src/lanes/med/webhook-flow.ts";
 import { paymentSession } from "../../../src/lanes/med/oracle.ts";
 import { redisHget, redisZrange } from "../../../src/lanes/med/redis.ts";
-import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 
 // Evaluated when the tests start, never at collection: `playwright test --list` must not throw.

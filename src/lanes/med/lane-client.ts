@@ -1,4 +1,5 @@
 import type { MedusaAuth } from "../../auth/medusa.ts";
+import type { MedusaClient } from "../../clients/medusa.ts";
 import { apiBaseUrl } from "../../env.ts";
 import { currentRunPrefix } from "../../run/prefix.ts";
 import {
@@ -8,6 +9,7 @@ import {
   type CallResult,
 } from "../../clients/base.ts";
 import { runScopedName } from "../../run/prefix.ts";
+import { runAllThenRethrow } from "../../shared/cleanup.ts";
 
 /**
  * The medusa lane's own calls: regions, products, price lists, inventory and raw store reads and
@@ -40,7 +42,10 @@ export interface LaneClient {
   readonly store: Caller;
   /** Creates (or reuses, by run-scoped name) the lane's region for a currency. Pays with pp_system_default only. */
   regionFor(currency: LaneCurrency): Promise<LaneRegion>;
-  /** Deletes every region this client created or reused. Called from afterAll of each spec file. */
+  /**
+   * Deletes every region this client created or reused, one cleanup step per region (src/shared/cleanup.ts): a failed
+   * delete does not stop the others, and only the regions that were deleted are forgotten.
+   */
   releaseRegions(): Promise<void>;
   productWithPrice(
     label: string,
@@ -64,7 +69,11 @@ export interface LaneClient {
     readonly title: string;
   }): Promise<string>;
   removeProduct(productId: string): Promise<void>;
-  /** Removes every product whose title starts with the prefix (a failed test may not have kept the id). */
+  /**
+   * Removes every product whose title starts with the prefix (a failed test may not have kept the id). Re-queries the
+   * first page after each pass of deletes until no product with the prefix is listed; it never pages by offset while
+   * deleting, since each delete shifts the rows after it.
+   */
   removeProductsByPrefix(prefix: string): Promise<number>;
   /** Deletes a price list by id (price lists are not removed with the product). */
   removePriceList(priceListId: string): Promise<void>;
@@ -81,13 +90,16 @@ export interface LaneClient {
   ): Promise<{ stocked: number; reserved: number; available: number } | undefined>;
   /** Restock an existing level (admin inventory update). */
   restock(inventoryItemId: string, locationId: string, stocked: number): Promise<void>;
-  /** Delete a stock location through the admin API. */
-  removeStockLocation(locationId: string): Promise<number>;
+  /** Deletes a stock location through the admin API: 200, or 404 when it is already gone; anything else throws. */
+  removeStockLocation(locationId: string): Promise<void>;
   /** Store GET with the publishable key; returns status and text for contract checks. */
   rawGet(path: string): Promise<CallResult<unknown>>;
   /** Store POST with the publishable key; expects any status (the caller asserts it). */
   rawPost(path: string, body: unknown): Promise<CallResult<unknown>>;
 }
+
+/** Page size of the product search in removeProductsByPrefix (the admin list's limit). */
+const PRODUCT_PAGE = 100;
 
 export function laneClient(input: {
   request: ApiRequestLike;
@@ -145,10 +157,12 @@ export function laneClient(input: {
       return region;
     },
     async releaseRegions() {
-      for (const region of regions.values()) {
-        await admin("DELETE", `/admin/regions/${region.id}`, { expect: [200, 404] });
-      }
-      regions.clear();
+      await runAllThenRethrow(
+        [...regions].map(([currency, region]) => async () => {
+          await admin("DELETE", `/admin/regions/${region.id}`, { expect: [200, 404] });
+          regions.delete(currency);
+        }),
+      );
     },
     async productWithPrice(label, currency, amountMajor, options = {}) {
       const title = runScopedName(label);
@@ -284,28 +298,39 @@ export function laneClient(input: {
       );
     },
     async removeStockLocation(locationId) {
-      const res = await admin("DELETE", `/admin/stock-locations/${locationId}`, {
-        expect: anyStatus as unknown as number[],
-      });
-      return res.status;
+      await admin("DELETE", `/admin/stock-locations/${locationId}`, { expect: [200, 404] });
     },
     async removePriceList(priceListId) {
       await admin("DELETE", `/admin/price-lists/${priceListId}`, { expect: [200, 404] });
     },
     async removeProductsByPrefix(prefix) {
-      // Every page: a prefix can match more rows than one page (100).
-      let removed = 0;
-      for (let offset = 0; ; offset += 100) {
+      // A prefix can match more rows than one page. Offset paging while deleting skips rows (each delete shifts the
+      // rest up a page), so every pass reads the first page again until none with the prefix is listed.
+      const deleted = new Set<string>();
+      for (;;) {
         const page = await admin<{ products: { id: string; title: string }[] }>(
           "GET",
-          `/admin/products?q=${encodeURIComponent(prefix)}&fields=id,title&limit=100&offset=${String(offset)}`,
+          `/admin/products?q=${encodeURIComponent(prefix)}&fields=id,title&limit=${String(PRODUCT_PAGE)}&offset=0`,
         );
         const mine = page.body.products.filter((p) => p.title.startsWith(prefix));
-        for (const product of mine) {
-          await admin("DELETE", `/admin/products/${product.id}`, { expect: [200, 404] });
-          removed += 1;
+        if (mine.length === 0) {
+          if (page.body.products.length === PRODUCT_PAGE)
+            throw new Error(
+              `TEST BUG: removeProductsByPrefix(${prefix}): a full first page matches the search but no title starts with the prefix, so the rest cannot be reached without offset paging`,
+            );
+          return deleted.size;
         }
-        if (page.body.products.length < 100) return removed;
+        const relisted = mine.filter((p) => deleted.has(p.id)).map((p) => p.id);
+        if (relisted.length > 0)
+          throw new Error(
+            `cleanup: removeProductsByPrefix(${prefix}): still listed after a delete: ${relisted.join(", ")}`,
+          );
+        await runAllThenRethrow(
+          mine.map((product) => async () => {
+            await admin("DELETE", `/admin/products/${product.id}`, { expect: [200, 404] });
+            deleted.add(product.id);
+          }),
+        );
       }
     },
     async removeProduct(productId) {
@@ -331,4 +356,21 @@ export function laneOf(fixtures: {
     runPrefix: currentRunPrefix(),
     auth: fixtures.medAuth,
   });
+}
+
+/**
+ * Removes everything one test label created: products (by run-scoped title prefix), guest customers (by email prefix)
+ * and the lane's regions. One step each through runAllThenRethrow (src/shared/cleanup.ts): every step runs even when an
+ * earlier one fails, and the first failure is then rethrown, so a cleanup problem is never hidden (AGENTS.md).
+ */
+export async function cleanupLabel(
+  lane: LaneClient,
+  med: MedusaClient,
+  label: string,
+): Promise<void> {
+  await runAllThenRethrow([
+    () => lane.removeProductsByPrefix(runScopedName(label)),
+    () => med.admin.deleteCustomersByEmailPrefix(runScopedName(label)),
+    () => lane.releaseRegions(),
+  ]);
 }

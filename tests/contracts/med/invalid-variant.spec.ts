@@ -5,6 +5,7 @@ import { expectContract, MED_SPEC_FILE } from "../../../src/lanes/med/contract.t
 import { laneOf } from "../../../src/lanes/med/lane-client.ts";
 import { cartLineCount } from "../../../src/lanes/med/oracle.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
 
 test.describe("medusa store invalid variant", () => {
   test("P2-MED-CON-002 an invalid variant returns the documented error shape and leaves no cart line", async ({
@@ -33,8 +34,10 @@ test.describe("medusa store invalid variant", () => {
       expect(body.message).toMatch(/variant_does_not_exist do not exist/);
       expect(await cartLineCount(cartId)).toBe(0);
     } finally {
-      await med.admin.deleteCustomersByEmailPrefix(runScopedName(label));
-      await lane.releaseRegions();
+      await runAllThenRethrow([
+        () => med.admin.deleteCustomersByEmailPrefix(runScopedName(label)),
+        () => lane.releaseRegions(),
+      ]);
     }
   });
 });

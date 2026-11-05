@@ -6,8 +6,7 @@ import {
   expectContract,
   MED_SPEC_FILE,
 } from "../../../src/lanes/med/contract.ts";
-import { laneOf } from "../../../src/lanes/med/lane-client.ts";
-import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
+import { cleanupLabel, laneOf } from "../../../src/lanes/med/lane-client.ts";
 
 interface GetRoute {
   readonly template: string;

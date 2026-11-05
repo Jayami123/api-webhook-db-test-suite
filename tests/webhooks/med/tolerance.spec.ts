@@ -1,13 +1,12 @@
 import { test, expect } from "../../../src/fixtures/index.ts";
 import { isStripeTestKey, laneEnvGate } from "../../../src/lanes/med/env-gate.ts";
-import { laneOf } from "../../../src/lanes/med/lane-client.ts";
+import { cleanupLabel, laneOf } from "../../../src/lanes/med/lane-client.ts";
 import {
   buildPaymentEvent,
   openSessionFor,
   sendEvent,
 } from "../../../src/lanes/med/webhook-flow.ts";
 import { paymentSession } from "../../../src/lanes/med/oracle.ts";
-import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 
 /*

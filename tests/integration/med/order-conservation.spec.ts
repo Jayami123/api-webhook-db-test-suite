@@ -1,5 +1,5 @@
 import { test, expect } from "../../../src/fixtures/index.ts";
-import { laneOf, type LaneCurrency } from "../../../src/lanes/med/lane-client.ts";
+import { cleanupLabel, laneOf, type LaneCurrency } from "../../../src/lanes/med/lane-client.ts";
 import { openPaidSession, renewPaymentSession } from "../../../src/lanes/med/cart-flow.ts";
 import {
   orderItemDiscountText,
@@ -9,8 +9,8 @@ import {
   orderTotalMinor as orderTotalFromDb,
 } from "../../../src/lanes/med/oracle.ts";
 import { orderTotalMinor, toMinor } from "../../../src/lanes/med/money.ts";
-import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
 
 /**
  * Conservation identity for completed orders, in minor units: total = items + shipping + tax - discounts.
@@ -111,9 +111,12 @@ test.describe("medusa order conservation", () => {
         }
       }
     } finally {
-      for (const id of promotionIds)
-        await lane.admin("DELETE", `/admin/promotions/${id}`, { expect: [200, 404] });
-      await cleanupLabel(lane, med, label);
+      await runAllThenRethrow([
+        ...promotionIds.map(
+          (id) => () => lane.admin("DELETE", `/admin/promotions/${id}`, { expect: [200, 404] }),
+        ),
+        () => cleanupLabel(lane, med, label),
+      ]);
     }
   });
 });

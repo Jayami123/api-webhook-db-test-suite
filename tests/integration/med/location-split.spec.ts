@@ -9,6 +9,7 @@ import {
   reservationLiveCount,
 } from "../../../src/lanes/med/oracle.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
 
 /**
  * Observed on Medusa 2.21.2 (probe record, P-MED-LOC-002, 2026-11-02): with two channel-linked
@@ -67,10 +68,12 @@ test.describe("medusa stock location split", () => {
       expect(after.map((r) => r.reserved)).toEqual([0, 0]);
       test.info().annotations.push({ type: "observed-branch", description: OBSERVED_BRANCH });
     } finally {
-      await lane.removeProductsByPrefix(runScopedName(label));
-      for (const locationId of locations) await lane.removeStockLocation(locationId);
-      await med.admin.deleteCustomersByEmailPrefix(runScopedName(label));
-      await lane.releaseRegions();
+      await runAllThenRethrow([
+        () => lane.removeProductsByPrefix(runScopedName(label)),
+        ...locations.map((locationId) => () => lane.removeStockLocation(locationId)),
+        () => med.admin.deleteCustomersByEmailPrefix(runScopedName(label)),
+        () => lane.releaseRegions(),
+      ]);
     }
   });
 });

@@ -1,8 +1,7 @@
 import { test, expect } from "../../../src/fixtures/index.ts";
-import { laneOf } from "../../../src/lanes/med/lane-client.ts";
+import { cleanupLabel, laneOf } from "../../../src/lanes/med/lane-client.ts";
 import { openPaidSession, renewPaymentSession } from "../../../src/lanes/med/cart-flow.ts";
 import { cartQuantity } from "../../../src/lanes/med/oracle.ts";
-import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
 
 /**
  * Framework check (F2, observed; OD-16): a guest cart id is a bearer capability. The check asserts the

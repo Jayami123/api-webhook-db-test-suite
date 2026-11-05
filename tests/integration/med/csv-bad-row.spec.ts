@@ -4,6 +4,7 @@ import { ORACLE_QUERIES } from "../../../src/lanes/med/oracle.ts";
 import { readOnlyDb } from "../../../src/db/pg.ts";
 import { likePrefixPattern, runScopedName } from "../../../src/run/prefix.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
 
 /**
  * Product import, observed on 2026-11-02 (P-MED-13): the whole file is refused at preview when one price is
@@ -93,9 +94,11 @@ test.describe("medusa product csv import", () => {
       // All-or-nothing at preview (P-MED-13): nothing from the bad file exists.
       expect(await productsWithPrefix(badPrefix), "products from the bad file").toBe(0);
     } finally {
-      await lane.removeProductsByPrefix(okPrefix);
-      await lane.removeProductsByPrefix(badPrefix);
-      await lane.releaseRegions();
+      await runAllThenRethrow([
+        () => lane.removeProductsByPrefix(okPrefix),
+        () => lane.removeProductsByPrefix(badPrefix),
+        () => lane.releaseRegions(),
+      ]);
     }
   });
 });

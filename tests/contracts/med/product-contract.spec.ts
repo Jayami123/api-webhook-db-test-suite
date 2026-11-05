@@ -7,8 +7,7 @@ import {
   observedDeviations,
   opName,
 } from "../../../src/lanes/med/contract.ts";
-import { laneOf } from "../../../src/lanes/med/lane-client.ts";
-import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
+import { cleanupLabel, laneOf } from "../../../src/lanes/med/lane-client.ts";
 
 /**
  * The responses of the flow the PRODUCT deviations are measured on. Setup first (a normal test), then the

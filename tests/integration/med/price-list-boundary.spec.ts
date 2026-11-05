@@ -1,8 +1,8 @@
 import { test, expect } from "../../../src/fixtures/index.ts";
-import { laneOf } from "../../../src/lanes/med/lane-client.ts";
-import { cleanupLabel } from "../../../src/lanes/med/cleanup.ts";
+import { cleanupLabel, laneOf } from "../../../src/lanes/med/lane-client.ts";
 import { dbNowIso } from "../../../src/lanes/med/oracle.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
 
 /**
  * starts_at is compared with now() on the DATABASE clock (@medusajs/pricing dist/repositories/pricing.js:137,
@@ -63,8 +63,11 @@ test.describe("medusa price list boundary", () => {
         Date.parse(startsAt),
       );
     } finally {
-      if (priceListId !== undefined) await lane.removePriceList(priceListId);
-      await cleanupLabel(lane, med, label);
+      const listId = priceListId;
+      await runAllThenRethrow([
+        ...(listId === undefined ? [] : [() => lane.removePriceList(listId)]),
+        () => cleanupLabel(lane, med, label),
+      ]);
     }
   });
 });

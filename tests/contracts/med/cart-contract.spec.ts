@@ -5,6 +5,7 @@ import { expectContract, MED_SPEC_FILE } from "../../../src/lanes/med/contract.t
 import { laneOf } from "../../../src/lanes/med/lane-client.ts";
 import { orderCountForCart } from "../../../src/lanes/med/oracle.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
 
 test.describe("medusa store cart contract", () => {
   test("P2-MED-CON-001 cart create, add item, payment session and complete each match the store OAS, and the order row exists", async ({
@@ -73,9 +74,11 @@ test.describe("medusa store cart contract", () => {
       expect(complete.body.type).toBe("order");
       expect(await orderCountForCart(cartId)).toBe(1);
     } finally {
-      await lane.removeProductsByPrefix(runScopedName(label));
-      await med.admin.deleteCustomersByEmailPrefix(runScopedName("con001"));
-      await lane.releaseRegions();
+      await runAllThenRethrow([
+        () => lane.removeProductsByPrefix(runScopedName(label)),
+        () => med.admin.deleteCustomersByEmailPrefix(runScopedName("con001")),
+        () => lane.releaseRegions(),
+      ]);
     }
   });
 });

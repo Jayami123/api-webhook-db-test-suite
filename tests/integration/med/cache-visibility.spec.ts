@@ -4,6 +4,7 @@ import { laneOf } from "../../../src/lanes/med/lane-client.ts";
 import { keysAdded, redisKeys } from "../../../src/lanes/med/redis.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
+import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
 
 // The core cache is on only with the exact string "true" (medusa-env.ts:184-186; F4). With the flag
 // off the product does not cache and this case has nothing to observe.
@@ -49,8 +50,10 @@ test.describe("medusa product cache", () => {
         })
         .toBe(15);
     } finally {
-      await lane.removeProductsByPrefix(runScopedName(label));
-      await lane.releaseRegions();
+      await runAllThenRethrow([
+        () => lane.removeProductsByPrefix(runScopedName(label)),
+        () => lane.releaseRegions(),
+      ]);
     }
   });
 });
