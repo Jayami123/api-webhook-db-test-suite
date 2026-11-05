@@ -4,6 +4,9 @@ import { SLO } from "../../../../src/slo.ts";
 import {
   CAL_CRON_TICK_MS,
   CAL_QUIET_POLL_SLACK_MS,
+  CAL_QUIET_SETUP_FACTOR,
+  CAL_QUIET_SETUP_MEASURED_MS,
+  CAL_QUIET_SETUP_MS,
   CAL_QUIET_POLL_TIMEOUT_MS,
   CAL_SCH002_ROW_POLL_MS,
   CAL_QUIET_TEST_BUDGET_MS,
@@ -18,9 +21,13 @@ test("the quiet window is one cron tick plus the delivery-budget margin", () => 
   assert.equal(CAL_QUIET_WINDOW_MS, 70_000);
 });
 
-test("the per-test budget is the quiet poll (window plus slack) plus SCH-002's row poll", () => {
+test("the per-test budget is setup plus the quiet poll (window plus slack) plus SCH-002's row poll", () => {
+  assert.equal(CAL_QUIET_SETUP_MS, CAL_QUIET_SETUP_MEASURED_MS * CAL_QUIET_SETUP_FACTOR);
   assert.equal(CAL_QUIET_POLL_TIMEOUT_MS, CAL_QUIET_WINDOW_MS + CAL_QUIET_POLL_SLACK_MS);
-  assert.equal(CAL_QUIET_TEST_BUDGET_MS, CAL_QUIET_POLL_TIMEOUT_MS + CAL_SCH002_ROW_POLL_MS);
+  assert.equal(
+    CAL_QUIET_TEST_BUDGET_MS,
+    CAL_QUIET_SETUP_MS + CAL_QUIET_POLL_TIMEOUT_MS + CAL_SCH002_ROW_POLL_MS,
+  );
   assert.equal(CAL_SCH002_ROW_POLL_MS, SLO.calWebhookDelivery.ms);
   assert.ok(CAL_QUIET_TEST_BUDGET_MS > 60_000, "above the shared 60 s test timeout");
 });

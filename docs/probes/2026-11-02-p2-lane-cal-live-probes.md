@@ -204,9 +204,11 @@ warm `up cal` 28 s, `down cal` 2 s (plan section 2 timings reproduced).
 - Tick jitter: NOT MEASURED. The product cron runs on GitHub's schedulers, not on the lane stack, and the sandbox cannot reach
   them. The margin therefore rests on the stated policy bound, not a measured jitter. UNVERIFIED; the owner should decide whether
   a measured jitter (for example from the cron workflow's run history on the product fork) is required.
-- Per-test budget: `CAL_QUIET_TEST_BUDGET_MS` = the quiet poll (`CAL_QUIET_POLL_TIMEOUT_MS`: the window plus
-  `CAL_QUIET_POLL_SLACK_MS`) + SCH-002's row poll after the window (`CAL_SCH002_ROW_POLL_MS`, `SLO.calWebhookDelivery`), derived
-  in `src/lanes/cal/quiet.ts` (the measured setup is about 2 s and runs before the window starts). Applied with `test.setTimeout`
+- Per-test budget: `CAL_QUIET_TEST_BUDGET_MS` = setup (`CAL_QUIET_SETUP_MS`: the measured about 2 s,
+  `CAL_QUIET_SETUP_MEASURED_MS`, times the policy factor `CAL_QUIET_SETUP_FACTOR` = 3) + the quiet poll
+  (`CAL_QUIET_POLL_TIMEOUT_MS`: the window plus `CAL_QUIET_POLL_SLACK_MS`) + SCH-002's row poll after the window
+  (`CAL_SCH002_ROW_POLL_MS`, `SLO.calWebhookDelivery`), derived in `src/lanes/cal/quiet.ts`. Setup runs inside the per-test
+  timeout, before the window starts. Applied with `test.setTimeout`
   only to the three tests that hold a quiet window (SCH-002 control, SCH-003 control, SCH-003 purge). The shared 60 s timeout in `playwright.config.ts` is unchanged.
 - Why not 60 s + margin under the shared timeout: 70 s exceeds it, so the window needs the per-test budget above.
 - Local live runs: Docker is down in this sandbox (`containerd` failed to start, see the dockerd log), so the quiet tests were

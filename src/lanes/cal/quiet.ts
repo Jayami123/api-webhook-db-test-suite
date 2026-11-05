@@ -27,13 +27,25 @@ export const CAL_QUIET_POLL_TIMEOUT_MS: number = CAL_QUIET_WINDOW_MS + CAL_QUIET
 export const CAL_SCH002_ROW_POLL_MS: number = SLO.calWebhookDelivery.ms;
 
 /**
- * Per-test budget for the three SCH tests that hold a quiet window (test.setTimeout, only those tests; the shared
- * 60 s timeout in playwright.config.ts is unchanged). Derived from its named parts: the quiet poll (window plus poll
- * slack) plus SCH-002's row poll after it, the longest tail of the three tests. Setup (booking, webhook, fire) runs
- * before the window starts and is measured at about 2 s locally; it fits in the row-poll part, which resolves on its
- * first read when the delivery has been made.
+ * Setup inside each SCH quiet test, before the window starts: the webhook, the booking, the row move and the fire. It runs
+ * inside the per-test timeout, so it is a named part of the budget. Basis: measured at about 2 s on the local stack
+ * (probe record, L17), scaled by CAL_QUIET_SETUP_FACTOR.
  */
-export const CAL_QUIET_TEST_BUDGET_MS: number = CAL_QUIET_POLL_TIMEOUT_MS + CAL_SCH002_ROW_POLL_MS;
+export const CAL_QUIET_SETUP_MEASURED_MS = 2_000;
+/**
+ * Headroom over the measured setup: a policy factor of 3 for a slower or busier runner than the local stack. The hosted
+ * run on 968545c used under 0.5 s for setup and cleanup together (SCH-002: 70.4 s total against the 70 s window).
+ */
+export const CAL_QUIET_SETUP_FACTOR = 3;
+export const CAL_QUIET_SETUP_MS: number = CAL_QUIET_SETUP_MEASURED_MS * CAL_QUIET_SETUP_FACTOR;
+
+/**
+ * Per-test budget for the three SCH tests that hold a quiet window (test.setTimeout, only those tests; the shared
+ * 60 s timeout in playwright.config.ts is unchanged). Derived from its named parts, in the order they run: the setup,
+ * the quiet poll (window plus poll slack), then SCH-002's row poll after it, the longest tail of the three tests.
+ */
+export const CAL_QUIET_TEST_BUDGET_MS: number =
+  CAL_QUIET_SETUP_MS + CAL_QUIET_POLL_TIMEOUT_MS + CAL_SCH002_ROW_POLL_MS;
 
 export type QuietState = "waiting" | "quiet" | "exceeded" | "missing";
 
