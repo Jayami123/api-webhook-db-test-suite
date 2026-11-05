@@ -71,8 +71,8 @@ test("P2-DOC-UP-001 a zero-byte PDF is refused with 4xx, not 500 (KNOWN PRODUCT 
   await positiveControl(request, docAuth.sessionCookie.reveal());
   const before = await docDataCount();
   const res = await upload(request, docAuth.sessionCookie.reveal(), Buffer.alloc(0), "empty.pdf");
-  // Setup asserts, before the expected failure: a 2xx is a new bug and must go red here.
-  expect(res.status(), "a 2xx stores the empty file (new bug)").toBeGreaterThanOrEqual(300);
+  // Setup asserts, before the expected failure: the proven 500 must hold; any other status is a change to triage.
+  expect(res.status(), "the proven answer is 500 Upload failed (B-4, P-DOC-12)").toBe(500);
   expect(await docDataCount()).toBe(before);
   test.fail(true, PB_DOC_001);
   expect([400, 415, 422]).toContain(res.status());
@@ -86,8 +86,8 @@ test("P2-DOC-UP-002 an EXE renamed to .pdf is refused with 4xx (KNOWN PRODUCT BU
   const exe = Buffer.concat([Buffer.from("MZ"), Buffer.alloc(4096, 0x41)]); // MZ header, not a PDF
   const before = await docDataCount();
   const res = await upload(request, docAuth.sessionCookie.reveal(), exe, "x.pdf");
-  // Setup asserts, before the expected failure: a 2xx is a new bug and must go red here.
-  expect(res.status(), "a 2xx stores the file (new bug)").toBeGreaterThanOrEqual(300);
+  // Setup asserts, before the expected failure: the proven 500 must hold; any other status is a change to triage.
+  expect(res.status(), "the proven answer is 500 Upload failed (B-4, P-DOC-12)").toBe(500);
   expect(await docDataCount()).toBe(before);
   test.fail(true, PB_DOC_001);
   expect([400, 415, 422]).toContain(res.status());
@@ -101,8 +101,8 @@ test("P2-DOC-UP-003 a truncated PDF is refused with 4xx (KNOWN PRODUCT BUG PB-DO
   const truncated = examplePdf().subarray(0, 1000);
   const before = await docDataCount();
   const res = await upload(request, docAuth.sessionCookie.reveal(), truncated, "trunc.pdf");
-  // Setup asserts, before the expected failure: a 2xx is a new bug and must go red here.
-  expect(res.status(), "a 2xx stores the file (new bug)").toBeGreaterThanOrEqual(300);
+  // Setup asserts, before the expected failure: the proven 500 must hold; any other status is a change to triage.
+  expect(res.status(), "the proven answer is 500 Upload failed (B-4, P-DOC-12)").toBe(500);
   expect(await docDataCount()).toBe(before);
   test.fail(true, PB_DOC_001);
   expect([400, 415, 422]).toContain(res.status());
@@ -136,8 +136,8 @@ test("P2-DOC-UP-005 an encrypted PDF is refused with 4xx and stores nothing (KNO
   const encrypted = readFileSync(path.join("tests", "fixtures", "doc", "encrypted-example.pdf"));
   const before = await docDataCount();
   const res = await upload(request, docAuth.sessionCookie.reveal(), encrypted, "enc.pdf");
-  // Setup asserts, before the expected failure: a 2xx stores the encrypted file and must go red here.
-  expect(res.status(), "a 2xx stores the encrypted file (new bug)").toBeGreaterThanOrEqual(300);
+  // Setup asserts, before the expected failure: the proven 500 must hold; any other status is a change to triage.
+  expect(res.status(), "the proven answer is 500 Upload failed (B-4, P-DOC-12)").toBe(500);
   expect(await docDataCount()).toBe(before); // "stores nothing" is this count check
   test.fail(true, PB_DOC_001);
   expect([400, 415, 422]).toContain(res.status());

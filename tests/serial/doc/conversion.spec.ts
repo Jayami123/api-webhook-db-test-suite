@@ -5,16 +5,12 @@ import { promisify } from "node:util";
 import { test, expect } from "../../../src/fixtures/index.ts";
 import { readOnlyDb } from "../../../src/db/pg.ts";
 import { apiBaseUrl } from "../../../src/env.ts";
+import { GOTENBERG_CONTAINER, GOTENBERG_HEALTH_URL } from "../../../src/lanes/doc/gotenberg.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 import type { APIRequestContext } from "@playwright/test";
 
 const run = promisify(execFile);
-/** The opt-in Gotenberg service of the harness overlay (docker/documenso.gotenberg.compose.yml). Only this container is touched. */
-const GOTENBERG = "qa-harness-documenso-gotenberg";
-const GOTENBERG_HEALTH = "http://127.0.0.1:3010/health";
-/** circuit-breaker.ts:14 (`const COOLDOWN_MS = 30_000`): the open window after a real conversion failure. */
-const CIRCUIT_COOLDOWN_MS = 30_000;
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 /** P5 finding: a dependency outage is answered as a client error (see the CONV-002 comment). */
 const P5_CONV_001 =
@@ -23,7 +19,7 @@ const P5_CONV_001 =
 const docker = (args: string[]) => run("docker", args);
 
 async function gotenbergRunning(): Promise<boolean> {
-  const { stdout } = await docker(["inspect", "-f", "{{.State.Running}}", GOTENBERG]);
+  const { stdout } = await docker(["inspect", "-f", "{{.State.Running}}", GOTENBERG_CONTAINER]);
   return stdout.trim() === "true";
 }
 
@@ -62,7 +58,7 @@ async function envelopesWithTitles(titles: string[]): Promise<number> {
 test.describe.configure({ mode: "serial" });
 // Safety net: whatever happens, the Gotenberg container is running again when this describe ends (only this container).
 test.afterAll(async () => {
-  await docker(["start", GOTENBERG]);
+  await docker(["start", GOTENBERG_CONTAINER]);
 });
 
 test("P2-DOC-CONV-002 Gotenberg down: DOCX create answers 503 fast (P5-DOC-CONV-001: answered 400)", async ({
@@ -71,7 +67,7 @@ test("P2-DOC-CONV-002 Gotenberg down: DOCX create answers 503 fast (P5-DOC-CONV-
 }) => {
   const authorization = docAuth.headerValue.reveal();
   const titles = [0, 1, 2, 3, 4].map((i) => runScopedName(`conv-002-${String(i)}`));
-  await docker(["stop", GOTENBERG]);
+  await docker(["stop", GOTENBERG_CONTAINER]);
   const attempts = [];
   for (const title of titles) attempts.push(await createFromDocx(request, authorization, title));
 
@@ -98,17 +94,17 @@ test("P2-DOC-CONV-003 Gotenberg restarts: DOCX create succeeds once the service 
   request,
   docAuth,
 }) => {
-  // This case's own budget: the health poll may take up to docConvertHealth; the in-process circuit stays open for
-  // CIRCUIT_COOLDOWN_MS after the last real failure (circuit-breaker.ts:14, COOLDOWN_MS = 30_000); then the recovery
-  // poll gets docConvertRecover. The Playwright default (60 s, playwright.config.ts:39) is shorter than that sum.
-  test.setTimeout(SLO.docConvertHealth.ms + CIRCUIT_COOLDOWN_MS + SLO.docConvertRecover.ms);
+  // This case's own budget: the health poll (docConvertHealth), then the create-after-cooldown poll (docConvertRecover).
+  // docConvertRecover already holds the 30 s circuit cooldown (circuit-breaker.ts:14), so it is not added again.
+  // The Playwright default (60 s, playwright.config.ts:39) is shorter than that sum.
+  test.setTimeout(SLO.docConvertHealth.ms + SLO.docConvertRecover.ms);
   const authorization = docAuth.headerValue.reveal();
   // Self-contained: this case makes its own outage, so it does not depend on CONV-002 running or passing.
-  await docker(["stop", GOTENBERG]);
+  await docker(["stop", GOTENBERG_CONTAINER]);
   const outage = await createFromDocx(request, authorization, runScopedName("conv-003-outage"));
   expect(outage.body).toContain('"code":"CONVERSION_SERVICE_UNAVAILABLE"');
 
-  await docker(["start", GOTENBERG]);
+  await docker(["start", GOTENBERG_CONTAINER]);
   try {
     // The service really recovered: its health answers 200 (the readiness of the restart is observed, not assumed).
     await expect
@@ -116,7 +112,9 @@ test("P2-DOC-CONV-003 Gotenberg restarts: DOCX create succeeds once the service 
         async () => {
           // Only a refused or reset connection while the container starts is "not ready yet". Anything else rethrows.
           try {
-            return (await request.fetch(GOTENBERG_HEALTH, { failOnStatusCode: false })).status();
+            return (
+              await request.fetch(GOTENBERG_HEALTH_URL, { failOnStatusCode: false })
+            ).status();
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             if (/ECONNREFUSED|ECONNRESET/.test(message)) return undefined;
@@ -149,6 +147,6 @@ test("P2-DOC-CONV-003 Gotenberg restarts: DOCX create succeeds once the service 
     expect(created, "a converted envelope was created").toBeDefined();
     if (created !== undefined) await doc.envelopes.remove(created);
   } finally {
-    await docker(["start", GOTENBERG]);
+    await docker(["start", GOTENBERG_CONTAINER]);
   }
 });

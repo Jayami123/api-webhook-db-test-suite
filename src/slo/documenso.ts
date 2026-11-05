@@ -34,7 +34,8 @@ export const documensoSlo = {
   },
   docConvertHealth: {
     ms: 120_000,
-    basis: "Gotenberg start and health answer; measured in the probe (B-38), with headroom",
+    basis:
+      "Gotenberg restart to a 200 on /health: 210, 201 and 700 ms over three cycles (probe B-48, 2026-11-05); 120 s is about 170 times the slowest sample, headroom for a slower runner",
   },
   docConvertRecover: {
     ms: 90_000,
