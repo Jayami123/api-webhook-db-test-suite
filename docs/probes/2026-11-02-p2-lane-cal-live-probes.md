@@ -204,9 +204,10 @@ warm `up cal` 28 s, `down cal` 2 s (plan section 2 timings reproduced).
 - Tick jitter: NOT MEASURED. The product cron runs on GitHub's schedulers, not on the lane stack, and the sandbox cannot reach
   them. The margin therefore rests on the stated policy bound, not a measured jitter. UNVERIFIED; the owner should decide whether
   a measured jitter (for example from the cron workflow's run history on the product fork) is required.
-- Per-test budget: `CAL_QUIET_TEST_BUDGET_MS` = window (70 s) + setup bound (`CAL_SETUP_BUDGET_MS`, 15 s; the measured setup is
-  about 2 s). 85 s, applied with `test.setTimeout` only to the three tests that hold a quiet window (SCH-002 control, SCH-003
-  control, SCH-003 purge). The shared 60 s timeout in `playwright.config.ts` is unchanged.
+- Per-test budget: `CAL_QUIET_TEST_BUDGET_MS` = the quiet poll (`CAL_QUIET_POLL_TIMEOUT_MS`: the window plus
+  `CAL_QUIET_POLL_SLACK_MS`) + SCH-002's row poll after the window (`CAL_SCH002_ROW_POLL_MS`, `SLO.calWebhookDelivery`), derived
+  in `src/lanes/cal/quiet.ts` (the measured setup is about 2 s and runs before the window starts). Applied with `test.setTimeout`
+  only to the three tests that hold a quiet window (SCH-002 control, SCH-003 control, SCH-003 purge). The shared 60 s timeout in `playwright.config.ts` is unchanged.
 - Why not 60 s + margin under the shared timeout: 70 s exceeds it, so the window needs the per-test budget above.
 - Local live runs: Docker is down in this sandbox (`containerd` failed to start, see the dockerd log), so the quiet tests were
   verified in CI on the pushed head, not locally.
@@ -292,14 +293,15 @@ established: the receiver delivery arrives, and `taskRowsFor` finds no Task row 
 - Plan scope, quiet windows: the window is the scheduled-delivery budget (10 s, `SLO.calWebhookDelivery`), not the product cron
   interval, because the lane runs no cron and the shared 60 s test timeout cannot hold a 60 s window (`src/lanes/cal/quiet.ts`).
   - **Amendment (2026-11-04), supersedes the bullet above for the quiet window.** The window is 70 s: one cron tick (60 s) plus a
-    10 s margin, under an 85 s per-test budget applied with `test.setTimeout` to the three SCH tests that hold it. Basis and
+    10 s margin, under the per-test budget `CAL_QUIET_TEST_BUDGET_MS` applied with `test.setTimeout` to the three SCH tests
+    that hold it. Basis and
     numbers: `src/lanes/cal/quiet.ts` and section L17 of this record. The 60 s shared timeout is unchanged.
 
 ## Findings (review addendum)
 
 - PB-CAL-OAS-1 (product documentation, proven): 200 bodies of the routes listed in L16 do not validate against the committed spec.
   The validity is data-dependent (a webhook changes two routes), so the crawl seeds its own data.
-- SPEC-CAL-UNDOC (documentation, each entry pinned in `KNOWN_UNDOCUMENTED`): 18 non-200 answers the committed spec does not
+- SPEC-CAL-UNDOC (documentation, each entry pinned in `KNOWN_UNDOCUMENTED`): 12 non-200 answers the committed spec does not
   list. Some are the crawl's input (no query or path value); the cause is recorded per entry, and entries marked UNVERIFIED have no
   measured cause.
 - A3 outcome: no product finding. The widened-window anomaly is a lane cause (L15).
@@ -315,8 +317,10 @@ the Cal maintainers and quotes only the evidence above. Labels follow the lane r
   shows `{status, data}`. Validation of the live body fails at `/status` and `/data`.
 - `POST /v2/bookings` (201): the schema requires `rescheduledByEmail` as a string and `rating` as a number; the live body returns
   `null` for both. Attendees require `seatUid` and `bookingFieldsResponses`, which the live body omits.
-- CON-005 crawl: six more 200 bodies fail validation (`/v2/bookings`, `/v2/bookings/{bookingUid}`, `/calendar-links`, `/references`,
-  `/v2/calendars`, `/v2/webhooks`).
+- CON-005 crawl: ten 200 bodies fail validation (`KNOWN_INVALID`, `src/lanes/cal/contract-pins.ts`): `GET /v2/bookings`,
+  `GET /v2/bookings/{bookingUid}`, `GET /v2/bookings/{bookingUid}/calendar-links`, `GET /v2/bookings/{bookingUid}/references`,
+  `GET /v2/calendars`, `GET /v2/event-types`, `GET /v2/event-types/{eventTypeId}`, `GET /v2/schedules/default`, `GET /v2/webhooks`,
+  `GET /v2/webhooks/{webhookId}`.
 - Evidence: `contracts/cal/openapi-v2.json` at `c2b7ac4` (sha256 in `contracts/cal/SOURCE.md`); the failing assertions are marked
   `test.fail` in `tests/contracts/cal/cal-con.spec.ts` and `cal-con-005.spec.ts`.
 
