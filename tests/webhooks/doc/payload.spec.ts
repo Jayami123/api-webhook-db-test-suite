@@ -35,6 +35,8 @@ test("P2-DOC-WH-005 every delivered payload matches the schema and carries no re
     secret,
   });
   let envelopeId: string | undefined;
+  // Captured in setup, asserted after the cleanup (see the oracle below).
+  const tokensInPayloads: string[] = [];
   try {
     const env = await distributedEnvelope({
       label: "wh-005",
@@ -55,7 +57,6 @@ test("P2-DOC-WH-005 every delivered payload matches the schema and carries no re
       .toBeGreaterThanOrEqual(2);
     const runEmails = env.prepared.signers.map((s) => s.email).sort();
     const events = new Set<string>();
-    const tokensInPayloads: string[] = [];
     for (const d of receiverHandle.receiver.deliveries(key)) {
       // Setup: the body parses against the schema, the signature verifies, and this run's recipients are named.
       const parsed = ZWebhookPayloadSchema.safeParse(JSON.parse(d.rawBody.toString("utf8")));
@@ -72,16 +73,18 @@ test("P2-DOC-WH-005 every delivered payload matches the schema and carries no re
     }
     expect(events.has("DOCUMENT_CREATED")).toBe(true);
     expect(events.has("DOCUMENT_SENT")).toBe(true);
-    // Oracle (expected to fail: P5-DOC-TOK-002). No recipient token may reach the webhook endpoint.
-    test.fail(
-      true,
-      "P5-DOC-TOK-002: every document payload carries every recipient's token (webhook-payload.ts:22-29, :84)",
-    );
-    expect(tokensInPayloads).toEqual([]);
   } finally {
     await runAllThenRethrow([
       () => (envelopeId ? doc.envelopes.remove(envelopeId) : Promise.resolve()),
       () => doc.webhooks.remove(id),
     ]);
   }
+  // Oracle (expected to fail: P5-DOC-TOK-002), asserted only after the cleanup has finished, on the values captured in
+  // setup. Under test.fail a cleanup error would count as the expected failure; here it fails the test before this line.
+  // No recipient token may reach the webhook endpoint.
+  test.fail(
+    true,
+    "P5-DOC-TOK-002: every document payload carries every recipient's token (webhook-payload.ts:22-29, :84)",
+  );
+  expect(tokensInPayloads).toEqual([]);
 });
