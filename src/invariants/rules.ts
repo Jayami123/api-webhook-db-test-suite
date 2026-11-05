@@ -242,6 +242,52 @@ const FOUNDATION_RULES: Readonly<Record<ProductId, readonly Rule[]>> = {
       perSchemaQuery: String.raw`SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE 'workspace\_%' ESCAPE '\' ORDER BY schema_name`,
       sql: `SELECT "id"::text AS id, "nameFirstName" AS value FROM {schema}."person" WHERE "nameFirstName" LIKE $1 ${ESC} AND "deletedAt" IS NULL`,
     },
+    {
+      id: "tw-leak-opportunity-name",
+      kind: "leak",
+      description:
+        "No live opportunity of this run is left in any workspace schema (only rows named with this run's prefix match; seed and other-run rows never do, soft-deleted rows are not leaks)",
+      cite: "twenty-server modules/opportunity/standard-objects/opportunity.workspace-entity.ts:17 (name); engine/twenty-orm/base.workspace-entity.ts:5 (deletedAt) (live 2026-11-03: columns present)",
+      basis: "live",
+      verified: "2026-11-03",
+      param: LEAK_LIKE_PREFIX,
+      perSchemaQuery: String.raw`SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE 'workspace\_%' ESCAPE '\' ORDER BY schema_name`,
+      sql: `SELECT "id"::text AS id, "name" AS value FROM {schema}."opportunity" WHERE "name" LIKE $1 ${ESC} AND "deletedAt" IS NULL`,
+    },
+    {
+      id: "tw-leak-workflow-name",
+      kind: "leak",
+      description:
+        "No live workflow of this run is left in any workspace schema (only rows named with this run's prefix match; seed and other-run rows never do, soft-deleted rows are not leaks)",
+      cite: "twenty-server modules/workflow/common/standard-objects/workflow.workspace-entity.ts:18 (name, nullable); engine/twenty-orm/base.workspace-entity.ts:5 (deletedAt) (live 2026-11-03: columns present)",
+      basis: "live",
+      verified: "2026-11-03",
+      param: LEAK_LIKE_PREFIX,
+      perSchemaQuery: String.raw`SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE 'workspace\_%' ESCAPE '\' ORDER BY schema_name`,
+      sql: `SELECT "id"::text AS id, "name" AS value FROM {schema}."workflow" WHERE "name" LIKE $1 ${ESC} AND "deletedAt" IS NULL`,
+    },
+    {
+      id: "tw-leak-field-label",
+      kind: "leak",
+      description:
+        "No field of this run is left in the core field metadata (matched on label, which carries the run prefix; seed and other-run rows never match; field delete is a hard delete, so there is no deletedAt filter)",
+      cite: "twenty-server engine/metadata-modules/field-metadata/field-metadata.entity.ts:49 (@Entity fieldMetadata), :98-99 (label); database/typeorm/core/core.datasource.ts:44 (schema core) (live 2026-11-03: columns present)",
+      basis: "live",
+      verified: "2026-11-03",
+      param: LEAK_LIKE_PREFIX,
+      sql: `SELECT "id"::text AS id, "label" AS value FROM "core"."fieldMetadata" WHERE "label" LIKE $1 ${ESC}`,
+    },
+    {
+      id: "tw-leak-workspace-name",
+      kind: "leak",
+      description:
+        "No live workspace of this run is left in the core workspace table (only rows whose display name carries this run's prefix match; seed and other-run rows never do, soft-deleted rows are not leaks)",
+      cite: "twenty-server engine/core-modules/workspace/workspace.entity.ts:76 (schema core), :85 (displayName), :108-109 (deletedAt) (live 2026-11-03: columns present)",
+      basis: "live",
+      verified: "2026-11-03",
+      param: LEAK_LIKE_PREFIX,
+      sql: `SELECT "id"::text AS id, "displayName" AS value FROM "core"."workspace" WHERE "displayName" LIKE $1 ${ESC} AND "deletedAt" IS NULL`,
+    },
   ],
 };
 

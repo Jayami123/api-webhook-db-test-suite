@@ -11,6 +11,7 @@ import {
   runSweep,
   type Rule,
 } from "../../../src/invariants/engine.ts";
+import { LEAK_LIKE_PREFIX } from "../../../src/invariants/lane-kit.ts";
 import { RULES, productOfProject, rulesFor } from "../../../src/invariants/rules.ts";
 
 const PREFIX = "p2-qa-20261101t090000z-0a1b2c3d";
@@ -106,6 +107,73 @@ describe("rules: every product rule is well formed", () => {
     }
     assert.equal(productOfProject("chromium"), undefined);
   });
+});
+
+/** The four Twenty leak rules for rows that lane tests create (opportunities, workflows, fields, workspaces). */
+const TWENTY_LEAK_SHAPE: Record<string, { from: string; perSchema: boolean; deleted: boolean }> = {
+  "tw-leak-opportunity-name": { from: '{schema}."opportunity"', perSchema: true, deleted: true },
+  "tw-leak-workflow-name": { from: '{schema}."workflow"', perSchema: true, deleted: true },
+  "tw-leak-field-label": { from: '"core"."fieldMetadata"', perSchema: false, deleted: false },
+  "tw-leak-workspace-name": { from: '"core"."workspace"', perSchema: false, deleted: true },
+};
+
+describe("rules: twenty leak rules for lane-created rows", () => {
+  const rule = (id: string): Rule => {
+    const found = rulesFor("twenty").find((r) => r.id === id);
+    assert.ok(found, `${id} is registered for twenty`);
+    return found;
+  };
+
+  test("the four rules exist, are leak rules on the prefix, and the per-schema ones carry {schema}", () => {
+    for (const [id, shape] of Object.entries(TWENTY_LEAK_SHAPE)) {
+      const r = rule(id);
+      assert.equal(r.kind, "leak", id);
+      assert.equal(r.param, LEAK_LIKE_PREFIX, id);
+      assert.equal(r.perSchemaQuery !== undefined, shape.perSchema, id);
+      assert.equal(r.sql.includes("{schema}"), shape.perSchema, id);
+      assert.ok(r.sql.includes(shape.from), `${id} names ${shape.from}`);
+      assert.equal(r.sql.includes('"deletedAt" IS NULL'), shape.deleted, id);
+    }
+  });
+
+  for (const id of Object.keys(TWENTY_LEAK_SHAPE)) {
+    test(`${id}: a row of this run is reported`, async () => {
+      const r = rule(id);
+      const { db, seen } = fakeDb((sql) =>
+        sql.includes("schemata")
+          ? [{ schema_name: "workspace_a1" }]
+          : [{ id: "r1", value: `${PREFIX}-cur001` }],
+      );
+      const out = await runSweep(db, [r], { runPrefix: PREFIX, includeLeaks: true });
+      assert.equal(out.length, 1, id);
+      const [v] = out;
+      assert.ok(v);
+      assert.deepEqual([v.ruleId, v.rows], [id, [{ id: "r1", value: `${PREFIX}-cur001` }]]);
+      assert.deepEqual(seen.at(-1)?.params, paramFor(r, PREFIX));
+    });
+
+    test(`${id}: a clean answer passes`, async () => {
+      const r = rule(id);
+      const shape = TWENTY_LEAK_SHAPE[id];
+      assert.ok(shape);
+      const { db, seen } = fakeDb((sql) =>
+        sql.includes("schemata") ? [{ schema_name: "workspace_a1" }] : [],
+      );
+      assert.deepEqual(await runSweep(db, [r], { runPrefix: PREFIX, includeLeaks: true }), []);
+      const ran = seen.filter((s) => !s.sql.includes("schemata")).map((s) => s.sql);
+      const expectedFrom = shape.perSchema
+        ? shape.from.replace("{schema}", '"workspace_a1"')
+        : shape.from;
+      assert.ok(
+        ran.some((sql) => sql.includes(expectedFrom)),
+        `${id} sent ${expectedFrom}`,
+      );
+      assert.ok(
+        ran.every((sql) => !sql.includes("{schema}")),
+        "every {schema} placeholder was replaced",
+      );
+    });
+  }
 });
 
 describe("engine: shape checks", () => {
