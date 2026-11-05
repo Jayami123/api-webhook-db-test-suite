@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { test, expect } from "../../../src/fixtures/index.ts";
 import { readOnlyDb } from "../../../src/db/pg.ts";
 import { apiBaseUrl } from "../../../src/env.ts";
+import { withEnvelopeRemovedOnFailure } from "../../../src/lanes/doc/setup-failure.ts";
 import { productsRoot } from "../../../src/readiness/checks.ts";
 import {
   completeRecipient,
@@ -71,72 +72,81 @@ async function completeGermanEnvelope(input: {
     pdf: input.pdf,
     recipients: [{ email: `${currentRunPrefix()}-${input.label}@example.test`, name: "De" }],
   });
-  const metaStatus = (
-    await v2Post(http, "/api/v2/envelope/update", {
-      envelopeId,
-      meta: { dateFormat: input.dateFormat, timezone: ZONE, language: "de" },
-    })
-  ).status;
-  expect(metaStatus).toBe(200);
-  const prepared = await createSignableEnvelope({ http, db, envelopeId });
-  const signer = prepared.signers[0];
-  if (signer === undefined) throw new Error("TEST BUG: no signer on the prepared envelope");
-  expect(signer.fieldId).toBeDefined();
-  const dateField = await v2Post(http, "/api/v2/envelope/field/create-many", {
+  return withEnvelopeRemovedOnFailure(
     envelopeId,
-    data: [
-      {
-        recipientId: signer.recipientId,
-        type: "DATE",
-        page: 1,
-        positionX: 60,
-        positionY: 60,
-        width: 30,
-        height: 5,
-      },
-    ],
-  });
-  expect(dateField.status).toBe(200);
-  expect(await distribute(http, envelopeId)).toBe(200);
-  expect(await signField(http, signer)).toBe(200);
-  const before = new Date();
-  expect(await completeRecipient(http, prepared, signer)).toBe(200);
-  const after = new Date();
-  await expect
-    .poll(
-      async () =>
-        (
-          await db.select<{ status: string }>(
-            `SELECT "status" AS status FROM "Envelope" WHERE "id" = $1`,
-            [envelopeId],
-          )
-        )[0]?.status,
-      { timeout: SLO.docWebhookDelivery.ms, intervals: POLL_INTERVALS, message: "COMPLETED" },
-    )
-    .toBe("COMPLETED");
-  const rows = await db.select<{ customText: string | null }>(
-    `SELECT f."customText" AS "customText" FROM "Field" f WHERE f."recipientId" = $1 AND f."type" = 'DATE'`,
-    [signer.recipientId],
+    (id) => doc.envelopes.remove(id),
+    async () => {
+      const metaStatus = (
+        await v2Post(http, "/api/v2/envelope/update", {
+          envelopeId,
+          meta: { dateFormat: input.dateFormat, timezone: ZONE, language: "de" },
+        })
+      ).status;
+      expect(metaStatus).toBe(200);
+      const prepared = await createSignableEnvelope({ http, db, envelopeId });
+      const signer = prepared.signers[0];
+      if (signer === undefined) throw new Error("TEST BUG: no signer on the prepared envelope");
+      expect(signer.fieldId).toBeDefined();
+      const dateField = await v2Post(http, "/api/v2/envelope/field/create-many", {
+        envelopeId,
+        data: [
+          {
+            recipientId: signer.recipientId,
+            type: "DATE",
+            page: 1,
+            positionX: 60,
+            positionY: 60,
+            width: 30,
+            height: 5,
+          },
+        ],
+      });
+      expect(dateField.status).toBe(200);
+      expect(await distribute(http, envelopeId)).toBe(200);
+      expect(await signField(http, signer)).toBe(200);
+      const before = new Date();
+      expect(await completeRecipient(http, prepared, signer)).toBe(200);
+      const after = new Date();
+      await expect
+        .poll(
+          async () =>
+            (
+              await db.select<{ status: string }>(
+                `SELECT "status" AS status FROM "Envelope" WHERE "id" = $1`,
+                [envelopeId],
+              )
+            )[0]?.status,
+          { timeout: SLO.docWebhookDelivery.ms, intervals: POLL_INTERVALS, message: "COMPLETED" },
+        )
+        .toBe("COMPLETED");
+      const rows = await db.select<{ customText: string | null }>(
+        `SELECT f."customText" AS "customText" FROM "Field" f WHERE f."recipientId" = $1 AND f."type" = 'DATE'`,
+        [signer.recipientId],
+      );
+      expect(rows).toHaveLength(1);
+      const dateValue = rows[0]?.customText ?? "";
+      const items = await db.select<{ id: string }>(
+        `SELECT "id" AS id FROM "EnvelopeItem" WHERE "envelopeId" = $1`,
+        [envelopeId],
+      );
+      expect(items).toHaveLength(1);
+      const item = items[0];
+      if (item === undefined) throw new Error("TEST BUG: no envelope item");
+      const dl = await input.request.fetch(
+        `${http.baseUrl}/api/v2/envelope/item/${item.id}/download`,
+        {
+          headers: { authorization: http.authorization() },
+          maxRedirects: 0,
+          failOnStatusCode: false,
+        },
+      );
+      expect(dl.status()).toBe(200);
+      const sealed = Buffer.from(await dl.body());
+      mkdirSync(input.artefactDir, { recursive: true });
+      writeFileSync(path.join(input.artefactDir, `${input.label}.pdf`), sealed);
+      return { envelopeId, dateValue, before, after, sealed };
+    },
   );
-  expect(rows).toHaveLength(1);
-  const dateValue = rows[0]?.customText ?? "";
-  const items = await db.select<{ id: string }>(
-    `SELECT "id" AS id FROM "EnvelopeItem" WHERE "envelopeId" = $1`,
-    [envelopeId],
-  );
-  expect(items).toHaveLength(1);
-  const item = items[0];
-  if (item === undefined) throw new Error("TEST BUG: no envelope item");
-  const dl = await input.request.fetch(`${http.baseUrl}/api/v2/envelope/item/${item.id}/download`, {
-    headers: { authorization: http.authorization() },
-    maxRedirects: 0,
-    failOnStatusCode: false,
-  });
-  expect(dl.status()).toBe(200);
-  const sealed = Buffer.from(await dl.body());
-  mkdirSync(input.artefactDir, { recursive: true });
-  writeFileSync(path.join(input.artefactDir, `${input.label}.pdf`), sealed);
-  return { envelopeId, dateValue, before, after, sealed };
 }
 
 async function pdfText(file: string): Promise<string> {

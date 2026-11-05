@@ -13,6 +13,7 @@ import {
   type PreparedEnvelope,
 } from "../../../src/lanes/doc/envelope.ts";
 import { productsRoot } from "../../../src/readiness/checks.ts";
+import { withEnvelopeRemovedOnFailure } from "../../../src/lanes/doc/setup-failure.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 import { expect } from "../../../src/fixtures/index.ts";
@@ -47,41 +48,51 @@ export async function completedEnvelope(input: {
       name: `Signer ${String(i + 1)}`,
     })),
   });
-  const http: LaneHttp = {
-    request: input.request,
-    baseUrl: apiBaseUrl("documenso"),
-    authorization: input.authorization,
-  };
-  const prepared = await createSignableEnvelope({ http, db: input.db, envelopeId });
-  expect(prepared.signers).toHaveLength(input.signers);
-  expect(await distribute(http, envelopeId)).toBe(200);
-  for (const signer of prepared.signers) {
-    expect(signer.fieldId).toBeDefined();
-    expect(await signField(http, signer)).toBe(200);
-    expect(await completeRecipient(http, prepared, signer)).toBe(200);
-  }
-  await expect
-    .poll(
-      async () =>
-        (
-          await input.db.select<{ status: string }>(
-            `SELECT "status" AS status FROM "Envelope" WHERE "id" = $1`,
-            [envelopeId],
-          )
-        )[0]?.status,
-      { timeout: SLO.docWebhookDelivery.ms, intervals: POLL_INTERVALS, message: "COMPLETED" },
-    )
-    .toBe("COMPLETED");
-  const items = await input.db.select<{ id: string }>(
-    `SELECT "id" AS id FROM "EnvelopeItem" WHERE "envelopeId" = $1`,
-    [envelopeId],
+  return withEnvelopeRemovedOnFailure(
+    envelopeId,
+    (id) => input.doc.envelopes.remove(id),
+    async () => {
+      const http: LaneHttp = {
+        request: input.request,
+        baseUrl: apiBaseUrl("documenso"),
+        authorization: input.authorization,
+      };
+      const prepared = await createSignableEnvelope({ http, db: input.db, envelopeId });
+      expect(prepared.signers).toHaveLength(input.signers);
+      expect(await distribute(http, envelopeId)).toBe(200);
+      for (const signer of prepared.signers) {
+        expect(signer.fieldId).toBeDefined();
+        expect(await signField(http, signer)).toBe(200);
+        expect(await completeRecipient(http, prepared, signer)).toBe(200);
+      }
+      await expect
+        .poll(
+          async () =>
+            (
+              await input.db.select<{ status: string }>(
+                `SELECT "status" AS status FROM "Envelope" WHERE "id" = $1`,
+                [envelopeId],
+              )
+            )[0]?.status,
+          { timeout: SLO.docWebhookDelivery.ms, intervals: POLL_INTERVALS, message: "COMPLETED" },
+        )
+        .toBe("COMPLETED");
+      const items = await input.db.select<{ id: string }>(
+        `SELECT "id" AS id FROM "EnvelopeItem" WHERE "envelopeId" = $1`,
+        [envelopeId],
+      );
+      const item = items[0];
+      if (item === undefined) throw new Error("TEST BUG: completed envelope has no item");
+      const res = await input.request.fetch(
+        `${http.baseUrl}/api/v2/envelope/item/${item.id}/download`,
+        {
+          headers: { authorization: input.authorization() },
+          maxRedirects: 0,
+          failOnStatusCode: false,
+        },
+      );
+      expect(res.status()).toBe(200);
+      return { envelopeId, prepared, sealed: Buffer.from(await res.body()) };
+    },
   );
-  const item = items[0];
-  if (item === undefined) throw new Error("TEST BUG: completed envelope has no item");
-  const res = await input.request.fetch(
-    `${http.baseUrl}/api/v2/envelope/item/${item.id}/download`,
-    { headers: { authorization: input.authorization() }, maxRedirects: 0, failOnStatusCode: false },
-  );
-  expect(res.status()).toBe(200);
-  return { envelopeId, prepared, sealed: Buffer.from(await res.body()) };
 }

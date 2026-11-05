@@ -12,6 +12,7 @@ import {
 } from "../../../src/lanes/doc/envelope.ts";
 import { expect } from "../../../src/fixtures/index.ts";
 import { productsRoot } from "../../../src/readiness/checks.ts";
+import { withEnvelopeRemovedOnFailure } from "../../../src/lanes/doc/setup-failure.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
 
 export interface DistributedEnvelope {
@@ -42,13 +43,19 @@ export async function distributedEnvelope(input: {
       name: `Signer ${String(i + 1)}`,
     })),
   });
-  const http: LaneHttp = {
-    request: input.request,
-    baseUrl: apiBaseUrl("documenso"),
-    authorization: input.authorization,
-  };
-  const prepared = await createSignableEnvelope({ http, db: input.db, envelopeId });
-  // Only a distributed (PENDING) envelope accepts signatures: signing a DRAFT is refused (P-DOC-11).
-  expect(await distribute(http, envelopeId)).toBe(200);
-  return { envelopeId, prepared, http };
+  return withEnvelopeRemovedOnFailure(
+    envelopeId,
+    (id) => input.doc.envelopes.remove(id),
+    async () => {
+      const http: LaneHttp = {
+        request: input.request,
+        baseUrl: apiBaseUrl("documenso"),
+        authorization: input.authorization,
+      };
+      const prepared = await createSignableEnvelope({ http, db: input.db, envelopeId });
+      // Only a distributed (PENDING) envelope accepts signatures: signing a DRAFT is refused (P-DOC-11).
+      expect(await distribute(http, envelopeId)).toBe(200);
+      return { envelopeId, prepared, http };
+    },
+  );
 }
