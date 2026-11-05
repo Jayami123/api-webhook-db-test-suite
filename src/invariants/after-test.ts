@@ -25,3 +25,18 @@ export async function sweepAfterTest(input: {
   if (violations.length === 0) return undefined;
   return { violations, report: formatViolations(violations) };
 }
+
+/** The Playwright annotation type the sweep writes on every test it covers (the JUnit reporter emits it as a property). */
+export const SWEEP_ANNOTATION_TYPE = "invariant-sweep";
+
+/** `{ type: "invariant-sweep", description: "<product>: <N> rules, <V> violations" }`, always written, clean or not. */
+export function sweepAnnotation(
+  product: string,
+  ruleCount: number,
+  violationCount: number,
+): { type: string; description: string } {
+  return {
+    type: SWEEP_ANNOTATION_TYPE,
+    description: `${product}: ${String(ruleCount)} rules, ${String(violationCount)} violations`,
+  };
+}
