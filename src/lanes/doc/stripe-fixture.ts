@@ -1,4 +1,5 @@
 import type Stripe from "stripe";
+import { runAllThenRethrow } from "../../shared/cleanup.ts";
 
 /** Metadata key that tags every Stripe object this lane creates (OD-15). */
 export const RUN_TAG = "run_id";
@@ -30,7 +31,11 @@ export interface RunStripeFixture {
   readonly subscriptionId: string;
 }
 
-/** Tags the customer, creates one product and price, and attaches one trial subscription (all tagged). */
+/**
+ * Tags the customer, creates one product and price, and attaches one trial subscription (all tagged).
+ * If a step after the product fails, the product (and the price, if it was created) is archived before the original
+ * error is rethrown: teardownRunStripe only knows the ids this function returns, so nothing else would archive them.
+ */
 export async function attachRunSubscription(
   stripe: Stripe,
   runId: string,
@@ -43,23 +48,39 @@ export async function attachRunSubscription(
     name: `p2-lane ${runId}`,
     metadata: tags,
   });
-  const price = await stripe.prices.create({
-    product: product.id,
-    currency: "usd",
-    unit_amount: 100,
-    recurring: { interval: "month" },
-    // The sync reads the claim from the price (sync-stripe-customer-subscription.ts:259) and rejects a price
-    // without one ("Subscription claim on price ... not found"). "individual" is a real claim (types/subscription.ts:169-176).
-    metadata: { ...tags, claimId: "individual" },
-  });
-  await stripe.customers.update(customerId, { metadata: tags });
-  const sub = await stripe.subscriptions.create({
-    customer: customerId,
-    items: [{ price: price.id }],
-    trial_period_days: 1,
-    metadata: tags,
-  });
-  return { productId: product.id, subscriptionId: sub.id };
+  let price: Stripe.Price | undefined;
+  try {
+    price = await stripe.prices.create({
+      product: product.id,
+      currency: "usd",
+      unit_amount: 100,
+      recurring: { interval: "month" },
+      // The sync reads the claim from the price (sync-stripe-customer-subscription.ts:259) and rejects a price
+      // without one ("Subscription claim on price ... not found"). "individual" is a real claim (types/subscription.ts:169-176).
+      metadata: { ...tags, claimId: "individual" },
+    });
+    await stripe.customers.update(customerId, { metadata: tags });
+    const sub = await stripe.subscriptions.create({
+      customer: customerId,
+      items: [{ price: price.id }],
+      trial_period_days: 1,
+      metadata: tags,
+    });
+    return { productId: product.id, subscriptionId: sub.id };
+  } catch (error) {
+    const createdPrice = price;
+    await runAllThenRethrow([
+      () => {
+        throw error; // the original value, unchanged
+      },
+      () =>
+        createdPrice === undefined
+          ? Promise.resolve()
+          : stripe.prices.update(createdPrice.id, { active: false }),
+      () => stripe.products.update(product.id, { active: false }),
+    ]);
+    throw error;
+  }
 }
 
 /**

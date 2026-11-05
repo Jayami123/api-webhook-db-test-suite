@@ -4,6 +4,7 @@ import type { APIRequestContext } from "@playwright/test";
 import { test, expect } from "../../../src/fixtures/index.ts";
 import { readOnlyDb, type ReadOnlyDb } from "../../../src/db/pg.ts";
 import { apiBaseUrl } from "../../../src/env.ts";
+import { withRemovedOnFailure } from "../../../src/lanes/doc/setup-failure.ts";
 import { bodyOf, listMail, mailboxOf, signingTokenIn } from "../../../src/lanes/doc/mail.ts";
 import { bulkJobProblems, type AddressEvidence } from "../../../src/lanes/doc/bulk.ts";
 import { productsRoot } from "../../../src/readiness/checks.ts";
@@ -62,53 +63,59 @@ async function makeTemplate(
   });
   expect(created.status()).toBe(200);
   const { id } = (await created.json()) as { id: number };
-  const placeholder = `${prefix}-${label}-placeholder@example.test`;
-  const recipients = await request.fetch(
-    `${apiBaseUrl("documenso")}/api/v2/template/recipient/create-many`,
-    {
-      method: "POST",
-      headers: { authorization, "content-type": "application/json" },
-      data: JSON.stringify({
-        templateId: id,
-        recipients: [{ email: placeholder, name: "Recipient 1", role: "SIGNER" }],
-      }),
-      maxRedirects: 0,
-      failOnStatusCode: false,
+  return withRemovedOnFailure(
+    id,
+    (templateId) => deleteTemplate(request, authorization, templateId),
+    async () => {
+      const placeholder = `${prefix}-${label}-placeholder@example.test`;
+      const recipients = await request.fetch(
+        `${apiBaseUrl("documenso")}/api/v2/template/recipient/create-many`,
+        {
+          method: "POST",
+          headers: { authorization, "content-type": "application/json" },
+          data: JSON.stringify({
+            templateId: id,
+            recipients: [{ email: placeholder, name: "Recipient 1", role: "SIGNER" }],
+          }),
+          maxRedirects: 0,
+          failOnStatusCode: false,
+        },
+      );
+      expect(recipients.status()).toBe(200);
+      const rows = await db.select<{ id: number }>(
+        `SELECT r."id" AS id FROM "Recipient" r WHERE r."email" = $1`,
+        [placeholder],
+      );
+      const recipientId = rows[0]?.id;
+      if (recipientId === undefined)
+        throw new Error("TEST BUG: template placeholder recipient not found");
+      const field = await request.fetch(
+        `${apiBaseUrl("documenso")}/api/v2/template/field/create-many`,
+        {
+          method: "POST",
+          headers: { authorization, "content-type": "application/json" },
+          data: JSON.stringify({
+            templateId: id,
+            fields: [
+              {
+                type: "SIGNATURE",
+                recipientId,
+                pageNumber: 1,
+                pageX: 10,
+                pageY: 10,
+                width: 20,
+                height: 5,
+              },
+            ],
+          }),
+          maxRedirects: 0,
+          failOnStatusCode: false,
+        },
+      );
+      expect(field.status()).toBe(200);
+      return id;
     },
   );
-  expect(recipients.status()).toBe(200);
-  const rows = await db.select<{ id: number }>(
-    `SELECT r."id" AS id FROM "Recipient" r WHERE r."email" = $1`,
-    [placeholder],
-  );
-  const recipientId = rows[0]?.id;
-  if (recipientId === undefined)
-    throw new Error("TEST BUG: template placeholder recipient not found");
-  const field = await request.fetch(
-    `${apiBaseUrl("documenso")}/api/v2/template/field/create-many`,
-    {
-      method: "POST",
-      headers: { authorization, "content-type": "application/json" },
-      data: JSON.stringify({
-        templateId: id,
-        fields: [
-          {
-            type: "SIGNATURE",
-            recipientId,
-            pageNumber: 1,
-            pageX: 10,
-            pageY: 10,
-            width: 20,
-            height: 5,
-          },
-        ],
-      }),
-      maxRedirects: 0,
-      failOnStatusCode: false,
-    },
-  );
-  expect(field.status()).toBe(200);
-  return id;
 }
 
 async function deleteTemplate(

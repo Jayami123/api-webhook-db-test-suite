@@ -122,3 +122,72 @@ describe("productStatusFor (the product's status mapping, sync-stripe-customer-s
     assert.equal(productStatusFor("incomplete"), "INACTIVE");
   });
 });
+
+describe("attachRunSubscription failure after the product (archive what was created, rethrow the original)", () => {
+  /** A client whose calls are recorded; `failAt` names the call that rejects. */
+  function stubStripe(failAt: "prices.create" | "customers.update" | "subscriptions.create"): {
+    stripe: Stripe;
+    calls: string[];
+  } {
+    const calls: string[] = [];
+    const reject = (name: string, error: Error): Promise<never> => {
+      calls.push(name);
+      return Promise.reject(error);
+    };
+    const ok = <T>(name: string, value: T): Promise<T> => {
+      calls.push(name);
+      return Promise.resolve(value);
+    };
+    const stripe = {
+      products: {
+        create: () => ok("products.create", { id: "prod_1" }),
+        update: (id: string, params: unknown) =>
+          ok(`products.update ${id} ${JSON.stringify(params)}`, {}),
+      },
+      prices: {
+        create: () =>
+          failAt === "prices.create"
+            ? reject("prices.create", new Error("price refused"))
+            : ok("prices.create", { id: "price_1" }),
+        update: (id: string, params: unknown) =>
+          ok(`prices.update ${id} ${JSON.stringify(params)}`, {}),
+      },
+      customers: {
+        update: () =>
+          failAt === "customers.update"
+            ? reject("customers.update", new Error("customer refused"))
+            : ok("customers.update", {}),
+      },
+      subscriptions: {
+        create: () =>
+          failAt === "subscriptions.create"
+            ? reject("subscriptions.create", new Error("subscription refused"))
+            : ok("subscriptions.create", { id: "sub_1" }),
+      },
+    };
+    return { stripe: stripe as unknown as Stripe, calls };
+  }
+
+  test("subscriptions.create rejects: the original error is rethrown and the price and product are archived", async () => {
+    const { stripe, calls } = stubStripe("subscriptions.create");
+    await assert.rejects(
+      attachRunSubscription(stripe, "run-1", "cus_1", "P2-DOC-STR-002"),
+      (error: unknown) => error instanceof Error && error.message === "subscription refused",
+    );
+    assert.ok(calls.includes('prices.update price_1 {"active":false}'), "the price is archived");
+    assert.ok(calls.includes('products.update prod_1 {"active":false}'), "the product is archived");
+  });
+
+  test("prices.create rejects: no price exists, so only the product is archived, and the original error is rethrown", async () => {
+    const { stripe, calls } = stubStripe("prices.create");
+    await assert.rejects(
+      attachRunSubscription(stripe, "run-2", "cus_1", "P2-DOC-STR-002"),
+      (error: unknown) => error instanceof Error && error.message === "price refused",
+    );
+    assert.ok(
+      !calls.some((c) => c.startsWith("prices.update")),
+      "no price archive call without a price",
+    );
+    assert.ok(calls.includes('products.update prod_1 {"active":false}'));
+  });
+});
