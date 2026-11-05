@@ -346,3 +346,98 @@ Counted mechanically from the rows in section 2 (Task 0 check, 2026-11-05).
 | BLOCKED | 5 |
 
 Reconciliation items (section 3): 18. Open decisions (section 6): 11, of which 2 are BLOCKING for their task (D2, D3).
+
+## 9. Verdicts (Tasks 1 to 5, recorded 2026-11-05 to 2026-11-06)
+
+Verdict labels: `CONFIRMED-GAP`, `COVERED` (cite the existing spec), `PRODUCT DEFECT` (evidence), `NOT REPRODUCIBLE`, `STILL BLOCKED` (exact blocker), and `NOT ATTEMPTED` (driven by the plan, not run this session; reason given). Every probe record is in `docs/probes/` (dated 2026-11-05 or 2026-11-06, times Asia/Colombo).
+
+| Row (section 2) | Verdict | Evidence / reason |
+|---|---|---|
+| P2-CAL-REC-002 | NOT REPRODUCIBLE | Passes on a fresh volume (`2026-11-05-p2-cal-fresh-volume-probes.md`, attempt D, 3.6 s). |
+| P2-CAL-WH-003 (positive control) | NOT REPRODUCIBLE | Passes on a fresh volume (same record, 522 ms). |
+| P2-CAL-WH-003 (B2 retry marker) | PRODUCT DEFECT | Expected failure reproduces (`cal-wh.spec.ts:352`); delivery count not captured. |
+| backlog-cal-volume-reset | COVERED | D3 applied: harness `down`, then `docker volume rm qa-harness-cal_db_data` after confirming no container used it. |
+| P2-CAL-DST-001/002, P2-CAL-REC-001 (OD-DST) | NOT ATTEMPTED | Needs the L3 step 0 product-path probe; not run. |
+| P2-CAL-SRVTZ-001/002 (OD-SRVTZ) | NOT ATTEMPTED | Needs a second stack with `TZ=Asia/Colombo`; not run. |
+| P2-CAL-AUD-001 (OD-AUD) | NOT ATTEMPTED | Needs an organisation with `booking-audit`; not run. |
+| P2-CAL-RR-001 (OD-RR) | NOT ATTEMPTED | Needs a seeded round-robin team; not run. |
+| label-cal-cold-bootstrap-timing | COVERED | Cold `up` 651 s (attempt A), warm 81 s (attempt D). `CAL_UP_TIMEOUT_S` 1200 unchanged. |
+| P-DOC-4c (OD-4) | STILL BLOCKED | OD-4 not approved; window edges not measured. |
+| P2-DOC-JOB-005 (OD-4) | STILL BLOCKED | Needs OD-4 and a PENDING fixture path. |
+| P2-DOC-JOB-002 | STILL BLOCKED | Harness has no restart-with-broken-cert-path. |
+| P2-DOC-JOB-003 (OD-4) | STILL BLOCKED | Needs enum writes; allow-list is timestamp-only. |
+| P2-DOC-JOB-004 race (OD-7) | STILL BLOCKED | Needs a PENDING row with signed recipients (OD-4). Sequential replay is built. |
+| P2-DOC-CONV-002 | PRODUCT DEFECT | Expected-failure marker passes (`conversion.spec.ts:64`, `P5_CONV_001`), run with `DOCUMENSO_GOTENBERG=1`. |
+| P2-DOC-CONV-003 | COVERED | Passes live (`conversion.spec.ts:92`, 30.8 s). |
+| P5-DOC-CONV-001 | PRODUCT DEFECT | As CONV-002 (400 observed in B-39; status not re-captured). |
+| P2-DOC-WH-005 | COVERED (expected failure) | Marker `payload.spec.ts:22` passes as expected failure. |
+| P5-DOC-TOK-002 | PRODUCT DEFECT | As WH-005. Upstream draft only. |
+| P5-DOC-DEL-001 | STILL BLOCKED | No deterministic trigger for a PENDING delete racing the last signature (needs OD-4). |
+| P2-DOC-MAIL-002 (OD-12) | STILL BLOCKED | Row text missing from the master plan. |
+| label-doc-organisation-soft-delete | NOT ATTEMPTED | Needs a read-only query on a running doc stack; not run. |
+| P2-DOC-STR-001 / P2-DOC-SM-001 (OD-5, OD-6) | NOT ATTEMPTED | Owner decision; no new evidence needed. |
+| UP-001 (OD-8) | NOT ATTEMPTED | Owner decision. |
+| P2-MED-WH-008 (simultaneous overlap, P-MED-4) | STILL BLOCKED | Sequential orderings are covered (see next rows); a deterministic overlap is not yet shown. |
+| P2-MED-WH-008 (completion before the delayed webhook, 20 runs) | COVERED | `race-completion.spec.ts:42`, 20 of 20 pass (med record, run 4). |
+| P2-MED-WH-008b (webhook first) | COVERED | `race-completion.spec.ts:86` passes. |
+| backlog-med-webhook-200-before-verify | PRODUCT DEFECT (P5, design) | Route code read: `route.js:17-29` emits with `delay: 5000` and returns 200 without verification. The cited path is confirmed under the installed `@medusajs/medusa` 2.21.2 package. |
+| P2-MED-EB-002 | COVERED | `poison-event.spec.ts:46` passes (9.1 s). |
+| P2-MED-WH-006 (OD-17, 299 s) | STILL BLOCKED | Owner decision D10; live result already on record (`med plan :76-77`). |
+| P-MED-3 | NOT ATTEMPTED | Not run this session. |
+| P-MED-6 / FC-MED-A | NOT ATTEMPTED | Not run; the P5 verdict is open. |
+| P-MED-8 | NOT ATTEMPTED | Schema-name probe not run; the lane's query names are used by passing cases, which is indirect evidence only. |
+| med order-total conservation rule | NOT ATTEMPTED | Depends on P-MED-8. |
+| P-MED-13 (CSV) | NOT ATTEMPTED | Not run. |
+| P-MED-15 (OpenAPI snapshot) | NOT ATTEMPTED | Not run. |
+| P-MED-16 | NOT ATTEMPTED | Not run. |
+| P-MED-14 | NOT ATTEMPTED | Not run. |
+| P-MED-18 (KWD via Stripe) | STILL BLOCKED | Account refuses KWD (earlier evidence, med plan `:128`); not re-run. |
+| P2-MED-CACHE-001 (HR-4) | COVERED | `cache-visibility.spec.ts:22` passes on harness 0.3.1 with `MEDUSA_FF_CACHING=true` and `MEDUSA_REDIS=1`. |
+| FC-MED-B (rate limit) | NOT ATTEMPTED | Not run against 0.3.1. |
+| OD-14 (lock provider) | NOT ATTEMPTED | Not run. |
+| med budgets (3) | NOT ATTEMPTED | Budgets wait on probes above. |
+| label-med-payment-route-citation | COVERED | Route found at the installed package path; lines 21-22 match the plan. |
+| P2-TW-STR-001 | STILL BLOCKED | Billing sync fails `SELF_SIGNED_CERT_IN_CHAIN` inside the server container. Needs a harness mechanism to pass the proxy CA into that container. Verification was not disabled. |
+| P2-TW-STR-002 | STILL BLOCKED (HARD STOP) | Not built (probe addendum). D5. |
+| P2-TW-RT-001 | STILL BLOCKED (harness) | Fork disables execution unless `LOGIC_FUNCTION_TYPE` is set; harness does not forward it. |
+| backlog-harness-v032-logic-function-type | CONFIRMED-GAP (harness) | Needed for RT-001. Harness owner decision (D7). |
+| backlog-harness-v032-server2-passthrough | CONFIRMED-GAP (harness) | Server-2 overlay has no billing passthrough. Not exercised (D6). |
+| P2-TW-CACHE-001 | COVERED | `cache.spec.ts:27` passes on the replicas stack (1.6 s). |
+| P2-TW-WH-009 | COVERED | `tenant.spec.ts:55` passes with `TWENTY_BASE_URL=http://localhost:3002`. Default `127.0.0.1` fails the exchange (B-P13). CI config gap, not a product defect. |
+| P2-TW-BUG-001, -002, -003, -004 | PRODUCT DEFECT | Earlier proofs on record (tw probes `:77-134`); not re-run. |
+| backlog-tw-study-timeout | STILL BLOCKED | Needs a first scheduled `tw-study` run. |
+| backlog-oas-max-errors | NOT ATTEMPTED | Needs a >10-violation fixture; not run. |
+| backlog-harness-products-root-default | COVERED (workaround) | `PRODUCTS_ROOT=/home/user/products` used in every stack run; harness v0.3.2 fix still pending. |
+| label-harness-v031-medusa-version-gate (D2) | COVERED | D2 applied; harness 0.3.1 accepted with the fork HEAD check (`f677db4`). |
+| label-env-prereqs-runbook-missing | STILL BLOCKED | `docs/plans/2026-11-01-p2-task5-env-prereqs-readiness.md` still absent. |
+| label-discovery-round-scope | COVERED (partial) | This session's probes; the cross-product sweep is listed as follow-up (cross-probes record). |
+| label-ci-yml-gate-pr, label-readme-claude-cloud-setup, label-cron-tick-nightly, label-upstream-issue-filing | NOT ATTEMPTED | Track-only (out of scope; upstream filing is a non-goal). |
+
+Counts of verdicts in section 9: COVERED or NOT REPRODUCIBLE 17 (including workaround and D2 closures), PRODUCT DEFECT 8, CONFIRMED-GAP 3 (two harness, one coverage), STILL BLOCKED 22, NOT ATTEMPTED 20. Counted by hand from the table above.
+
+## 10. Proposed case IDs (PROPOSED, for owner approval)
+
+Only `CONFIRMED-GAP` rows that are product-facing get an ID. Harness gaps are not P2 cases.
+
+| PROPOSED ID | Assertion (one line) | Oracle | test.fail candidate |
+|---|---|---|---|
+| **P2-MED-WH-009** (PROPOSED) | A payment webhook and a cart completion that land in the same window leave exactly one order, one payment, and one capture. | `qa_ro`: order count for the run's cart, payment rows, capture rows, all equal to 1 (table and column names per P-MED-8, not yet probed). | None. No defect evidence yet. Becomes a candidate only if the overlap shows a duplicate. |
+
+Not proposed: the Medusa 200-before-verify point (PRODUCT DEFECT, P5 design) and the Twenty `LOGIC_FUNCTION_TYPE` and server-2 passthrough gaps (harness). They go to P5 and the harness owner respectively.
+
+## 11. Stale plan rows (for owner approval; plans not edited in this session)
+
+| Plan path and line | Current text | Correction (evidence) |
+|---|---|---|
+| `docs/plans/2026-11-02-p2-lane-twenty.md:1089-1090` | HR-4 and HR-5 DEFERRED | Stale. Harness 0.3.1 has the replicas adapter and multi-workspace passthrough; `CACHE-001` and `WH-009` pass (Twenty record). |
+| `docs/plans/2026-11-02-p2-lane-twenty.md:1122-1123` | OD-7 and OD-8 DEFERRED | Applied and passing (same evidence). |
+| `docs/plans/2026-11-02-p2-lane-twenty.md:10xx` (`OD-10`) and `:132` | OD-10 "not BLOCKING" versus row BLOCKED | Reconcile to BLOCKED: billing sync needs the CA in the server container (Twenty record, billing stage). |
+| `docs/plans/2026-11-02-p2-lane-twenty.md:793` (up command) | No base URL for the multi-workspace job | Add `TWENTY_BASE_URL=http://localhost:3002` for the `@multiws` job (B-P13; WH-009 passes only with it). |
+| `docs/plans/2026-11-02-p2-lane-documenso.md:128-129` | CONV-002 and CONV-003 DEFERRED | Stale. Specs on `main`; CONV-003 passes; CONV-002 expected failure. Run with `DOCUMENSO_GOTENBERG=1` (harness 0.3.1). |
+| `docs/plans/2026-11-02-p2-lane-documenso.md:137`, `:1018` | WH-005 DEFERRED (OD-11) | Spec exists; expected-failure marker verified. Row text still missing (D8). |
+| `docs/plans/2026-11-02-p2-lane-documenso.md:956-958` (run recipe) | No `DOCUMENSO_GOTENBERG=1`; `doc-serial` runs `doc-api` too | Add `DOCUMENSO_GOTENBERG=1` for CONV cases; use `--no-deps` when only the serial project is wanted. |
+| `docs/plans/2026-11-02-p2-lane-medusa.md:970` (step 4) | harness must print `0.3.0` | Accept `0.3.1` with the fork HEAD check (D2). |
+| `docs/plans/2026-11-02-p2-lane-medusa.md:1050`, `:1174` | Seed after each `up` | Already correct; the run recipe in this session missed it. No plan change; note for runners. |
+| `docs/plans/2026-11-02-p2-lane-medusa.md:113`, `:1323` | HR-4 CACHE-001 DEFERRED | Stale on 0.3.1. Passes. |
+| `docs/plans/2026-11-02-p2-lane-medusa.md:54` | P-MED-2 UNPROBED | Superseded by the live result at `:76-77` (CONFIRMED). |
+| `docs/plans/2026-11-02-p2-lane-cal.md:912` (provision after `up`) | Correct as written | No change. The D3 volume reset and the same-shell secrets (`:700-713`) are the runbook for fresh-volume runs. |
