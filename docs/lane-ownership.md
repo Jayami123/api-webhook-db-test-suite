@@ -74,7 +74,7 @@ No new package.json script is needed: every lane command in the plans uses an ex
 (`npm run db:roles:provision -- <product>`, `node scripts/harness-seed.mjs medusa`,
 `npx playwright test --project=<code>-api`). `.env.example` is unchanged: the lane-only variables in
 the plans are `up` inputs set by the lane's command, or generated per run in CI, not stored names.
-`README.md` and a CHANGELOG are not touched by any plan, so neither changes here.
+`README.md` is changed only by the P2 closeout docs plan (`docs/plans/2026-11-06-p2-closeout-docs.md`). A CHANGELOG is not touched by any plan, so it does not change here.
 
 ## Lane-owned work carried over from the plans (not in this PR)
 
