@@ -24,6 +24,7 @@ import { bookingWebhookErrors } from "../../../src/lanes/cal/webhook-schema.ts";
 import { currentRunPrefix } from "../../../src/run/prefix.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
+import { expectedDefect } from "../../../src/ci/known-defect.ts";
 
 const db = (): ReturnType<typeof readOnlyDb> => readOnlyDb("cal");
 const cronSecret = (): string => process.env["CRON_SECRET"] ?? "";
@@ -376,7 +377,9 @@ test.describe("P2-CAL-WH webhook cases (tasker mode)", () => {
     // Finding B2 (proven: plan P4; probe record L5): the 500 is acknowledged as success and never retried. The marker
     // is called only after the setup asserts and the cleanup have finished, so a cleanup failure is a normal test
     // failure and never satisfies the expected failure.
-    test.fail();
+    expectedDefect(
+      "B2: a receiver 500 is acknowledged as success and never retried (docs/probes/2026-11-02-p2-lane-cal-live-probes.md:338)",
+    );
     expect(afterSecondRun).toHaveLength(2);
   });
 });

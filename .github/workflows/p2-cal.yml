@@ -92,6 +92,7 @@ jobs:
         timeout-minutes: 10
         env:
           STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
+          P2_JSON_FILE: results/playwright-cal.json
         run: |
           set -euo pipefail
           mkdir -p results
@@ -100,6 +101,13 @@ jobs:
         if: always()
         timeout-minutes: 3
         run: node src/lanes/cal/leak-check.ts
+      - name: Job summary (cal)
+        if: ${{ !cancelled() }}
+        # SUMMARY_STEP basis: P1 e2e.yml:256-261 gives its job-summary step the same 2-minute budget.
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          node scripts/write-ci-job-summary.ts "cal" results/playwright-cal.json
       - name: Upload report, JUnit and receiver and fixture logs
         if: always()
         timeout-minutes: 5
@@ -108,6 +116,7 @@ jobs:
           name: cal-api-report
           path: |
             results/junit.xml
+            results/playwright-cal.json
             playwright-report/
             receiver-logs/
             fixture-logs/

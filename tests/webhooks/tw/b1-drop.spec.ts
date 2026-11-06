@@ -12,6 +12,7 @@ import {
 import { runScopedName } from "../../../src/run/prefix.ts";
 import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
 import { removeEach } from "../../../src/lanes/tw/cleanup-steps.ts";
+import { expectedDefect } from "../../../src/ci/known-defect.ts";
 
 /**
  * B1 positive control (one test, normal lane). It shows that a fresh webhook delivers an event sent after one memo
@@ -98,9 +99,8 @@ test("P2-TW-WH-010: a webhook created right after a delete receives the next eve
     const event = await tw.people.create(runScopedName("tw-bug3-event"));
     created.push(event);
 
-    test.fail(
-      true,
-      "P2-TW-BUG-003: a webhook created after a delete misses the next event (probe record, section 3)",
+    expectedDefect(
+      "P2-TW-BUG-003: a webhook created after a delete misses the next event (docs/probes/2026-11-03-p2-lane-tw-probes.md:112)",
     );
 
     // Oracle: B holds exactly one delivery of the event for the quiet window. Under the bug the count stays 0, so the

@@ -8,6 +8,7 @@ import {
   opName,
 } from "../../../src/lanes/med/contract.ts";
 import { cleanupLabel, laneOf } from "../../../src/lanes/med/lane-client.ts";
+import { expectedDefect } from "../../../src/ci/known-defect.ts";
 
 /**
  * The responses of the flow the PRODUCT deviations are measured on. Setup first (a normal test), then the
@@ -137,9 +138,8 @@ test.describe("medusa store product deviations", () => {
             productDeviations.push(`${opName(step.op)} ${key}`);
         }
       }
-      test.fail(
-        true,
-        "P2-MED-CON-PRODUCT known product deviations: store responses omit keys the published contract requires (deviation register, class PRODUCT)",
+      expectedDefect(
+        "P2-MED-CON-PRODUCT: known product deviations: store responses omit keys the published contract requires (deviation register, class PRODUCT; src/lanes/med/contract.ts:7)",
       );
       expect(productDeviations, "product deviations observed now").toEqual([]);
     } finally {

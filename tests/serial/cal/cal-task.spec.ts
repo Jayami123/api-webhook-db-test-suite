@@ -23,6 +23,7 @@ import type { CalAuth } from "../../../src/auth/cal.ts";
 import type { ApiRequestLike } from "../../../src/clients/base.ts";
 import type { CalClient } from "../../../src/clients/cal.ts";
 import { runAllThenRethrow } from "../../../src/shared/cleanup.ts";
+import { expectedDefect } from "../../../src/ci/known-defect.ts";
 
 const db = (): ReturnType<typeof readOnlyDb> => readOnlyDb("cal");
 let writerHandle: ReturnType<typeof createFixtureWriter> | undefined;
@@ -245,7 +246,9 @@ test.describe("P2-CAL-TASK tasker (serial)", () => {
       }
       // Finding B4 (per task): each booked task is delivered exactly once. The marker is called only after the setup
       // asserts and the cleanup have finished, so a cleanup failure is a normal test failure, never the expected one.
-      test.fail();
+      expectedDefect(
+        "B4: two concurrent tasker runs deliver each task twice (docs/probes/2026-11-02-p2-lane-cal-live-probes.md:346)",
+      );
       expect(deliveriesPerTask).toEqual([1, 1, 1, 1, 1]);
     });
   }

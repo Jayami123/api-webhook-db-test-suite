@@ -4,6 +4,7 @@ import { test, expect } from "../../../src/fixtures/index.ts";
 import { readOnlyDb } from "../../../src/db/pg.ts";
 import { apiBaseUrl } from "../../../src/env.ts";
 import { productsRoot } from "../../../src/readiness/checks.ts";
+import { expectedDefect } from "../../../src/ci/known-defect.ts";
 
 /** Session-only upload (P-DOC-12, R27). The API token is refused with 401 on this route. */
 const UPLOAD_PATH = "/api/files/upload-pdf";
@@ -74,7 +75,7 @@ test("P2-DOC-UP-001 a zero-byte PDF is refused with 4xx, not 500 (KNOWN PRODUCT 
   // Setup asserts, before the expected failure: the proven 500 must hold; any other status is a change to triage.
   expect(res.status(), "the proven answer is 500 Upload failed (B-4, P-DOC-12)").toBe(500);
   expect(await docDataCount()).toBe(before);
-  test.fail(true, PB_DOC_001);
+  expectedDefect(PB_DOC_001);
   expect([400, 415, 422]).toContain(res.status());
 });
 
@@ -89,7 +90,7 @@ test("P2-DOC-UP-002 an EXE renamed to .pdf is refused with 4xx (KNOWN PRODUCT BU
   // Setup asserts, before the expected failure: the proven 500 must hold; any other status is a change to triage.
   expect(res.status(), "the proven answer is 500 Upload failed (B-4, P-DOC-12)").toBe(500);
   expect(await docDataCount()).toBe(before);
-  test.fail(true, PB_DOC_001);
+  expectedDefect(PB_DOC_001);
   expect([400, 415, 422]).toContain(res.status());
 });
 
@@ -104,7 +105,7 @@ test("P2-DOC-UP-003 a truncated PDF is refused with 4xx (KNOWN PRODUCT BUG PB-DO
   // Setup asserts, before the expected failure: the proven 500 must hold; any other status is a change to triage.
   expect(res.status(), "the proven answer is 500 Upload failed (B-4, P-DOC-12)").toBe(500);
   expect(await docDataCount()).toBe(before);
-  test.fail(true, PB_DOC_001);
+  expectedDefect(PB_DOC_001);
   expect([400, 415, 422]).toContain(res.status());
 });
 
@@ -139,6 +140,6 @@ test("P2-DOC-UP-005 an encrypted PDF is refused with 4xx and stores nothing (KNO
   // Setup asserts, before the expected failure: the proven 500 must hold; any other status is a change to triage.
   expect(res.status(), "the proven answer is 500 Upload failed (B-4, P-DOC-12)").toBe(500);
   expect(await docDataCount()).toBe(before); // "stores nothing" is this count check
-  test.fail(true, PB_DOC_001);
+  expectedDefect(PB_DOC_001);
   expect([400, 415, 422]).toContain(res.status());
 });

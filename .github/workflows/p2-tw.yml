@@ -34,6 +34,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
+      P2_JSON_FILE: results/playwright-tw-api.json
       PRODUCTS_ROOT: ${{ github.workspace }}/../products
       OUTBOUND_HTTP_ALLOWED_INTERNAL_HOSTS: host.docker.internal,172.17.0.1
     steps:
@@ -73,6 +74,13 @@ jobs:
       - name: Run the lane (tw-api)
         timeout-minutes: 12
         run: npx playwright test --project=tw-api --grep-invert "@multiws|@replicas"
+      - name: Job summary (tw-api)
+        if: ${{ !cancelled() }}
+        # SUMMARY_STEP basis: P1 e2e.yml:256-261 gives its job-summary step the same 2-minute budget.
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          node scripts/write-ci-job-summary.ts "tw-api" results/playwright-tw-api.json
       - name: Upload report, junit, receiver logs
         if: always()
         timeout-minutes: 5
@@ -81,6 +89,7 @@ jobs:
           name: tw-lane
           path: |
             results/junit.xml
+            results/playwright-tw-api.json
             playwright-report/
             receiver-logs/
           if-no-files-found: warn
@@ -100,6 +109,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
+      P2_JSON_FILE: results/playwright-tw-multiws.json
       PRODUCTS_ROOT: ${{ github.workspace }}/../products
       OUTBOUND_HTTP_ALLOWED_INTERNAL_HOSTS: host.docker.internal,172.17.0.1
       IS_MULTIWORKSPACE_ENABLED: "true"
@@ -144,6 +154,13 @@ jobs:
       - name: Run the @multiws cases (WH-009)
         timeout-minutes: 8
         run: npx playwright test --project=tw-api --grep "@multiws"
+      - name: Job summary (tw-multiws)
+        if: ${{ !cancelled() }}
+        # SUMMARY_STEP basis: P1 e2e.yml:256-261 gives its job-summary step the same 2-minute budget.
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          node scripts/write-ci-job-summary.ts "tw-multiws" results/playwright-tw-multiws.json
       - name: Upload report and junit
         if: always()
         timeout-minutes: 5
@@ -152,6 +169,7 @@ jobs:
           name: tw-multiws
           path: |
             results/junit.xml
+            results/playwright-tw-multiws.json
             playwright-report/
             receiver-logs/
           if-no-files-found: warn
@@ -169,6 +187,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
+      P2_JSON_FILE: results/playwright-tw-cache.json
       PRODUCTS_ROOT: ${{ github.workspace }}/../products
       OUTBOUND_HTTP_ALLOWED_INTERNAL_HOSTS: host.docker.internal,172.17.0.1
       TWENTY_SERVER_REPLICAS: "2"
@@ -209,6 +228,13 @@ jobs:
       - name: Run the @replicas cases (CACHE-001)
         timeout-minutes: 8
         run: npx playwright test --project=tw-api --grep "@replicas"
+      - name: Job summary (tw-cache)
+        if: ${{ !cancelled() }}
+        # SUMMARY_STEP basis: P1 e2e.yml:256-261 gives its job-summary step the same 2-minute budget.
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          node scripts/write-ci-job-summary.ts "tw-cache" results/playwright-tw-cache.json
       - name: Upload report and junit
         if: always()
         timeout-minutes: 5
@@ -217,6 +243,7 @@ jobs:
           name: tw-cache
           path: |
             results/junit.xml
+            results/playwright-tw-cache.json
             playwright-report/
             receiver-logs/
           if-no-files-found: warn

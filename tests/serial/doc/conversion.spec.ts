@@ -9,6 +9,7 @@ import { GOTENBERG_CONTAINER, GOTENBERG_HEALTH_URL } from "../../../src/lanes/do
 import { runScopedName } from "../../../src/run/prefix.ts";
 import { POLL_INTERVALS, SLO } from "../../../src/slo.ts";
 import type { APIRequestContext } from "@playwright/test";
+import { expectedDefect } from "../../../src/ci/known-defect.ts";
 
 const run = promisify(execFile);
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -85,7 +86,7 @@ test("P2-DOC-CONV-002 Gotenberg down: DOCX create answers 503 fast (P5-DOC-CONV-
   expect(await envelopesWithTitles(titles), "no envelope exists for this run's titles").toBe(0);
 
   // Oracle (expected to fail: P5-DOC-CONV-001). A dependency outage is a 5xx (AppError 503, docx-to-pdf.ts:31-43).
-  test.fail(true, P5_CONV_001);
+  expectedDefect(P5_CONV_001);
   for (const a of attempts) expect(a.status).toBe(503);
 });
 
