@@ -42,8 +42,8 @@ export default defineConfig({
   reporter: isCI
     ? [
         ["list"],
-        // Each CI step writes its own report: the API and serial projects are separate `playwright test` runs in one
-        // job, and a shared path would be overwritten by the second run (p2-doc-serial.yml sets P2_JUNIT_FILE / P2_HTML_DIR).
+        // Each CI step writes its own report paths (P2_JUNIT_FILE, P2_HTML_DIR, P2_JSON_FILE), so one step never
+        // overwrites another's files. The Documenso serial project runs in p2-doc-serial.yml, not inside the doc-api job.
         ["junit", { outputFile: process.env["P2_JUNIT_FILE"] ?? "results/junit.xml" }],
         // One JSON file per Playwright invocation (the job summary reads it, scripts/write-ci-job-summary.ts).
         ["json", { outputFile: process.env["P2_JSON_FILE"] ?? "results/playwright.json" }],
