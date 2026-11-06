@@ -19,9 +19,14 @@ function lineOf(sf: ts.SourceFile, node: ts.Node): number {
 }
 
 /**
- * Every `<test>.fail` property access where <test> is Playwright's test: the bare identifier `test` (always),
- * a named import `test` under any alias, or `ns.test` for a namespace import of @playwright/test.
- * Calls and bare references both count, and so does `test.fail.only`.
+ * Every direct use of Playwright's `test.fail` in a file, in any of these forms:
+ * - property access: `<test>.fail` (also `<test>.fail.only`);
+ * - element access: `<test>["fail"]` (string literal or no-substitution template);
+ * - destructured: `const { fail } = <test>` and then a call `fail(...)` (also `{ fail: f }` and `f(...)`);
+ * where <test> is a tracked binding: the bare identifier `test`, any local name bound to the `test` export of
+ * any module (so the project fixtures and their aliases count, for example `import { test as it }`), a plain
+ * `const x = <test>` alias, or `ns.test` for a namespace import of @playwright/test.
+ * The sets are file-scoped and not scope-aware: a same-named local elsewhere in the file is also tracked.
  */
 export function findDirectFailUses(path: string, source: string): Finding[] {
   const sf = ts.createSourceFile(path, source, ts.ScriptTarget.ES2023, true, ts.ScriptKind.TS);
@@ -30,7 +35,7 @@ export function findDirectFailUses(path: string, source: string): Finding[] {
   for (const statement of sf.statements) {
     if (!ts.isImportDeclaration(statement)) continue;
     const spec = statement.moduleSpecifier;
-    if (!ts.isStringLiteral(spec) || spec.text !== "@playwright/test") continue;
+    if (!ts.isStringLiteral(spec)) continue;
     const bindings = statement.importClause?.namedBindings;
     if (bindings === undefined) continue;
     if (ts.isNamedImports(bindings)) {
@@ -38,24 +43,59 @@ export function findDirectFailUses(path: string, source: string): Finding[] {
         const imported = (element.propertyName ?? element.name).text;
         if (imported === "test") testNames.add(element.name.text);
       }
-    } else {
+    } else if (spec.text === "@playwright/test") {
       namespaces.add(bindings.name.text);
     }
   }
 
+  // Pre-pass: plain aliases of a tracked test, and destructured `fail` bindings from a tracked test.
+  const failFns = new Set<string>();
+  const collect = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && node.initializer !== undefined) {
+      const init = node.initializer;
+      const fromTest = ts.isIdentifier(init) && testNames.has(init.text);
+      if (ts.isIdentifier(node.name) && fromTest) testNames.add(node.name.text);
+      if (ts.isObjectBindingPattern(node.name) && fromTest) {
+        for (const element of node.name.elements) {
+          const key = element.propertyName ?? element.name;
+          const keyName = ts.isIdentifier(key) || ts.isStringLiteral(key) ? key.text : undefined;
+          if (keyName === "fail" && ts.isIdentifier(element.name)) failFns.add(element.name.text);
+        }
+      }
+    }
+    ts.forEachChild(node, collect);
+  };
+  collect(sf);
+
+  const isTrackedTest = (object: ts.Expression): boolean =>
+    (ts.isIdentifier(object) && testNames.has(object.text)) ||
+    (ts.isPropertyAccessExpression(object) &&
+      ts.isIdentifier(object.expression) &&
+      namespaces.has(object.expression.text) &&
+      object.name.text === "test");
+
   const findings: Finding[] = [];
   const visit = (node: ts.Node): void => {
-    if (ts.isPropertyAccessExpression(node) && node.name.text === "fail") {
-      const object = node.expression;
-      const direct = ts.isIdentifier(object) && testNames.has(object.text);
-      const namespaced =
-        ts.isPropertyAccessExpression(object) &&
-        ts.isIdentifier(object.expression) &&
-        namespaces.has(object.expression.text) &&
-        object.name.text === "test";
-      if (direct || namespaced) {
-        findings.push({ path, line: lineOf(sf, node), text: node.getText(sf) });
-      }
+    if (
+      ts.isPropertyAccessExpression(node) &&
+      node.name.text === "fail" &&
+      isTrackedTest(node.expression)
+    ) {
+      findings.push({ path, line: lineOf(sf, node), text: node.getText(sf) });
+    } else if (
+      ts.isElementAccessExpression(node) &&
+      (ts.isStringLiteral(node.argumentExpression) ||
+        ts.isNoSubstitutionTemplateLiteral(node.argumentExpression)) &&
+      node.argumentExpression.text === "fail" &&
+      isTrackedTest(node.expression)
+    ) {
+      findings.push({ path, line: lineOf(sf, node), text: node.getText(sf) });
+    } else if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      failFns.has(node.expression.text)
+    ) {
+      findings.push({ path, line: lineOf(sf, node), text: node.getText(sf) });
     }
     ts.forEachChild(node, visit);
   };
