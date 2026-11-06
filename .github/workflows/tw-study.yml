@@ -26,7 +26,9 @@ jobs:
   tw-study:
     name: tw-study
     runs-on: ubuntu-24.04
-    # Worst case 22.5 min (plan section 8.8: 360 s setup + 990 s study) plus margin for the roles step and the bootstrap.
+    # Basis: design worst case 22.5 min (plan section 8.8: 360 s setup + 990 s study); measured 11.6 min
+    # (run 42180981630, 2026-11-06; study step 8.0 min). 30 min keeps ~1.3x margin over the worst case.
+    # Revisit after four scheduled runs.
     timeout-minutes: 30
     env:
       PRODUCTS_ROOT: ${{ github.workspace }}/../products
