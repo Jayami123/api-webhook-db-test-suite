@@ -54,6 +54,17 @@ also lists the allowed secret names (currently `STRIPE_API_KEY`). `tw-study.yml`
 measurement, never called from `ci.yml`, and never a required check. `p2-doc-serial.yml` runs on a schedule and on
 manual dispatch only, and `ci.yml` never calls it.
 
+Ruleset (verified 2026-11-06): the repository ruleset `protect-main` requires only the `gate` check.
+The older names `check`, `unit` and `db-guard` are not required status contexts.
+
+Timeouts (document only, U3): the caller jobs in `ci.yml` that call a lane workflow set no
+`timeout-minutes` of their own. Each lane workflow sets its job timeouts, and `ci.yml` does not override them.
+No workflow edit is part of this note.
+
+Fail-closed proof (U6, document only): a live fork-PR run of the gate is not required for this note.
+`tests/unit/ci/workflow.test.ts` covers the same-repo guard on every lane job, the exact `gate` `needs` list,
+and the `always()` condition on `gate`.
+
 ## Shared changes made in this PR
 
 - `qa-portfolio-harness` pinned to `v0.3.1` (`7d4a3ae`).
