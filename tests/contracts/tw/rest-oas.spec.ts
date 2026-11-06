@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test, expect } from "../../../src/fixtures/index.ts";
-import { loadSpec } from "../../../src/contracts/oas.ts";
+import { AJV_ERROR_PRINT_CAP, loadSpec } from "../../../src/contracts/oas.ts";
 import { apiBaseUrl } from "../../../src/env.ts";
 import { twAuthHeaders } from "../../../src/lanes/tw/http.ts";
 import { runScopedName } from "../../../src/run/prefix.ts";
@@ -19,9 +19,6 @@ const NAME_FILTER: Record<string, string> = {
   companies: "name",
   opportunities: "name",
 };
-/** The validator's print cap (src/contracts/oas.ts:32, MAX_ERRORS = 10). The count guard below stays under it. */
-const MAX_ERRORS = 10;
-
 test.beforeAll(() => {
   mkdirSync("results", { recursive: true });
 });
@@ -90,15 +87,16 @@ for (const [label, route] of [
       );
       expect(oneResult.matchedStatus).toBe("200");
 
-      // The count guard runs first: the print cap (MAX_ERRORS) must not be able to hide a non-null violation.
+      // The count guard runs first. The printed list is capped at AJV_ERROR_PRINT_CAP, so the guard reads the full
+      // errorCount: below the cap, every violation is printed and truncation cannot hide a non-null violation.
       expect(
-        result.errors.length,
-        `fewer than MAX_ERRORS (${MAX_ERRORS}, src/contracts/oas.ts:32) list violations, so truncation cannot hide one`,
-      ).toBeLessThan(MAX_ERRORS);
+        result.errorCount,
+        `full list violation count below AJV_ERROR_PRINT_CAP (${AJV_ERROR_PRINT_CAP}, src/contracts/oas.ts), so no violation is hidden by the print cap`,
+      ).toBeLessThan(AJV_ERROR_PRINT_CAP);
       expect(
-        oneResult.errors.length,
-        `fewer than MAX_ERRORS (${MAX_ERRORS}) one-id violations, so truncation cannot hide one`,
-      ).toBeLessThan(MAX_ERRORS);
+        oneResult.errorCount,
+        `full one-id violation count below AJV_ERROR_PRINT_CAP (${AJV_ERROR_PRINT_CAP}), so no violation is hidden by the print cap`,
+      ).toBeLessThan(AJV_ERROR_PRINT_CAP);
 
       // Known product bug P2-TW-BUG-002: the OAS 3.1.1 document declares some fields non-nullable (for example
       // deletedAt, avatarFile, performanceRating) and the live responses return null for them. Every violation must be

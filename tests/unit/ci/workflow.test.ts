@@ -225,13 +225,13 @@ export function checkLaneWorkflow(file: string, text: string): string[] {
   return violations;
 }
 
+/** Scheduled or manual files that are never called from ci.yml (tw-study.yml, p2-doc-serial.yml). */
+const SCHEDULE_ONLY = ["tw-study.yml", "p2-doc-serial.yml"] as const;
+
 /**
  * Each lane owns one workflow file (docs/lane-ownership.md). A file is an inert stub until its lane
  * goes live; a live lane must pass the checker. api.yml never gains lane jobs.
  */
-/** Scheduled or manual files that are never called from ci.yml (tw-study.yml, p2-doc-serial.yml). */
-const SCHEDULE_ONLY = ["tw-study.yml", "p2-doc-serial.yml"] as const;
-
 describe("per-lane workflows", () => {
   const lanes = [
     "p2-cal.yml",

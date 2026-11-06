@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  AJV_ERROR_PRINT_CAP,
   ContractError,
   ContractSpec,
   loadSpec,
@@ -30,7 +31,56 @@ describe("OAS contract loader", () => {
       valid: true,
       matchedStatus: "200",
       errors: [],
+      errorCount: 0,
     });
+  });
+
+  /** A one-operation spec whose response schema requires the given property names. */
+  const requiredSpec = (names: readonly string[]): ContractSpec =>
+    new ContractSpec(
+      "required",
+      {
+        openapi: "3.0.3",
+        paths: {
+          "/r": {
+            get: {
+              responses: {
+                "200": {
+                  description: "ok",
+                  content: {
+                    "application/json": {
+                      schema: { type: "object", required: [...names] },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      [],
+    );
+  const requiredOp = { method: "get", path: "/r" } as const;
+
+  test("below the print cap, errorCount equals the printed errors and nothing is truncated", () => {
+    const spec = requiredSpec(["a", "b", "c"]);
+    const result = spec.validate(requiredOp, { status: 200 }, {});
+    assert.equal(result.valid, false);
+    assert.equal(result.errorCount, 3);
+    assert.equal(result.errors.length, 3);
+    assert.equal(
+      result.errors.some((line) => line.startsWith("… and ")),
+      false,
+    );
+  });
+
+  test("past the print cap, errorCount is the full Ajv count and errors is truncated with a summary line", () => {
+    const names = Array.from({ length: 12 }, (_, i) => `p${String(i)}`);
+    const spec = requiredSpec(names);
+    const result = spec.validate(requiredOp, { status: 200 }, {});
+    assert.equal(result.errorCount, 12);
+    assert.equal(result.errors.length, AJV_ERROR_PRINT_CAP + 1);
+    assert.equal(result.errors.at(-1), "… and 2 more");
   });
 
   test("operation can be addressed by method + path template", async () => {

@@ -22,14 +22,21 @@ export interface ContractResult {
   readonly valid: boolean;
   /** Spec response key actually used: "201", "2XX" or "default". */
   readonly matchedStatus: string;
+  /** Truncated, human-readable Ajv lines (at most AJV_ERROR_PRINT_CAP), possibly ending with "… and N more". */
   readonly errors: readonly string[];
+  /** Full Ajv error count before truncation. 0 when valid. */
+  readonly errorCount: number;
 }
 
 export class ContractError extends Error {
   override readonly name = "ContractError";
 }
 
-const MAX_ERRORS = 10;
+/**
+ * How many Ajv error lines are printed. Callers that need the real number use ContractResult.errorCount,
+ * which is never truncated.
+ */
+export const AJV_ERROR_PRINT_CAP = 10;
 const MAX_VALUE_CHARS = 80;
 const METHODS: readonly HttpMethod[] = [
   "get",
@@ -116,7 +123,7 @@ export function formatAjvErrors(
   data: unknown,
 ): string[] {
   const list = errors ?? [];
-  const lines = list.slice(0, MAX_ERRORS).map((error) => {
+  const lines = list.slice(0, AJV_ERROR_PRINT_CAP).map((error) => {
     const at = error.instancePath === "" ? "(root)" : error.instancePath;
     const extra =
       error.keyword === "additionalProperties"
@@ -124,7 +131,8 @@ export function formatAjvErrors(
         : "";
     return `at ${at}: ${error.message ?? error.keyword}${extra} (got ${describeValue(data, error.instancePath)}) [${error.schemaPath}]`;
   });
-  if (list.length > MAX_ERRORS) lines.push(`… and ${String(list.length - MAX_ERRORS)} more`);
+  if (list.length > AJV_ERROR_PRINT_CAP)
+    lines.push(`… and ${String(list.length - AJV_ERROR_PRINT_CAP)} more`);
   return lines;
 }
 
@@ -257,7 +265,12 @@ export class ContractSpec {
   validate(op: OperationRef, response: ResponseRef, body: unknown): ContractResult {
     const { fn, matchedStatus } = this.validator(op, response);
     const valid = fn(body);
-    return { valid, matchedStatus, errors: valid ? [] : formatAjvErrors(fn.errors, body) };
+    return {
+      valid,
+      matchedStatus,
+      errors: valid ? [] : formatAjvErrors(fn.errors, body),
+      errorCount: valid ? 0 : (fn.errors ?? []).length,
+    };
   }
 
   /** Throws a ContractError whose message names the operation and lists readable errors. */

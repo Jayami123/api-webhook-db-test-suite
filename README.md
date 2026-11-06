@@ -29,6 +29,8 @@ as an expected failure with a stated reason, and the finding is listed below.
   runs nightly at 08:07 Asia/Colombo (cron `37 2 * * *` UTC) and on manual dispatch.
   Serial proof on `main` at `7bb6cd0`: [run 42172842345](https://github.com/Jayami123/api-webhook-db-test-suite/actions/runs/42172842345) (manual dispatch; concluded success).
 - [`tw-study.yml`](.github/workflows/tw-study.yml) is separate. `ci.yml` does not call it, and it is not part of the required gate.
+- The ruleset `protect-main` requires only the `gate` check (verified 2026-11-06). The older names `check`, `unit` and `db-guard` are not required.
+- The caller jobs in `ci.yml` set no `timeout-minutes`; each lane workflow sets its own. See [docs/lane-ownership.md](docs/lane-ownership.md).
 
 ## Quick check (no products)
 
@@ -38,6 +40,42 @@ as an expected failure with a stated reason, and the finding is listed below.
 
 Expected: each command exits 0. `npm run list:api` prints the test listing. These commands do not start any product,
 so they are not a live lane run. Node 22 is set in `.nvmrc`; in cloud sessions run `export PATH="/usr/local/bin:$PATH"` first.
+
+## Cloud session setup
+
+The repository automates the steps it can. The owner pastes the rest into each product's environment settings.
+Secret values are never committed.
+
+### Cursor cloud
+
+Automatic from the repository (`.cursor/environment.json`):
+
+- `install` runs `bash scripts/cloud-install.sh`. It installs `poppler-utils` when `pdfsig` or `pdftotext` is missing,
+  runs `npm ci` when `package-lock.json` exists, then runs `scripts/bootstrap.sh` for the products
+  (default `medusa twenty documenso cal`).
+- `start` runs `sudo service docker start`, `scripts/ensure-receiver-hostname.sh` and `npm run qa:passwords`.
+
+The owner sets these in the Cursor environment settings (not committed):
+
+- `PRODUCTS_ROOT=/home/user/products`. `scripts/bootstrap.sh` reads it.
+- Any product secret that a lane plan requires. The names are in [`.env.example`](.env.example) and the lane plans.
+
+### Claude Code cloud
+
+Automatic from the repository (the `SessionStart` hook in `.claude/settings.json`, cloud sessions only, running
+`.claude/hooks/session-start.sh`):
+
+- Puts `/usr/local/bin` (Node 22) first on `PATH`, and exports `NODE24` when `/opt/node24` exists (Documenso).
+- Runs `npm run qa:passwords` and `scripts/ensure-receiver-hostname.sh`, and starts `dockerd` when it is installed.
+- Does not run `npm ci` or `bootstrap.sh`.
+
+The owner sets these in the Claude cloud environment:
+
+- Setup script: `bash scripts/cloud-install.sh`, the same entry point as Cursor.
+- `PRODUCTS_ROOT=/home/user/products`.
+- The same product secrets as Cursor.
+
+`.claude/settings.json` disables co-author trailers and sets empty commit and PR attribution.
 
 ## Running product lanes
 
