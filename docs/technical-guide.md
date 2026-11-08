@@ -4,7 +4,7 @@
 
 This is the operator and technical reference for P2. The [README](../README.md) is the short overview.
 
-Contents: [Lanes](#lanes) · [CI](#ci) · [Quick check](#quick-check-no-products) · [Cloud session setup](#cloud-session-setup) · [Running product lanes](#running-product-lanes) · [Known product findings](#known-product-findings) · [Status and remaining work](#status-and-remaining-work) · [Architecture and reports](#architecture-and-reports)
+Contents: [Lanes](#lanes) · [CI](#ci) · [Quick check](#quick-check-no-products) · [Cloud session setup](cloud-environments.md) · [Running product lanes](#running-product-lanes) · [Known product findings](#known-product-findings) · [Status and remaining work](#status-and-remaining-work) · [Architecture and reports](#architecture-and-reports)
 
 ## Lanes
 
@@ -39,42 +39,6 @@ Contents: [Lanes](#lanes) · [CI](#ci) · [Quick check](#quick-check-no-products
 Expected: each command exits 0. `npm run list:api` prints the test listing. These commands do not start any product,
 so they are not a live lane run. Node 22 is set in `.nvmrc`; in cloud sessions run `export PATH="/usr/local/bin:$PATH"` first.
 
-## Cloud session setup
-
-The repository automates the steps it can. The owner pastes the rest into each product's environment settings.
-Secret values are never committed.
-
-### Cursor cloud
-
-Automatic from the repository (`.cursor/environment.json`):
-
-- `install` runs `bash scripts/cloud-install.sh`. It installs `poppler-utils` when `pdfsig` or `pdftotext` is missing,
-  runs `npm ci` when `package-lock.json` exists, then runs `scripts/bootstrap.sh` for the products
-  (default `medusa twenty documenso cal`).
-- `start` runs `sudo service docker start`, `scripts/ensure-receiver-hostname.sh` and `npm run qa:passwords`.
-
-The owner sets these in the Cursor environment settings (not committed):
-
-- `PRODUCTS_ROOT=/home/user/products`. `scripts/bootstrap.sh` reads it.
-- Any product secret that a lane plan requires. The names are in [`.env.example`](../.env.example) and the lane plans.
-
-### Claude Code cloud
-
-Automatic from the repository (the `SessionStart` hook in `.claude/settings.json`, cloud sessions only, running
-`.claude/hooks/session-start.sh`):
-
-- Puts `/usr/local/bin` (Node 22) first on `PATH`, and exports `NODE24` when `/opt/node24` exists (Documenso).
-- Runs `npm run qa:passwords` and `scripts/ensure-receiver-hostname.sh`, and starts `dockerd` when it is installed.
-- Does not run `npm ci` or `bootstrap.sh`.
-
-The owner sets these in the Claude cloud environment:
-
-- Setup script: `bash scripts/cloud-install.sh`, the same entry point as Cursor.
-- `PRODUCTS_ROOT=/home/user/products`.
-- The same product secrets as Cursor.
-
-`.claude/settings.json` disables co-author trailers and sets empty commit and PR attribution.
-
 ## Running product lanes
 
 Product runs need the harness (`node_modules/qa-portfolio-harness`) and the product forks.
@@ -85,6 +49,8 @@ The setup for each lane is in its plan:
 - [Medusa](plans/2026-11-02-p2-lane-medusa.md)
 - [Cal.com](plans/2026-11-02-p2-lane-cal.md)
 - [Documenso](plans/2026-11-02-p2-lane-documenso.md)
+
+Cloud session setup for Cursor and Claude Code: [cloud-environments.md](cloud-environments.md).
 
 ## Known product findings
 

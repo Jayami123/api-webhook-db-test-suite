@@ -8,16 +8,16 @@ To prove the method carries over, I pointed it at four open-source products that
 
 ## What that looks like in practice
 
-- **A failed webhook recorded as delivered.** On Cal.com, the receiving server answered with an error, yet the delivery was marked successful after one attempt and never retried. ([write-up](https://github.com/Jayami123/api-webhook-db-test-suite/blob/99a2fdebbb60aac196fcb0fce16911e36a0d5c0a/docs/upstream/b2.md))
-- **Every task delivered twice.** On Cal.com, two background workers running at the same time each sent the same queued tasks.
-- **A number changed without an error.** On Twenty, an amount of 9007199254740993 was accepted and stored as 9007199254740992, through both the REST and GraphQL APIs. ([write-up](https://github.com/Jayami123/api-webhook-db-test-suite/blob/99a2fdebbb60aac196fcb0fce16911e36a0d5c0a/docs/upstream/p2-tw-bug-001.md))
-- **A deleted webhook still got the events.** On Twenty, for about 10 seconds after a webhook was replaced, events went to the deleted one and the new one missed them. ([write-up](https://github.com/Jayami123/api-webhook-db-test-suite/blob/99a2fdebbb60aac196fcb0fce16911e36a0d5c0a/docs/upstream/p2-tw-bug-003.md))
+- **A failed webhook recorded as delivered.** On Cal.com, the receiving server answered with an error, yet the delivery was marked successful after one attempt and never retried.
+- **Every task delivered twice.** On Cal.com, two background workers running at the same time each sent the same queued tasks, in each of three rounds.
+- **A number changed without an error.** On Twenty, an amount of 9007199254740993 was accepted and stored as 9007199254740992, through both the REST and GraphQL APIs, in each of two runs.
+- **A deleted webhook still got the events.** On Twenty, for about 10 seconds after a webhook was replaced, events went to the deleted one and the new one missed them, in 5 of 5 repetitions.
 - **A delete that answered "server error" and left the document live.** On Documenso, deleting a document at the moment it completed failed with a 500 and the document stayed.
 - **APIs that don't match their own documentation.** On Cal.com, Twenty and Medusa, live responses broke the published OpenAPI contract, with fields missing or null where the spec said they couldn't be.
 
 ## Why the numbers hold up
 
-Every check runs on GitHub's servers against fresh copies of the products, never on my laptop. Results are read back from the database and from captured webhook deliveries, not taken from the API's own reply. For 10 of the 12 proven findings, a test is written to expect the failure, so if the product changes, the build turns red and the record can't go stale.
+Every check runs on GitHub's servers, never on my laptop. Results are read back from the database and from captured webhook deliveries, not taken from the API's own reply. For 10 of the 12 proven findings, a test is written to expect the failure, so if the product changes, the build turns red and the record can't go stale.
 
 ## Next step
 
@@ -27,4 +27,4 @@ Every check runs on GitHub's servers against fresh copies of the products, never
 
 **[LinkedIn](https://www.linkedin.com/in/jayamihettigoda/)** · **[Email](mailto:jayami2114@gmail.com)** · [GitHub](https://github.com/Jayami123)
 
-<sub>Built with TypeScript, Node.js's built-in test runner and Playwright, Docker and GitHub Actions.</sub>
+<sub>Built with TypeScript, Playwright, Node.js, Docker and GitHub Actions.</sub>
