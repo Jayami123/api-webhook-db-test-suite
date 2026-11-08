@@ -1,46 +1,30 @@
-﻿# P2: backend contract, webhook and database tests
+﻿# I test what happens behind a "success" response
 
-P2 tests the backend of four open-source products: Twenty (CRM), Medusa (commerce), Cal.com (scheduling) and
-Documenso (document signing). The risk it looks at is simple. A request can return success while the data, the
-outgoing webhook or the background job behind it is wrong. A 200 response is where checking starts, not where it ends.
+QA engineer with 2.5 years in industry, open to remote roles and contract work.
 
-P2 compares responses with each product's published OpenAPI contract, verifies signed webhook deliveries, follows
-asynchronous work to its end, and reads the result from the database through a read-only client. It does not drive a browser.
+This repository is the backend testing part of my QA portfolio. Most API tests send a request, see a 200 and move on. That catches an endpoint that is down. It rarely catches the bug that surfaces weeks later, like a webhook that never arrived, a number saved slightly wrong, or a background job that ran twice. I check what happens after the response. Whether the data stored matches what was sent. Whether each webhook reached the right place, once. Whether background work finished, and whether the API still matches its own published contract.
 
-[![ci](https://github.com/Jayami123/api-webhook-db-test-suite/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Jayami123/api-webhook-db-test-suite/actions/workflows/ci.yml)
+To prove the method carries over, I pointed it at four open-source products that work like four different businesses. Medusa is an online store, Cal.com is a booking tool, Documenso handles e-signatures and Twenty is a CRM. Across the four I recorded 14 findings, 12 of them proven. If your product sends webhooks, runs background jobs or publishes an API, I can test it the same way.
 
-The badge shows the status of the `main` CI workflow. It is not a measure of coverage.
+## What that looks like in practice
 
-## Three examples
+- **A failed webhook recorded as delivered.** On Cal.com, the receiving server answered with an error, yet the delivery was marked successful after one attempt and never retried. ([write-up](https://github.com/Jayami123/api-webhook-db-test-suite/blob/99a2fdebbb60aac196fcb0fce16911e36a0d5c0a/docs/upstream/b2.md))
+- **Every task delivered twice.** On Cal.com, two background workers running at the same time each sent the same queued tasks.
+- **A number changed without an error.** On Twenty, an amount of 9007199254740993 was accepted and stored as 9007199254740992, through both the REST and GraphQL APIs. ([write-up](https://github.com/Jayami123/api-webhook-db-test-suite/blob/99a2fdebbb60aac196fcb0fce16911e36a0d5c0a/docs/upstream/p2-tw-bug-001.md))
+- **A deleted webhook still got the events.** On Twenty, for about 10 seconds after a webhook was replaced, events went to the deleted one and the new one missed them. ([write-up](https://github.com/Jayami123/api-webhook-db-test-suite/blob/99a2fdebbb60aac196fcb0fce16911e36a0d5c0a/docs/upstream/p2-tw-bug-003.md))
+- **A delete that answered "server error" and left the document live.** On Documenso, deleting a document at the moment it completed failed with a 500 and the document stayed.
+- **APIs that don't match their own documentation.** On Cal.com, Twenty and Medusa, live responses broke the published OpenAPI contract, with fields missing or null where the spec said they couldn't be.
 
-- **A failed delivery recorded as a success.** Cal.com's receiver answered with a 500 error. The delivery task was still
-  marked as succeeded after one attempt, and the next run never tried again, so the event was not sent again.
-  ([upstream draft B2](https://github.com/Jayami123/api-webhook-db-test-suite/blob/99a2fdebbb60aac196fcb0fce16911e36a0d5c0a/docs/upstream/b2.md))
-- **A number changed without an error.** Twenty accepted an `amountMicros` value of `9007199254740993` and returned
-  `9007199254740992`. The value changed quietly. This is a precision gap, not a measured loss of money.
-  ([upstream draft P2-TW-BUG-001](https://github.com/Jayami123/api-webhook-db-test-suite/blob/99a2fdebbb60aac196fcb0fce16911e36a0d5c0a/docs/upstream/p2-tw-bug-001.md))
-- **A deleted webhook still gets events.** Within Twenty's 10-second cache window, a deleted webhook kept
-  receiving events, while the webhook created to replace it missed them.
-  ([upstream draft P2-TW-BUG-003](https://github.com/Jayami123/api-webhook-db-test-suite/blob/99a2fdebbb60aac196fcb0fce16911e36a0d5c0a/docs/upstream/p2-tw-bug-003.md))
+## Why the numbers hold up
 
-## Why the evidence is checkable
-
-Responses are checked against the published contracts, webhook deliveries are captured, and outcomes are read back
-from the database, so a finding rests on what the system returned and stored. Each finding cites the probe record or
-register it rests on. Where a product does not match its own promise, the case is kept with a stated reason. Not every
-proven finding has an automated expected-failure check: some are documented from probe records alone.
-
-On pull requests, each product lane runs when its own paths change. The Documenso serial project runs on a schedule
-and on manual dispatch, not on pull requests.
-
-## Go deeper
-
-- [Technical guide](docs/technical-guide.md): lanes, CI, running each product lane, cloud setup, and remaining work.
-- [Known product findings](docs/technical-guide.md#known-product-findings): all 14 findings, with proof and disclosure
-  status kept apart.
-- [Disclosure index](docs/upstream/README.md): where each upstream item stands. No item is marked as filed.
+Every check runs on GitHub's servers against fresh copies of the products, never on my laptop. Results are read back from the database and from captured webhook deliveries, not taken from the API's own reply. For 10 of the 12 proven findings, a test is written to expect the failure, so if the product changes, the build turns red and the record can't go stale.
 
 ## Next step
 
-Open one of the sources above and read the probe record it cites. If you want to see how the checks are built, the
-technical guide explains how to run each lane.
+- **To see how it works,** read the [technical guide](docs/technical-guide.md), with every lane, finding and the evidence behind it.
+- **To talk about a role,** I'm open to remote QA roles.
+- **To get your product tested,** I take contract work for startups before a launch or an integration goes live.
+
+**[LinkedIn](https://www.linkedin.com/in/jayamihettigoda/)** · **[Email](mailto:jayami2114@gmail.com)** · [GitHub](https://github.com/Jayami123)
+
+<sub>Built with TypeScript, Node.js's built-in test runner and Playwright, Docker and GitHub Actions.</sub>
