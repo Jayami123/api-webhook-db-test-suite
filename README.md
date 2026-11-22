@@ -1,6 +1,6 @@
 ﻿# I test what happens behind a "success" response
 
-QA engineer with 2.5 years in industry, open to remote roles and contract work.
+QA engineer with 4 years in industry, open to remote roles and contract work.
 
 This repository is the backend testing part of my QA portfolio. Most API tests send a request, see a 200 and move on. That catches an endpoint that is down. It rarely catches the bug that surfaces weeks later, like a webhook that never arrived, a number saved slightly wrong, or a background job that ran twice. I check what happens after the response. Whether the data stored matches what was sent. Whether each webhook reached the right place, once. Whether background work finished, and whether the API still matches its own published contract.
 
